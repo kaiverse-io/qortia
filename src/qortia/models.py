@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
+
+
+# ── remember ────────────────────────────────────────────────
+
+IMPORTANCE: dict[str, float] = {
+    "episodic":     0.3,
+    "experiential": 0.6,
+    "mental_model": 0.8,
+    "decision":     0.9,
+    "lesson":       0.95,
+}
+
+
+class MemoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["episodic", "experiential", "mental_model", "decision", "lesson"]
+    content: str
+    source_task_id: UUID | None = None
+    metadata: dict | None = None  # type: ignore[type-arg]
+
+    @field_validator("content")
+    @classmethod
+    def content_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("content must not be empty")
+        return v
+
+    @field_validator("metadata")
+    @classmethod
+    def metadata_is_object(cls, v: object) -> object:
+        if v is not None and not isinstance(v, dict):
+            raise ValueError("metadata must be a JSON object")
+        return v
+
+
+class RememberRequest(BaseModel):
+    memories: list[MemoryItem]
+
+    @field_validator("memories")
+    @classmethod
+    def memories_not_empty(cls, v: list) -> list:  # type: ignore[type-arg]
+        if not v:
+            raise ValueError("memories array must not be empty")
+        return v
+
+
+class RememberResponse(BaseModel):
+    ids: list[str]
+
+
+# ── remember-org ─────────────────────────────────────────────
+
+class RememberOrgRequest(BaseModel):
+    type: Literal["handoff", "process", "decision_log"]
+    title: str
+    content: str
+
+
+class RememberOrgResponse(BaseModel):
+    id: str
+
+
+# ── forget ───────────────────────────────────────────────────
+
+class ForgetRequest(BaseModel):
+    id: UUID
+
+
+class ForgetResponse(BaseModel):
+    id: str
+
+
+# ── context ──────────────────────────────────────────────────
+
+class MemoryEntry(BaseModel):
+    title: str | None = None
+    content: str
+    importance: float | None = None
+
+
+class ContextMemories(BaseModel):
+    mental_models: list[MemoryEntry]
+    decisions: list[MemoryEntry]
+    lessons: list[MemoryEntry]
+
+
+class ContextResponse(BaseModel):
+    org_chart: list[MemoryEntry]
+    processes: list[MemoryEntry]
+    handoffs: list[MemoryEntry]
+    weekly_summary: MemoryEntry | None
+    memories: ContextMemories
+
+
+# ── reflect ──────────────────────────────────────────────────
+
+class ReflectResponse(BaseModel):
+    memories_written: int
+    reflection_counter: int
+
+
+# ── recall ───────────────────────────────────────────────────
+
+class RecallRequest(BaseModel):
+    query: str
+    scope: Literal["private", "org", "knowledge", "all"] = "all"
+    type: Literal[
+        "episodic", "experiential", "mental_model", "decision", "lesson"
+    ] | None = None
+    rerank: bool = False
+    entities: list[str] | None = None
+
+    @field_validator("query")
+    @classmethod
+    def query_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("query must not be empty")
+        return v
+
+    @field_validator("entities")
+    @classmethod
+    def entities_valid(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            if not v:
+                return None  # empty list treated as null
+            for el in v:
+                if not isinstance(el, str) or not el.strip():
+                    raise ValueError("each entity must be a non-empty string")
+        return v
+
+
+class RecallResult(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    id: str
+    type: str
+    scope: Literal["private", "org", "knowledge"]
+    content: str
+    importance: float | None = None
+    created_at: str
+
+    # Internal ranking signals — never serialised (Q95)
+    _recall_count: int = PrivateAttr(default=0)
+    _last_recalled_at: datetime | None = PrivateAttr(default=None)
+    _score: float = PrivateAttr(default=0.0)
+    _embedding: list[float] = PrivateAttr(default_factory=list)
+
+
+class RecallResponse(BaseModel):
+    results: list[RecallResult]
+
+
+# ── knowledge ────────────────────────────────────────────────
+
+class KnowledgeIngestRequest(BaseModel):
+    source_type: Literal["file", "url", "transcript", "note"]
+    source_path: str
+    content: str
+    metadata: dict | None = None  # type: ignore[type-arg]
