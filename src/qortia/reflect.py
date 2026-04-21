@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from uuid import UUID
+from uuid import UUID
 
 import httpx
 import yaml
@@ -40,6 +41,33 @@ async def close_litellm_client() -> None:
 def get_litellm_client() -> httpx.AsyncClient:
     assert _litellm_client is not None, "LiteLLM client not initialised"
     return _litellm_client
+
+
+# ── Cost ledger ─────────────────────────────────────────────
+
+async def _record_llm_cost(
+    agent_id: UUID,
+    tenant_id: UUID,
+    model: str,
+    tokens_in: int,
+    tokens_out: int,
+) -> None:
+    """Fire-and-forget — failure is non-fatal."""
+    # Approximate cost using OpenAI pricing tiers as a proxy.
+    # LiteLLM returns cost in usage.cost when available; fall back to estimate.
+    cost_usd = (tokens_in * 3.0 + tokens_out * 15.0) / 1_000_000
+    try:
+        async with get_main_pool().acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO agent_cost_ledger
+                    (tenant_id, agent_id, model, tokens_in, tokens_out, cost_usd)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                tenant_id, agent_id, model, tokens_in, tokens_out, cost_usd,
+            )
+    except Exception as exc:
+        logger.warning({"event": "cost_ledger_write_failed", "error": str(exc)})
 
 
 # ── POST /v1/reflect ─────────────────────────────────────────
@@ -82,6 +110,8 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
         recent=[r["content"] for r in recent],
         existing=[{"type": r["type"], "content": r["content"]} for r in existing],
         litellm_key=litellm_key,
+        agent_id=agent.agent_id,
+        tenant_id=agent.tenant_id,
     )
 
     # Write transaction — supersede-first order (Q28, safety-critical)
@@ -142,6 +172,8 @@ async def _call_litellm_reflect(
     recent: list[str],
     existing: list[dict],  # type: ignore[type-arg]
     litellm_key: str,
+    agent_id: UUID,
+    tenant_id: UUID,
 ) -> list[dict]:  # type: ignore[type-arg]
     prompt = _build_reflect_prompt(recent, existing)
 
@@ -176,6 +208,17 @@ async def _call_litellm_reflect(
     except (KeyError, ValueError, json.JSONDecodeError) as exc:
         logger.error({"event": "reflection_llm_malformed", "error": str(exc)})
         raise HTTPException(500, "Reflection failed: malformed LLM response")
+
+    # Record cost — fire-and-forget, non-fatal
+    usage = resp.json().get("usage", {})
+    if usage:
+        asyncio.create_task(_record_llm_cost(
+            agent_id=agent_id,
+            tenant_id=tenant_id,
+            model=model,
+            tokens_in=usage.get("prompt_tokens", 0),
+            tokens_out=usage.get("completion_tokens", 0),
+        ))
 
     return memories
 
@@ -219,6 +262,7 @@ async def run_embedding_worker() -> None:
 
 
 async def _process_embedding_batch() -> None:
+    # Step 1: claim rows outside a long-held transaction
     async with get_main_pool().acquire() as conn:
         async with conn.transaction():
             hindsight = await conn.fetch("""
@@ -248,27 +292,32 @@ async def _process_embedding_batch() -> None:
                 FOR UPDATE SKIP LOCKED
             """, EMBEDDING_BATCH_SIZE)
 
-            for row in list(hindsight) + list(org_mem) + list(org_know):
-                await _embed_single_row(conn, dict(row))
+            rows = [dict(r) for r in list(hindsight) + list(org_mem) + list(org_know)]
+
+    # Step 2: embed + write each row — no transaction held during HTTP calls
+    for row in rows:
+        await _embed_single_row(row)
 
 
-async def _embed_single_row(conn, row: dict) -> None:  # type: ignore[type-arg]
+async def _embed_single_row(row: dict) -> None:  # type: ignore[type-arg]
+    if not row.get("text_to_embed"):
+        return
     try:
-        if not row.get("text_to_embed"):
-            return
         embedding = await _get_embedding(row["text_to_embed"])
-        await conn.execute(
-            f"UPDATE {row['tbl']} SET embedding = $1 WHERE id = $2",
-            embedding, row["id"],
-        )
+        async with get_main_pool().acquire() as conn:
+            await conn.execute(
+                f"UPDATE {row['tbl']} SET embedding = $1 WHERE id = $2",
+                embedding, row["id"],
+            )
     except Exception as exc:
-        await conn.execute(
-            f"UPDATE {row['tbl']} SET embedding_attempts = embedding_attempts + 1 WHERE id = $1",
-            row["id"],
-        )
-        attempts = await conn.fetchval(
-            f"SELECT embedding_attempts FROM {row['tbl']} WHERE id = $1", row["id"]
-        )
+        async with get_main_pool().acquire() as conn:
+            await conn.execute(
+                f"UPDATE {row['tbl']} SET embedding_attempts = embedding_attempts + 1 WHERE id = $1",
+                row["id"],
+            )
+            attempts = await conn.fetchval(
+                f"SELECT embedding_attempts FROM {row['tbl']} WHERE id = $1", row["id"]
+            )
         if attempts and attempts >= 3:
             logger.warning({
                 "event": "embedding_failed",
