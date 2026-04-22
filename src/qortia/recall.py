@@ -351,7 +351,7 @@ async def _llm_rerank(
                 "SELECT domain_md FROM auth.agents WHERE id = $1 AND tenant_id = $2",
                 agent.agent_id, agent.tenant_id,
             )
-        model = yaml.safe_load(domain_md_raw).get("model", "brain-sonnet")
+        model = yaml.safe_load(domain_md_raw).get("model", "anthropic/claude-3-haiku-20240307")
         litellm_key = await get_litellm_key(str(agent.tenant_id))
 
         numbered = "\n".join(

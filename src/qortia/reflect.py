@@ -102,7 +102,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
         )
 
     domain = yaml.safe_load(domain_md_raw)
-    model = domain.get("model", "brain-sonnet")
+    model = domain.get("model", "anthropic/claude-3-haiku-20240307")
 
     litellm_key = await get_litellm_key(str(agent.tenant_id))
     new_memories = await _call_litellm_reflect(
