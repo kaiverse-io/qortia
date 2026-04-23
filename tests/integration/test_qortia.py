@@ -9,22 +9,23 @@ import asyncpg
 import pytest
 from httpx import AsyncClient
 
-from tests.integration.conftest import fresh_agent_headers
+from tests.integration.conftest import fresh_agent_headers, VAULT_TOKEN
 
 
 def _call(loop: asyncio.AbstractEventLoop, coro):  # type: ignore[return]
     return loop.run_until_complete(coro)
 
 
-def _active_agent(loop, conn: asyncpg.Connection, tenant_id: str) -> str:
+def _active_agent(loop, conn, tenant_id: str) -> str:
     aid = str(uuid4())
-    loop.run_until_complete(conn.execute("""
+    conn.execute("""
         INSERT INTO auth.agents (id, tenant_id, name, role, soul_md, domain_md, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
     """, aid, tenant_id, f"agent-{aid[:8]}", "engineer", "soul",
         "role: engineer\ndelegation_policy: standard\nchannels:\n  - telegram\n"
         "allowed_ids:\n  telegram:\n    - \"123\"\nescalate_to: chief\nmodel: brain-sonnet",
-        "active"))
+        "active")
+    conn.track("auth.agents", aid)
     return aid
 
 
@@ -57,9 +58,9 @@ def test_remember_invalid_type_422(app_client, _session_loop) -> None:
     assert r.status_code == 422
 
 
-def test_remember_batch_atomicity(app_client, _session_loop, conn, tenant_id) -> None:
+def test_remember_batch_atomicity(app_client, _session_loop, committed_conn, tenant_id) -> None:
     """All inserts + counter increment in one transaction."""
-    aid = _active_agent(_session_loop, conn, tenant_id)
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
 
     r = _call(_session_loop, app_client.post("/v1/remember", json={"memories": [
@@ -70,35 +71,35 @@ def test_remember_batch_atomicity(app_client, _session_loop, conn, tenant_id) ->
     assert r.status_code == 200
     assert len(r.json()["ids"]) == 3
 
-    count = _session_loop.run_until_complete(conn.fetchval(
+    count = committed_conn.fetchval(
         "SELECT COUNT(*) FROM hindsight_memories WHERE agent_id = $1", aid
-    ))
+    )
     assert count == 3
 
-    counter = _session_loop.run_until_complete(conn.fetchval(
+    counter = committed_conn.fetchval(
         "SELECT reflection_counter FROM auth.agents WHERE id = $1", aid
-    ))
+    )
     assert counter == 2  # only episodic memories increment counter
 
 
-def test_remember_entities_extracted(app_client, _session_loop, conn, tenant_id) -> None:
-    aid = _active_agent(_session_loop, conn, tenant_id)
+def test_remember_entities_extracted(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(_session_loop, app_client.post("/v1/remember", json={"memories": [
         {"type": "decision", "content": "chose PostgreSQL for the database"}
     ]}, headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}))
     assert r.status_code == 200
 
-    row = _session_loop.run_until_complete(conn.fetchrow(
+    row = committed_conn.fetchval(
         "SELECT entities FROM hindsight_memories WHERE agent_id = $1", aid
-    ))
+    )
     assert row is not None
-    assert isinstance(json.loads(row["entities"]), list)
+    assert isinstance(json.loads(row), list)
 
 
 # ── remember-org ──────────────────────────────────────────────────────────────
 
-def test_remember_org_handoff(app_client, _session_loop, conn, tenant_id) -> None:
-    aid = _active_agent(_session_loop, conn, tenant_id)
+def test_remember_org_handoff(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(_session_loop, app_client.post("/v1/remember-org", json={
         "type": "handoff", "title": "Completed auth", "content": "Done",
     }, headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}))
@@ -106,8 +107,8 @@ def test_remember_org_handoff(app_client, _session_loop, conn, tenant_id) -> Non
     assert "id" in r.json()
 
 
-def test_remember_org_process_requires_chief(app_client, _session_loop, conn, tenant_id) -> None:
-    aid = _active_agent(_session_loop, conn, tenant_id)  # engineer
+def test_remember_org_process_requires_chief(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)  # engineer
     r = _call(_session_loop, app_client.post("/v1/remember-org", json={
         "type": "process", "title": "Deploy", "content": "How we deploy",
     }, headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}))
@@ -140,8 +141,8 @@ def test_recall_invalid_scope_422(app_client, _session_loop) -> None:
     assert r.status_code == 422
 
 
-def test_recall_returns_results(app_client, _session_loop, conn, tenant_id) -> None:
-    aid = _active_agent(_session_loop, conn, tenant_id)
+def test_recall_returns_results(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
 
     _call(_session_loop, app_client.post("/v1/remember", json={"memories": [
@@ -155,8 +156,8 @@ def test_recall_returns_results(app_client, _session_loop, conn, tenant_id) -> N
     assert "results" in r.json()
 
 
-def test_recall_entities_filter(app_client, _session_loop, conn, tenant_id) -> None:
-    aid = _active_agent(_session_loop, conn, tenant_id)
+def test_recall_entities_filter(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
 
     _call(_session_loop, app_client.post("/v1/remember", json={"memories": [
@@ -181,8 +182,8 @@ def test_context_rejects_user_auth(app_client, _session_loop, user_headers) -> N
     assert r.status_code == 403
 
 
-def test_context_structure(app_client, _session_loop, conn, tenant_id) -> None:
-    aid = _active_agent(_session_loop, conn, tenant_id)
+def test_context_structure(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(_session_loop, app_client.get("/v1/context",
         headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}))
     assert r.status_code == 200
@@ -195,8 +196,8 @@ def test_context_structure(app_client, _session_loop, conn, tenant_id) -> None:
 
 # ── forget ────────────────────────────────────────────────────────────────────
 
-def test_forget_own_memory(app_client, _session_loop, conn, tenant_id) -> None:
-    aid = _active_agent(_session_loop, conn, tenant_id)
+def test_forget_own_memory(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
 
     r = _call(_session_loop, app_client.post("/v1/remember", json={"memories": [
@@ -208,25 +209,33 @@ def test_forget_own_memory(app_client, _session_loop, conn, tenant_id) -> None:
         json={"id": mem_id}, headers=headers))
     assert r.status_code == 200
 
-    count = _session_loop.run_until_complete(conn.fetchval(
+    count = committed_conn.fetchval(
         "SELECT COUNT(*) FROM hindsight_memories WHERE id = $1", mem_id
-    ))
+    )
     assert count == 0
 
 
 # ── reflect ───────────────────────────────────────────────────────────────────
 
-def test_reflect_supersede_first(app_client, _session_loop, conn, tenant_id) -> None:
-    aid = _active_agent(_session_loop, conn, tenant_id)
+def test_reflect_supersede_first(app_client, _session_loop, committed_conn, tenant_id, _vault_addr) -> None:
+    # Seed LiteLLM key for this tenant in Vault so reflect can proceed
+    import hvac
+    vault = hvac.Client(url=_vault_addr, token=VAULT_TOKEN)
+    vault.secrets.kv.v2.create_or_update_secret(
+        path=f"{tenant_id}/litellm_key", secret={"key": "sk-test-master"}
+    )
+
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
 
     # Existing consolidated memory
     old_id = str(uuid4())
-    _session_loop.run_until_complete(conn.execute("""
+    committed_conn.execute("""
         INSERT INTO hindsight_memories
             (id, tenant_id, agent_id, type, content, importance, is_consolidated)
         VALUES ($1, $2, $3, $4, $5, $6, true)
-    """, old_id, tenant_id, aid, "mental_model", "old model", 0.8))
+    """, old_id, tenant_id, aid, "mental_model", "old model", 0.8)
+    committed_conn.track("hindsight_memories", old_id)
 
     # Write episodic memories
     _call(_session_loop, app_client.post("/v1/remember", json={"memories": [
@@ -238,7 +247,7 @@ def test_reflect_supersede_first(app_client, _session_loop, conn, tenant_id) -> 
     assert "memories_written" in r.json()
 
     # Old memory must be superseded
-    row = _session_loop.run_until_complete(conn.fetchrow(
+    is_consolidated = committed_conn.fetchval(
         "SELECT is_consolidated FROM hindsight_memories WHERE id = $1", old_id
-    ))
-    assert row["is_consolidated"] is False
+    )
+    assert is_consolidated is False
