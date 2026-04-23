@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 from uuid import UUID
-from uuid import UUID
 
 import httpx
 import yaml
