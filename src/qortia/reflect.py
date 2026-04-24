@@ -305,8 +305,8 @@ async def _embed_single_row(row: dict) -> None:  # type: ignore[type-arg]
         embedding = await _get_embedding(row["text_to_embed"])
         async with get_main_pool().acquire() as conn:
             await conn.execute(
-                f"UPDATE {row['tbl']} SET embedding = $1 WHERE id = $2",
-                embedding, row["id"],
+                f"UPDATE {row['tbl']} SET embedding = $1::vector WHERE id = $2",
+                str(embedding), row["id"],
             )
     except Exception as exc:
         async with get_main_pool().acquire() as conn:
