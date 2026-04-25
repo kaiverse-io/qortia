@@ -9,7 +9,7 @@ import asyncpg
 import pytest
 from httpx import AsyncClient
 
-from tests.integration.conftest import fresh_agent_headers, VAULT_TOKEN
+from tests.integration.conftest import fresh_agent_headers, VAULT_TOKEN, create_active_agent
 
 
 def _call(loop: asyncio.AbstractEventLoop, coro):  # type: ignore[return]
@@ -17,16 +17,7 @@ def _call(loop: asyncio.AbstractEventLoop, coro):  # type: ignore[return]
 
 
 def _active_agent(loop, conn, tenant_id: str) -> str:
-    aid = str(uuid4())
-    conn.execute("""
-        INSERT INTO auth.agents (id, tenant_id, name, role, soul_md, domain_md, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-    """, aid, tenant_id, f"agent-{aid[:8]}", "engineer", "soul",
-        "role: engineer\ndelegation_policy: standard\nchannels:\n  - telegram\n"
-        "allowed_ids:\n  telegram:\n    - \"123\"\nescalate_to: chief\nmodel: brain-sonnet",
-        "active")
-    conn.track("auth.agents", aid)
-    return aid
+    return create_active_agent(conn, tenant_id)
 
 
 # ── remember ──────────────────────────────────────────────────────────────────
