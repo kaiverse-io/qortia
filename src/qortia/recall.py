@@ -50,6 +50,28 @@ def _entity_filter_clause(
     return f"AND entities ?| ${base_param}::text[]", [entities]
 
 
+# ── Type filter helper (parameterised — never interpolated) ──
+
+_VALID_MEMORY_TYPES: frozenset[str] = frozenset(
+    {"episodic", "experiential", "mental_model", "decision", "lesson"}
+)
+
+
+def _type_filter_clause(
+    memory_type: str | None,
+    param: int,
+) -> tuple[str, list]:  # type: ignore[type-arg]
+    """Return a parameterised type filter clause.
+
+    body.type is a Pydantic Literal — already validated — but we never
+    interpolate user-supplied strings into SQL. Defence-in-depth whitelist
+    ensures the pattern is safe even if validation is relaxed upstream.
+    """
+    if not memory_type or memory_type not in _VALID_MEMORY_TYPES:
+        return "", []
+    return f"AND type = ${param}", [memory_type]
+
+
 # ── Result builder ───────────────────────────────────────────
 
 def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
@@ -153,8 +175,11 @@ async def _recall_episodic(body: RecallRequest, agent: AgentIdentity) -> list[Re
 # ── Full hybrid pipeline ─────────────────────────────────────
 
 async def _bm25_private(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
-    entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=4)
-    type_clause = f"AND type = '{body.type}'" if body.type else ""
+    # type param is $3; entity param shifts to $4 when type filter is active
+    type_clause, type_params = _type_filter_clause(body.type, param=3)
+    entity_clause, entity_params = _entity_filter_clause(
+        body.entities, base_param=3 + len(type_params) + 1
+    )
     async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         rows = await conn.fetch(f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
@@ -165,13 +190,16 @@ async def _bm25_private(body: RecallRequest, agent: AgentIdentity) -> list[Recal
               {type_clause}
               {entity_clause}
             ORDER BY rank DESC LIMIT 20
-        """, body.query, agent.agent_id, *entity_params)
+        """, body.query, agent.agent_id, *type_params, *entity_params)
     return [_to_result(dict(r), "private") for r in rows]
 
 
 async def _vector_private(body: RecallRequest, agent: AgentIdentity, qe: list[float]) -> list[RecallResult]:
-    entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    type_clause = f"AND type = '{body.type}'" if body.type else ""
+    # type param is $3; entity param shifts to $4 when type filter is active
+    type_clause, type_params = _type_filter_clause(body.type, param=3)
+    entity_clause, entity_params = _entity_filter_clause(
+        body.entities, base_param=3 + len(type_params) + 1
+    )
     async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         rows = await conn.fetch(f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
@@ -182,7 +210,7 @@ async def _vector_private(body: RecallRequest, agent: AgentIdentity, qe: list[fl
               {type_clause}
               {entity_clause}
             ORDER BY embedding <=> $1::vector LIMIT 20
-        """, qe, agent.agent_id, *entity_params)
+        """, qe, agent.agent_id, *type_params, *entity_params)
     return [_to_result(dict(r), "private") for r in rows]
 
 
