@@ -2,6 +2,7 @@
 Unit tests — Qortia Pydantic models (Parts 11, 13)
 Pure validation, no I/O.
 """
+
 import pytest
 from pydantic import ValidationError
 
@@ -15,8 +16,15 @@ from app.qortia.models import (
 
 # ── IMPORTANCE dict ──────────────────────────────────────────
 
+
 def test_importance_covers_all_types() -> None:
-    assert set(IMPORTANCE.keys()) == {"episodic", "experiential", "mental_model", "decision", "lesson"}
+    assert set(IMPORTANCE.keys()) == {
+        "episodic",
+        "experiential",
+        "mental_model",
+        "decision",
+        "lesson",
+    }
 
 
 def test_importance_values_in_range() -> None:
@@ -33,6 +41,7 @@ def test_importance_ordering() -> None:
 
 
 # ── MemoryItem ───────────────────────────────────────────────
+
 
 def test_memory_item_valid() -> None:
     item = MemoryItem(type="episodic", content="something happened")
@@ -77,20 +86,24 @@ def test_memory_item_no_extra_fields() -> None:
 
 # ── RememberRequest ──────────────────────────────────────────
 
+
 def test_remember_request_empty_array_rejected() -> None:
     with pytest.raises(ValidationError, match="empty"):
         RememberRequest(memories=[])
 
 
 def test_remember_request_valid_batch() -> None:
-    req = RememberRequest(memories=[
-        MemoryItem(type="episodic", content="a"),
-        MemoryItem(type="lesson", content="b"),
-    ])
+    req = RememberRequest(
+        memories=[
+            MemoryItem(type="episodic", content="a"),
+            MemoryItem(type="lesson", content="b"),
+        ]
+    )
     assert len(req.memories) == 2
 
 
 # ── RecallRequest ────────────────────────────────────────────
+
 
 def test_recall_request_defaults() -> None:
     req = RecallRequest(query="what happened")

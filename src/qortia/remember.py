@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncpg
 import hashlib
 import json
 import logging
@@ -28,10 +29,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def assert_agent_active(agent_id: UUID, tenant_id: UUID, conn) -> None:  # type: ignore[type-arg]
+async def assert_agent_active(
+    agent_id: UUID, tenant_id: UUID, conn: asyncpg.Connection
+) -> None:
     row = await conn.fetchrow(
         "SELECT status FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-        agent_id, tenant_id,
+        agent_id,
+        tenant_id,
     )
     if row is None or row["status"] != "active":
         raise HTTPException(403, "Agent is not active")
@@ -42,7 +46,9 @@ async def remember(
     body: RememberRequest,
     agent: AgentIdentity = Depends(require_agent),
 ) -> RememberResponse:
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
         ids = []
@@ -55,27 +61,34 @@ async def remember(
                 logger.warning({"event": "ner_extraction_failed", "error": str(exc)})
                 entities = []
 
-            row_id = await conn.fetchval("""
+            row_id = await conn.fetchval(
+                """
                 INSERT INTO hindsight_memories
                     (tenant_id, agent_id, type, content, importance,
                      source_task_id, metadata, entities)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING id
             """,
-                agent.tenant_id, agent.agent_id, mem.type,
-                mem.content, IMPORTANCE[mem.type],
+                agent.tenant_id,
+                agent.agent_id,
+                mem.type,
+                mem.content,
+                IMPORTANCE[mem.type],
                 mem.source_task_id,
                 json.dumps(mem.metadata) if mem.metadata else "{}",
                 json.dumps(entities),
             )
             ids.append(str(row_id))
 
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO memory_history
                     (tenant_id, agent_id, operation, target_table, target_id, content_hash, metadata)
                 VALUES ($1, $2, 'remember', 'hindsight_memories', $3, $4, $5)
             """,
-                agent.tenant_id, agent.agent_id, row_id,
+                agent.tenant_id,
+                agent.agent_id,
+                row_id,
                 hashlib.sha256(mem.content.encode()).hexdigest(),
                 json.dumps({"type": mem.type}),
             )
@@ -84,11 +97,15 @@ async def remember(
                 episodic_count += 1
 
         if episodic_count > 0:
-            await conn.execute("""
+            await conn.execute(
+                """
                 UPDATE auth.agents
                 SET reflection_counter = reflection_counter + $1, updated_at = now()
                 WHERE id = $2
-            """, episodic_count, agent.agent_id)
+            """,
+                episodic_count,
+                agent.agent_id,
+            )
 
     return RememberResponse(ids=ids)
 
@@ -98,17 +115,22 @@ async def remember_org(
     body: RememberOrgRequest,
     agent: AgentIdentity = Depends(require_agent),
 ) -> RememberOrgResponse:
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
         # Role check fires second (Q80) — enum check already done by Pydantic
         if body.type in ("process", "decision_log"):
             role = await conn.fetchval(
                 "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-                agent.agent_id, agent.tenant_id,
+                agent.agent_id,
+                agent.tenant_id,
             )
             if role != "chief":
-                raise HTTPException(403, f"Only chief agent can write type '{body.type}'")
+                raise HTTPException(
+                    403, f"Only chief agent can write type '{body.type}'"
+                )
 
         try:
             entities = extract_entities(body.content)
@@ -117,14 +139,22 @@ async def remember_org(
             entities = []
 
         if body.type == "handoff":
-            row_id = await conn.fetchval("""
+            row_id = await conn.fetchval(
+                """
                 INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
-            """, agent.tenant_id, body.type, body.title, body.content,
-                agent.agent_id, json.dumps(entities))
+            """,
+                agent.tenant_id,
+                body.type,
+                body.title,
+                body.content,
+                agent.agent_id,
+                json.dumps(entities),
+            )
         else:
-            row_id = await conn.fetchval("""
+            row_id = await conn.fetchval(
+                """
                 INSERT INTO org_memory
                     (tenant_id, type, title, content, author_id, entities, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, now())
@@ -136,15 +166,24 @@ async def remember_org(
                     entities   = EXCLUDED.entities,
                     updated_at = now()
                 RETURNING id
-            """, agent.tenant_id, body.type, body.title, body.content,
-                agent.agent_id, json.dumps(entities))
+            """,
+                agent.tenant_id,
+                body.type,
+                body.title,
+                body.content,
+                agent.agent_id,
+                json.dumps(entities),
+            )
 
-        await conn.execute("""
+        await conn.execute(
+            """
             INSERT INTO memory_history
                 (tenant_id, agent_id, operation, target_table, target_id, content_hash, metadata)
             VALUES ($1, $2, 'remember_org', 'org_memory', $3, $4, $5)
         """,
-            agent.tenant_id, agent.agent_id, row_id,
+            agent.tenant_id,
+            agent.agent_id,
+            row_id,
             hashlib.sha256(body.content.encode()).hexdigest(),
             json.dumps({"type": body.type, "author_id": str(agent.agent_id)}),
         )
@@ -157,7 +196,9 @@ async def forget(
     body: ForgetRequest,
     agent: AgentIdentity = Depends(require_agent),
 ) -> ForgetResponse:
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
         hm = await conn.fetchrow(
@@ -179,6 +220,9 @@ async def forget(
                 raise HTTPException(403, "Cannot delete another agent's memory")
             table, row, content = "hindsight_memories", hm, hm["content"]
         else:
+            assert (
+                om is not None
+            )  # guarded by `if hm is None and om is None` raise above
             mem_type = om["type"]
             if mem_type in ("org_chart", "weekly_summary"):
                 raise HTTPException(403, f"Cannot delete type '{mem_type}'")
@@ -187,7 +231,8 @@ async def forget(
             if mem_type in ("process", "decision_log"):
                 role = await conn.fetchval(
                     "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-                    agent.agent_id, agent.tenant_id,
+                    agent.agent_id,
+                    agent.tenant_id,
                 )
                 if role != "chief":
                     raise HTTPException(403, f"Only chief can delete type '{mem_type}'")
@@ -195,13 +240,18 @@ async def forget(
 
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         await conn.execute(f"DELETE FROM {table} WHERE id = $1", row["id"])
-        await conn.execute("""
+        await conn.execute(
+            """
             INSERT INTO memory_history
                 (tenant_id, agent_id, operation, target_table, target_id, content_hash, metadata)
             VALUES ($1, $2, 'forget', $3, $4, $5, $6)
         """,
-            agent.tenant_id, agent.agent_id, table, row["id"],
-            content_hash, json.dumps({"type": row["type"]}),
+            agent.tenant_id,
+            agent.agent_id,
+            table,
+            row["id"],
+            content_hash,
+            json.dumps({"type": row["type"]}),
         )
 
     return ForgetResponse(id=str(row["id"]))
@@ -209,7 +259,9 @@ async def forget(
 
 @router.get("/v1/context", response_model=ContextResponse)
 async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextResponse:
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
         org_chart = await conn.fetch(
@@ -224,30 +276,53 @@ async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextR
         ws = await conn.fetchrow(
             "SELECT title, content FROM org_memory WHERE type = 'weekly_summary' ORDER BY created_at DESC LIMIT 1"
         )
-        mental_models = await conn.fetch("""
+        mental_models = await conn.fetch(
+            """
             SELECT content, importance FROM hindsight_memories
             WHERE agent_id = $1 AND type = 'mental_model' AND is_consolidated = true
             ORDER BY importance DESC LIMIT 20
-        """, agent.agent_id)
-        decisions = await conn.fetch("""
+        """,
+            agent.agent_id,
+        )
+        decisions = await conn.fetch(
+            """
             SELECT content FROM hindsight_memories
             WHERE agent_id = $1 AND type = 'decision'
             ORDER BY created_at DESC LIMIT 15
-        """, agent.agent_id)
-        lessons = await conn.fetch("""
+        """,
+            agent.agent_id,
+        )
+        lessons = await conn.fetch(
+            """
             SELECT content, importance FROM hindsight_memories
             WHERE agent_id = $1 AND type = 'lesson' AND is_consolidated = true
             ORDER BY importance DESC LIMIT 20
-        """, agent.agent_id)
+        """,
+            agent.agent_id,
+        )
 
     return ContextResponse(
-        org_chart=[MemoryEntry(title=r["title"], content=r["content"]) for r in org_chart],
-        processes=[MemoryEntry(title=r["title"], content=r["content"]) for r in processes],
-        handoffs=[MemoryEntry(title=r["title"], content=r["content"]) for r in handoffs],
-        weekly_summary=MemoryEntry(title=ws["title"], content=ws["content"]) if ws else None,
+        org_chart=[
+            MemoryEntry(title=r["title"], content=r["content"]) for r in org_chart
+        ],
+        processes=[
+            MemoryEntry(title=r["title"], content=r["content"]) for r in processes
+        ],
+        handoffs=[
+            MemoryEntry(title=r["title"], content=r["content"]) for r in handoffs
+        ],
+        weekly_summary=MemoryEntry(title=ws["title"], content=ws["content"])
+        if ws
+        else None,
         memories=ContextMemories(
-            mental_models=[MemoryEntry(content=r["content"], importance=r["importance"]) for r in mental_models],
+            mental_models=[
+                MemoryEntry(content=r["content"], importance=r["importance"])
+                for r in mental_models
+            ],
             decisions=[MemoryEntry(content=r["content"]) for r in decisions],
-            lessons=[MemoryEntry(content=r["content"], importance=r["importance"]) for r in lessons],
+            lessons=[
+                MemoryEntry(content=r["content"], importance=r["importance"])
+                for r in lessons
+            ],
         ),
     )

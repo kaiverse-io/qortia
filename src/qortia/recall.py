@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
@@ -26,6 +26,7 @@ RRF_K = 60
 
 # ── Dynamic importance (Q95) ─────────────────────────────────
 
+
 def dynamic_importance(
     base_importance: float,
     recall_count: int,
@@ -40,6 +41,7 @@ def dynamic_importance(
 
 
 # ── Entity filter helper ─────────────────────────────────────
+
 
 def _entity_filter_clause(
     entities: list[str] | None,
@@ -74,6 +76,7 @@ def _type_filter_clause(
 
 # ── Result builder ───────────────────────────────────────────
 
+
 def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
     r = RecallResult(
         id=str(row["id"]),
@@ -91,6 +94,7 @@ def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
 
 # ── Embed query ──────────────────────────────────────────────
 
+
 async def _embed_query(query: str, tenant_id: UUID) -> list[float] | None:
     try:
         litellm_key = await get_litellm_key(str(tenant_id))
@@ -101,7 +105,7 @@ async def _embed_query(query: str, tenant_id: UUID) -> list[float] | None:
             timeout=10.0,
         )
         resp.raise_for_status()
-        return resp.json()["data"][0]["embedding"]
+        return resp.json()["data"][0]["embedding"]  # type: ignore[no-any-return]
     except Exception as exc:
         logger.warning({"event": "recall_embed_failed", "error": str(exc)})
         return None
@@ -109,12 +113,18 @@ async def _embed_query(query: str, tenant_id: UUID) -> list[float] | None:
 
 # ── Type-routed strategies ───────────────────────────────────
 
-async def _recall_decisions(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
+
+async def _recall_decisions(
+    body: RecallRequest, agent: AgentIdentity
+) -> list[RecallResult]:
     if body.scope not in ("private", "all"):
         return []
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch(f"""
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
                    ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) AS rank
             FROM hindsight_memories
@@ -124,19 +134,28 @@ async def _recall_decisions(body: RecallRequest, agent: AgentIdentity) -> list[R
               {entity_clause}
             ORDER BY created_at DESC, rank DESC
             LIMIT 10
-        """, body.query, agent.agent_id, *entity_params)
+        """,
+            body.query,
+            agent.agent_id,
+            *entity_params,
+        )
     return [_to_result(dict(r), "private") for r in rows]
 
 
-async def _recall_lessons(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
+async def _recall_lessons(
+    body: RecallRequest, agent: AgentIdentity
+) -> list[RecallResult]:
     if body.scope not in ("private", "all"):
         return []
     query_embedding = await _embed_query(body.query, agent.tenant_id)
     if query_embedding is None:
         return []
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch(f"""
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
                    1 - (embedding <=> $1::vector) AS score
             FROM hindsight_memories
@@ -146,16 +165,27 @@ async def _recall_lessons(body: RecallRequest, agent: AgentIdentity) -> list[Rec
               {entity_clause}
             ORDER BY embedding <=> $1::vector
             LIMIT 10
-        """, query_embedding, agent.agent_id, *entity_params)
-    return [_to_result(dict(r), "private") for r in rows if (r.get("score") or 0) >= 0.35]
+        """,
+            query_embedding,
+            agent.agent_id,
+            *entity_params,
+        )
+    return [
+        _to_result(dict(r), "private") for r in rows if (r.get("score") or 0) >= 0.35
+    ]
 
 
-async def _recall_episodic(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
+async def _recall_episodic(
+    body: RecallRequest, agent: AgentIdentity
+) -> list[RecallResult]:
     if body.scope not in ("private", "all"):
         return []
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch(f"""
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
                    ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) AS rank
             FROM hindsight_memories
@@ -168,20 +198,30 @@ async def _recall_episodic(body: RecallRequest, agent: AgentIdentity) -> list[Re
               {entity_clause}
             ORDER BY created_at DESC, rank DESC
             LIMIT 10
-        """, body.query, agent.agent_id, *entity_params)
+        """,
+            body.query,
+            agent.agent_id,
+            *entity_params,
+        )
     return [_to_result(dict(r), "private") for r in rows]
 
 
 # ── Full hybrid pipeline ─────────────────────────────────────
 
-async def _bm25_private(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
+
+async def _bm25_private(
+    body: RecallRequest, agent: AgentIdentity
+) -> list[RecallResult]:
     # type param is $3; entity param shifts to $4 when type filter is active
     type_clause, type_params = _type_filter_clause(body.type, param=3)
     entity_clause, entity_params = _entity_filter_clause(
         body.entities, base_param=3 + len(type_params) + 1
     )
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch(f"""
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
                    ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) AS rank
             FROM hindsight_memories
@@ -190,18 +230,28 @@ async def _bm25_private(body: RecallRequest, agent: AgentIdentity) -> list[Recal
               {type_clause}
               {entity_clause}
             ORDER BY rank DESC LIMIT 20
-        """, body.query, agent.agent_id, *type_params, *entity_params)
+        """,
+            body.query,
+            agent.agent_id,
+            *type_params,
+            *entity_params,
+        )
     return [_to_result(dict(r), "private") for r in rows]
 
 
-async def _vector_private(body: RecallRequest, agent: AgentIdentity, qe: list[float]) -> list[RecallResult]:
+async def _vector_private(
+    body: RecallRequest, agent: AgentIdentity, qe: list[float]
+) -> list[RecallResult]:
     # type param is $3; entity param shifts to $4 when type filter is active
     type_clause, type_params = _type_filter_clause(body.type, param=3)
     entity_clause, entity_params = _entity_filter_clause(
         body.entities, base_param=3 + len(type_params) + 1
     )
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch(f"""
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
                    1 - (embedding <=> $1::vector) AS score
             FROM hindsight_memories
@@ -210,14 +260,22 @@ async def _vector_private(body: RecallRequest, agent: AgentIdentity, qe: list[fl
               {type_clause}
               {entity_clause}
             ORDER BY embedding <=> $1::vector LIMIT 20
-        """, qe, agent.agent_id, *type_params, *entity_params)
+        """,
+            qe,
+            agent.agent_id,
+            *type_params,
+            *entity_params,
+        )
     return [_to_result(dict(r), "private") for r in rows]
 
 
 async def _bm25_org(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch(f"""
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            f"""
             SELECT id, type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
                    ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) AS rank
@@ -226,14 +284,23 @@ async def _bm25_org(body: RecallRequest, agent: AgentIdentity) -> list[RecallRes
               AND content_tsv @@ plainto_tsquery('english', $1)
               {entity_clause}
             ORDER BY rank DESC LIMIT 10
-        """, body.query, agent.tenant_id, *entity_params)
+        """,
+            body.query,
+            agent.tenant_id,
+            *entity_params,
+        )
     return [_to_result(dict(r), "org") for r in rows]
 
 
-async def _vector_org(body: RecallRequest, agent: AgentIdentity, qe: list[float]) -> list[RecallResult]:
+async def _vector_org(
+    body: RecallRequest, agent: AgentIdentity, qe: list[float]
+) -> list[RecallResult]:
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch(f"""
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            f"""
             SELECT id, type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
                    1 - (embedding <=> $1::vector) AS score
@@ -242,13 +309,22 @@ async def _vector_org(body: RecallRequest, agent: AgentIdentity, qe: list[float]
               AND embedding IS NOT NULL
               {entity_clause}
             ORDER BY embedding <=> $1::vector LIMIT 10
-        """, qe, agent.tenant_id, *entity_params)
+        """,
+            qe,
+            agent.tenant_id,
+            *entity_params,
+        )
     return [_to_result(dict(r), "org") for r in rows]
 
 
-async def _bm25_knowledge(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch("""
+async def _bm25_knowledge(
+    body: RecallRequest, agent: AgentIdentity
+) -> list[RecallResult]:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            """
             SELECT id, 'knowledge' AS type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
                    ts_rank_cd(index_tsv, plainto_tsquery('english', $1)) AS rank
@@ -256,13 +332,21 @@ async def _bm25_knowledge(body: RecallRequest, agent: AgentIdentity) -> list[Rec
             WHERE tenant_id = $2
               AND index_tsv @@ plainto_tsquery('english', $1)
             ORDER BY rank DESC LIMIT 16
-        """, body.query, agent.tenant_id)
+        """,
+            body.query,
+            agent.tenant_id,
+        )
     return [_to_result(dict(r), "knowledge") for r in rows]
 
 
-async def _vector_knowledge(body: RecallRequest, agent: AgentIdentity, qe: list[float]) -> list[RecallResult]:
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        rows = await conn.fetch("""
+async def _vector_knowledge(
+    body: RecallRequest, agent: AgentIdentity, qe: list[float]
+) -> list[RecallResult]:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        rows = await conn.fetch(
+            """
             SELECT id, 'knowledge' AS type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
                    1 - (embedding <=> $1::vector) AS score
@@ -270,7 +354,10 @@ async def _vector_knowledge(body: RecallRequest, agent: AgentIdentity, qe: list[
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
             ORDER BY embedding <=> $1::vector LIMIT 16
-        """, qe, agent.tenant_id)
+        """,
+            qe,
+            agent.tenant_id,
+        )
     results = []
     for r in rows:
         result = _to_result(dict(r), "knowledge")
@@ -280,6 +367,7 @@ async def _vector_knowledge(body: RecallRequest, agent: AgentIdentity, qe: list[
 
 
 # ── RRF fusion ───────────────────────────────────────────────
+
 
 def _rrf_fuse(results: list[RecallResult]) -> list[RecallResult]:
     if not results:
@@ -309,13 +397,14 @@ def _rrf_fuse(results: list[RecallResult]) -> list[RecallResult]:
 
 # ── MMR ──────────────────────────────────────────────────────
 
+
 def _cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     mag_a = sum(x * x for x in a) ** 0.5
     mag_b = sum(x * x for x in b) ** 0.5
     if mag_a == 0 or mag_b == 0:
         return 0.0
-    return dot / (mag_a * mag_b)
+    return dot / (mag_a * mag_b)  # type: ignore[no-any-return]
 
 
 def _mmr(
@@ -345,10 +434,15 @@ def _mmr(
             if not candidate._embedding:
                 continue
             relevance = _cosine(query_embedding, candidate._embedding)
-            redundancy = max(
-                _cosine(candidate._embedding, s._embedding)
-                for s in selected if s._embedding
-            ) if selected else 0.0
+            redundancy = (
+                max(
+                    _cosine(candidate._embedding, s._embedding)
+                    for s in selected
+                    if s._embedding
+                )
+                if selected
+                else 0.0
+            )
             if redundancy >= dedup_threshold:
                 continue
             score = lambda_ * relevance - (1 - lambda_) * redundancy
@@ -366,6 +460,7 @@ def _mmr(
 
 # ── LLM re-rank ──────────────────────────────────────────────
 
+
 async def _llm_rerank(
     query: str,
     results: list[RecallResult],
@@ -377,9 +472,12 @@ async def _llm_rerank(
         async with get_main_pool().acquire() as conn:
             domain_md_raw = await conn.fetchval(
                 "SELECT domain_md FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-                agent.agent_id, agent.tenant_id,
+                agent.agent_id,
+                agent.tenant_id,
             )
-        model = yaml.safe_load(domain_md_raw).get("model", "anthropic/claude-3-haiku-20240307")
+        model = yaml.safe_load(domain_md_raw).get(
+            "model", "anthropic/claude-3-haiku-20240307"
+        )
         litellm_key = await get_litellm_key(str(agent.tenant_id))
 
         numbered = "\n".join(
@@ -411,13 +509,16 @@ async def _llm_rerank(
         usage = resp.json().get("usage", {})
         if usage:
             from app.qortia.reflect import _record_llm_cost
-            asyncio.create_task(_record_llm_cost(
-                agent_id=agent.agent_id,
-                tenant_id=agent.tenant_id,
-                model=model,
-                tokens_in=usage.get("prompt_tokens", 0),
-                tokens_out=usage.get("completion_tokens", 0),
-            ))
+
+            asyncio.create_task(
+                _record_llm_cost(
+                    agent_id=agent.agent_id,
+                    tenant_id=agent.tenant_id,
+                    model=model,
+                    tokens_in=usage.get("prompt_tokens", 0),
+                    tokens_out=usage.get("completion_tokens", 0),
+                )
+            )
 
         return reranked
     except Exception as exc:
@@ -427,29 +528,36 @@ async def _llm_rerank(
 
 # ── Access tracking ──────────────────────────────────────────
 
+
 async def _record_recall_access(results: list[RecallResult]) -> None:
     by_table: dict[str, list[str]] = defaultdict(list)
     for r in results:
         table = (
-            "hindsight_memories" if r.scope == "private"
-            else "org_memory" if r.scope == "org"
+            "hindsight_memories"
+            if r.scope == "private"
+            else "org_memory"
+            if r.scope == "org"
             else "org_knowledge"
         )
         by_table[table].append(r.id)
     try:
         async with get_main_pool().acquire() as conn:
             for table, ids in by_table.items():
-                await conn.execute(f"""
+                await conn.execute(
+                    f"""
                     UPDATE {table}
                     SET recall_count = recall_count + 1,
                         last_recalled_at = now()
                     WHERE id = ANY($1::uuid[])
-                """, ids)
+                """,
+                    ids,
+                )
     except Exception as exc:
         logger.warning({"event": "recall_access_tracking_failed", "error": str(exc)})
 
 
 # ── POST /v1/recall ──────────────────────────────────────────
+
 
 @router.post("/v1/recall", response_model=RecallResponse)
 async def recall(
@@ -457,7 +565,10 @@ async def recall(
     agent: AgentIdentity = Depends(require_agent),
 ) -> RecallResponse:
     from app.qortia.remember import assert_agent_active
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
     results: list[RecallResult] = []
@@ -497,7 +608,7 @@ async def recall(
             if isinstance(rs, Exception):
                 logger.warning({"event": "recall_search_error", "error": str(rs)})
                 continue
-            for r in rs:
+            for r in list(rs):  # type: ignore[arg-type]
                 if r.scope == "knowledge":
                     knowledge_candidates.append(r)
                 else:

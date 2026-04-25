@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -11,11 +10,11 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
 # ── remember ────────────────────────────────────────────────
 
 IMPORTANCE: dict[str, float] = {
-    "episodic":     0.3,
+    "episodic": 0.3,
     "experiential": 0.6,
     "mental_model": 0.8,
-    "decision":     0.9,
-    "lesson":       0.95,
+    "decision": 0.9,
+    "lesson": 0.95,
 }
 
 
@@ -59,6 +58,7 @@ class RememberResponse(BaseModel):
 
 # ── remember-org ─────────────────────────────────────────────
 
+
 class RememberOrgRequest(BaseModel):
     type: Literal["handoff", "process", "decision_log"]
     title: str
@@ -71,6 +71,7 @@ class RememberOrgResponse(BaseModel):
 
 # ── forget ───────────────────────────────────────────────────
 
+
 class ForgetRequest(BaseModel):
     id: UUID
 
@@ -80,6 +81,7 @@ class ForgetResponse(BaseModel):
 
 
 # ── context ──────────────────────────────────────────────────
+
 
 class MemoryEntry(BaseModel):
     title: str | None = None
@@ -103,6 +105,7 @@ class ContextResponse(BaseModel):
 
 # ── reflect ──────────────────────────────────────────────────
 
+
 class ReflectResponse(BaseModel):
     memories_written: int
     reflection_counter: int
@@ -110,12 +113,13 @@ class ReflectResponse(BaseModel):
 
 # ── recall ───────────────────────────────────────────────────
 
+
 class RecallRequest(BaseModel):
     query: str
     scope: Literal["private", "org", "knowledge", "all"] = "all"
-    type: Literal[
-        "episodic", "experiential", "mental_model", "decision", "lesson"
-    ] | None = None
+    type: (
+        Literal["episodic", "experiential", "mental_model", "decision", "lesson"] | None
+    ) = None
     rerank: bool = False
     entities: list[str] | None = None
 
@@ -160,6 +164,7 @@ class RecallResponse(BaseModel):
 
 
 # ── knowledge ────────────────────────────────────────────────
+
 
 class KnowledgeIngestRequest(BaseModel):
     source_type: Literal["file", "url", "transcript", "note"]

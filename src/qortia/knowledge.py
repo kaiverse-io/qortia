@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import asyncpg
 import datetime
 import hashlib
 import json
 import logging
 import re
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,19 +23,24 @@ logger = logging.getLogger(__name__)
 
 _nlp = None
 
-ENTITY_LABELS = frozenset({"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"})
-HEADING_PATTERN = re.compile(r'^(#{2,3})\s+(.+)$', re.MULTILINE)
+ENTITY_LABELS = frozenset(
+    {"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"}
+)
+HEADING_PATTERN = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
 
 
 def load_spacy_model() -> None:
     global _nlp
     import spacy
+
     _nlp = spacy.load("en_core_web_sm")
     logger.info({"event": "spacy_model_loaded", "model": "en_core_web_sm"})
 
 
-def get_nlp():  # type: ignore[return]
-    assert _nlp is not None, "spaCy model not loaded — call load_spacy_model() at startup"
+def get_nlp() -> object:  # spaCy Language — avoid hard dep on spacy type stubs
+    assert (
+        _nlp is not None
+    ), "spaCy model not loaded — call load_spacy_model() at startup"
     return _nlp
 
 
@@ -42,28 +49,29 @@ def extract_entities(text: str) -> list[str]:
     Extract NER entities. Best-effort — caller wraps in try/except and falls back to [].
     Reuses the already-loaded get_nlp() instance.
     """
-    doc = get_nlp()(text)
-    return list(dict.fromkeys(
-        ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS
-    ))[:20]
+    doc = get_nlp()(text)  # type: ignore[operator]
+    return list(
+        dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS)
+    )[:20]
 
 
 # ── Section splitting ────────────────────────────────────────
+
 
 def estimate_tokens(text: str) -> int:
     return int(len(text.split()) * 1.3)
 
 
-def split_into_sections(content: str) -> list[dict]:  # type: ignore[type-arg]
+def split_into_sections(content: str) -> list[dict[str, str]]:
     matches = list(HEADING_PATTERN.finditer(content))
 
+    sections: list[dict[str, str]] = []
+
     if not matches:
-        sections = _paragraph_split(content, title="")
-        return [s for s in sections if estimate_tokens(s["text"]) >= 50]
+        raw = _paragraph_split(content, title="")
+        return [s for s in raw if estimate_tokens(s["text"]) >= 50]
 
-    sections: list[dict] = []  # type: ignore[type-arg]
-
-    pre = content[:matches[0].start()].strip()
+    pre = content[: matches[0].start()].strip()
     if pre and estimate_tokens(pre) >= 50:
         sections.append({"heading": "Introduction", "text": pre})
 
@@ -83,7 +91,7 @@ def split_into_sections(content: str) -> list[dict]:  # type: ignore[type-arg]
     return sections
 
 
-def _paragraph_split(text: str, title: str) -> list[dict]:  # type: ignore[type-arg]
+def _paragraph_split(text: str, title: str) -> list[dict[str, str]]:
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     chunks: list[dict] = []  # type: ignore[type-arg]
     current = ""
@@ -101,22 +109,29 @@ def _paragraph_split(text: str, title: str) -> list[dict]:  # type: ignore[type-
 
 # ── PageIndex extraction ─────────────────────────────────────
 
-def extract_index_fields(heading: str, text: str) -> dict:  # type: ignore[type-arg]
+
+def extract_index_fields(heading: str, text: str) -> dict[str, Any]:
     nlp = get_nlp()
-    doc = nlp(text)
+    doc = nlp(text)  # type: ignore[operator]
     sentences = list(doc.sents)
 
     summary = " ".join(s.text.strip() for s in sentences[:2])
 
-    entities = list(dict.fromkeys(
-        ent.text for ent in doc.ents
-        if ent.label_ in ("ORG", "PERSON", "PRODUCT", "GPE", "TECH", "NORP", "FAC")
-    ))[:10]
+    entities = list(
+        dict.fromkeys(
+            ent.text
+            for ent in doc.ents
+            if ent.label_ in ("ORG", "PERSON", "PRODUCT", "GPE", "TECH", "NORP", "FAC")
+        )
+    )[:10]
 
-    noun_chunks = list(dict.fromkeys(
-        chunk.text.lower() for chunk in doc.noun_chunks
-        if len(chunk.text.split()) <= 4
-    ))[:10]
+    noun_chunks = list(
+        dict.fromkeys(
+            chunk.text.lower()
+            for chunk in doc.noun_chunks
+            if len(chunk.text.split()) <= 4
+        )
+    )[:10]
     questions = ([heading] + noun_chunks) if heading else noun_chunks
 
     return {
@@ -131,10 +146,13 @@ def extract_index_fields(heading: str, text: str) -> dict:  # type: ignore[type-
 router = APIRouter()
 
 
-async def _assert_agent_active(agent_id: UUID, tenant_id: UUID, conn) -> None:  # type: ignore[type-arg]
+async def _assert_agent_active(
+    agent_id: UUID, tenant_id: UUID, conn: asyncpg.Connection
+) -> None:
     row = await conn.fetchrow(
         "SELECT status FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-        agent_id, tenant_id,
+        agent_id,
+        tenant_id,
     )
     if row is None or row["status"] != "active":
         raise HTTPException(403, "Agent is not active")
@@ -145,11 +163,14 @@ async def ingest_knowledge(
     body: KnowledgeIngestRequest,
     agent: AgentIdentity = Depends(require_agent),
 ) -> dict:  # type: ignore[type-arg]
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         await _assert_agent_active(agent.agent_id, agent.tenant_id, conn)
         role = await conn.fetchval(
             "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-            agent.agent_id, agent.tenant_id,
+            agent.agent_id,
+            agent.tenant_id,
         )
         if role != "chief":
             raise HTTPException(403, "Only chief agent can ingest knowledge")
@@ -157,12 +178,18 @@ async def ingest_knowledge(
     sections = split_into_sections(body.content)
     incoming_hashes = [hashlib.sha256(s["text"].encode()).hexdigest() for s in sections]
 
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
-        existing = await conn.fetch("""
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        existing = await conn.fetch(
+            """
             SELECT chunk_index, content_hash FROM org_knowledge
             WHERE tenant_id = $1 AND source_path = $2
             ORDER BY chunk_index ASC
-        """, agent.tenant_id, body.source_path)
+        """,
+            agent.tenant_id,
+            body.source_path,
+        )
 
         existing_hashes = [r["content_hash"] for r in existing]
 
@@ -179,7 +206,8 @@ async def ingest_knowledge(
         if existing:
             await conn.execute(
                 "DELETE FROM org_knowledge WHERE tenant_id = $1 AND source_path = $2",
-                agent.tenant_id, body.source_path,
+                agent.tenant_id,
+                body.source_path,
             )
 
         sections_created = 0
@@ -188,13 +216,18 @@ async def ingest_knowledge(
         for idx, (section, content_hash) in enumerate(zip(sections, incoming_hashes)):
             index_fields = extract_index_fields(section["heading"], section["text"])
 
-            existing_embedding = await conn.fetchval("""
+            existing_embedding = await conn.fetchval(
+                """
                 SELECT embedding FROM org_knowledge
                 WHERE tenant_id = $1 AND content_hash = $2
                 LIMIT 1
-            """, agent.tenant_id, content_hash)
+            """,
+                agent.tenant_id,
+                content_hash,
+            )
 
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO org_knowledge (
                     tenant_id, source_type, source_path, chunk_index,
                     content, content_hash,
@@ -202,8 +235,12 @@ async def ingest_knowledge(
                     embedding, author_id, metadata
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """,
-                agent.tenant_id, body.source_type, body.source_path, idx,
-                section["text"], content_hash,
+                agent.tenant_id,
+                body.source_type,
+                body.source_path,
+                idx,
+                section["text"],
+                content_hash,
                 index_fields["index_summary"],
                 index_fields["index_questions"],
                 index_fields["index_entities"],
@@ -217,17 +254,21 @@ async def ingest_knowledge(
             else:
                 sections_created += 1
 
-        await conn.execute("""
+        await conn.execute(
+            """
             INSERT INTO memory_history
                 (tenant_id, agent_id, operation, target_table, target_id, metadata)
             VALUES ($1, $2, 'knowledge_ingest', 'org_knowledge', NULL, $3)
         """,
-            agent.tenant_id, agent.agent_id,
-            json.dumps({
-                "source_path": body.source_path,
-                "sections_created": sections_created,
-                "sections_deduped": sections_deduped,
-            }),
+            agent.tenant_id,
+            agent.agent_id,
+            json.dumps(
+                {
+                    "source_path": body.source_path,
+                    "sections_created": sections_created,
+                    "sections_deduped": sections_deduped,
+                }
+            ),
         )
 
     return {
@@ -242,28 +283,34 @@ async def delete_knowledge(
     source_path: str,
     agent: AgentIdentity = Depends(require_agent),
 ) -> dict:  # type: ignore[type-arg]
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         await _assert_agent_active(agent.agent_id, agent.tenant_id, conn)
         role = await conn.fetchval(
             "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-            agent.agent_id, agent.tenant_id,
+            agent.agent_id,
+            agent.tenant_id,
         )
         if role != "chief":
             raise HTTPException(403, "Only chief agent can delete knowledge")
 
         result = await conn.execute(
             "DELETE FROM org_knowledge WHERE tenant_id = $1 AND source_path = $2",
-            agent.tenant_id, source_path,
+            agent.tenant_id,
+            source_path,
         )
         chunks_deleted = int(result.split()[-1])
 
-        await conn.execute("""
+        await conn.execute(
+            """
             INSERT INTO memory_history
                 (tenant_id, agent_id, operation, target_table, target_id,
                  content_hash, metadata)
             VALUES ($1, $2, 'knowledge_delete', 'org_knowledge', NULL, NULL, $3)
         """,
-            agent.tenant_id, agent.agent_id,
+            agent.tenant_id,
+            agent.agent_id,
             json.dumps({"source_path": source_path, "chunks_deleted": chunks_deleted}),
         )
 
@@ -271,6 +318,7 @@ async def delete_knowledge(
 
 
 # ── Weekly summary background task ──────────────────────────
+
 
 def build_weekly_summary(handoffs: list[dict]) -> str:  # type: ignore[type-arg]
     parts = []
@@ -294,6 +342,7 @@ async def _run_weekly_summary_cycle() -> None:
         )
 
     import hashlib as _hashlib
+
     for tenant in tenants:
         tenant_id = tenant["id"]
         day_offset = int(_hashlib.md5(str(tenant_id).encode()).hexdigest(), 16) % 7
@@ -312,12 +361,17 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
             if not locked:
                 return
 
-            if last_run_at and (
-                datetime.datetime.now(datetime.timezone.utc) - last_run_at  # type: ignore[operator]
-            ).days < 7:
+            if (
+                last_run_at
+                and (
+                    datetime.datetime.now(datetime.timezone.utc) - last_run_at  # type: ignore[operator]
+                ).days
+                < 7
+            ):
                 return
 
-            handoffs = await conn.fetch("""
+            handoffs = await conn.fetch(
+                """
                 SELECT om.title, om.content, om.created_at, a.name AS agent_name
                 FROM org_memory om
                 LEFT JOIN auth.agents a ON a.id = om.author_id
@@ -325,14 +379,17 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
                   AND om.type = 'handoff'
                   AND om.created_at > now() - interval '7 days'
                 ORDER BY om.created_at DESC
-            """, tenant_id)
+            """,
+                tenant_id,
+            )
 
             if len(handoffs) < 3:
                 return
 
             summary_content = build_weekly_summary(list(handoffs))
 
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities)
                 VALUES ($1, 'weekly_summary', $2, $3, NULL, '[]')
             """,

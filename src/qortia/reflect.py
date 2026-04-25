@@ -44,6 +44,7 @@ def get_litellm_client() -> httpx.AsyncClient:
 
 # ── Cost ledger ─────────────────────────────────────────────
 
+
 async def _record_llm_cost(
     agent_id: UUID,
     tenant_id: UUID,
@@ -63,7 +64,12 @@ async def _record_llm_cost(
                     (tenant_id, agent_id, model, tokens_in, tokens_out, cost_usd)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 """,
-                tenant_id, agent_id, model, tokens_in, tokens_out, cost_usd,
+                tenant_id,
+                agent_id,
+                model,
+                tokens_in,
+                tokens_out,
+                cost_usd,
             )
     except Exception as exc:
         logger.warning({"event": "cost_ledger_write_failed", "error": str(exc)})
@@ -71,33 +77,43 @@ async def _record_llm_cost(
 
 # ── POST /v1/reflect ─────────────────────────────────────────
 
+
 @router.post("/v1/reflect", response_model=ReflectResponse)
 async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectResponse:
     from app.qortia.remember import assert_agent_active
 
     # Fetch data outside the write transaction — no DB lock held during LLM call
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
-        recent = await conn.fetch("""
+        recent = await conn.fetch(
+            """
             SELECT content FROM hindsight_memories
             WHERE agent_id = $1
               AND type IN ('episodic', 'experiential')
               AND created_at > now() - interval '7 days'
             ORDER BY created_at DESC LIMIT 30
-        """, agent.agent_id)
+        """,
+            agent.agent_id,
+        )
 
-        existing = await conn.fetch("""
+        existing = await conn.fetch(
+            """
             SELECT id, type, content FROM hindsight_memories
             WHERE agent_id = $1
               AND type IN ('mental_model', 'lesson')
               AND is_consolidated = true
             ORDER BY importance DESC
-        """, agent.agent_id)
+        """,
+            agent.agent_id,
+        )
 
         domain_md_raw = await conn.fetchval(
             "SELECT domain_md FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-            agent.agent_id, agent.tenant_id,
+            agent.agent_id,
+            agent.tenant_id,
         )
 
     domain = yaml.safe_load(domain_md_raw)
@@ -114,56 +130,77 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
     )
 
     # Write transaction — supersede-first order (Q28, safety-critical)
-    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
         # 6a. SUPERSEDE FIRST — crash here leaves old set intact
         if existing:
-            await conn.execute("""
+            await conn.execute(
+                """
                 UPDATE hindsight_memories
                 SET is_consolidated = false
                 WHERE agent_id = $1
                   AND type IN ('mental_model', 'lesson')
                   AND is_consolidated = true
-            """, agent.agent_id)
+            """,
+                agent.agent_id,
+            )
 
         # 6b. Write new consolidated memories
         new_ids = []
         for mem in new_memories:
             try:
                 from app.qortia.knowledge import extract_entities
+
                 entities = extract_entities(mem["content"])
             except Exception:
                 entities = []
 
-            row_id = await conn.fetchval("""
+            row_id = await conn.fetchval(
+                """
                 INSERT INTO hindsight_memories
                     (tenant_id, agent_id, type, content, importance, is_consolidated, entities)
                 VALUES ($1, $2, $3, $4, $5, true, $6)
                 RETURNING id
             """,
-                agent.tenant_id, agent.agent_id,
-                mem["type"], mem["content"], float(mem["importance"]),
+                agent.tenant_id,
+                agent.agent_id,
+                mem["type"],
+                mem["content"],
+                float(mem["importance"]),
                 json.dumps(entities),
             )
             new_ids.append(row_id)
 
         # 6c. Decrement reflection_counter atomically
-        new_counter = await conn.fetchval("""
+        new_counter = await conn.fetchval(
+            """
             UPDATE auth.agents
             SET reflection_counter = GREATEST(reflection_counter - $1, 0),
                 updated_at = now()
             WHERE id = $2
             RETURNING reflection_counter
-        """, REFLECTION_THRESHOLD, agent.agent_id)
+        """,
+            REFLECTION_THRESHOLD,
+            agent.agent_id,
+        )
 
         # 6d. Audit trail
         for row_id in new_ids:
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO memory_history
                     (tenant_id, agent_id, operation, target_table, target_id, metadata)
                 VALUES ($1, $2, 'reflect', 'hindsight_memories', $3, '{}')
-            """, agent.tenant_id, agent.agent_id, row_id)
+            """,
+                agent.tenant_id,
+                agent.agent_id,
+                row_id,
+            )
 
-    return ReflectResponse(memories_written=len(new_ids), reflection_counter=new_counter)
+    return ReflectResponse(
+        memories_written=len(new_ids), reflection_counter=new_counter
+    )
 
 
 async def _call_litellm_reflect(
@@ -211,22 +248,24 @@ async def _call_litellm_reflect(
     # Record cost — fire-and-forget, non-fatal
     usage = resp.json().get("usage", {})
     if usage:
-        asyncio.create_task(_record_llm_cost(
-            agent_id=agent_id,
-            tenant_id=tenant_id,
-            model=model,
-            tokens_in=usage.get("prompt_tokens", 0),
-            tokens_out=usage.get("completion_tokens", 0),
-        ))
+        asyncio.create_task(
+            _record_llm_cost(
+                agent_id=agent_id,
+                tenant_id=tenant_id,
+                model=model,
+                tokens_in=usage.get("prompt_tokens", 0),
+                tokens_out=usage.get("completion_tokens", 0),
+            )
+        )
 
-    return memories
+    return memories  # type: ignore[no-any-return]
 
 
 def _build_reflect_prompt(recent: list[str], existing: list[dict]) -> str:  # type: ignore[type-arg]
     recent_block = "\n".join(f"- {m}" for m in recent) or "(none)"
-    existing_block = "\n".join(
-        f"- [{m['type']}] {m['content']}" for m in existing
-    ) or "(none)"
+    existing_block = (
+        "\n".join(f"- [{m['type']}] {m['content']}" for m in existing) or "(none)"
+    )
     return f"""You are synthesising an agent's recent experiences into durable mental models and lessons.
 
 Recent episodic and experiential memories (last 7 days):
@@ -254,6 +293,7 @@ Rules:
 
 # ── Embedding worker ─────────────────────────────────────────
 
+
 async def run_embedding_worker() -> None:
     while True:
         await asyncio.sleep(10)
@@ -264,32 +304,41 @@ async def _process_embedding_batch() -> None:
     # Step 1: claim rows outside a long-held transaction
     async with get_main_pool().acquire() as conn:
         async with conn.transaction():
-            hindsight = await conn.fetch("""
+            hindsight = await conn.fetch(
+                """
                 SELECT id, content AS text_to_embed, 'hindsight_memories' AS tbl
                 FROM hindsight_memories
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
                 LIMIT $1
                 FOR UPDATE SKIP LOCKED
-            """, EMBEDDING_BATCH_SIZE)
+            """,
+                EMBEDDING_BATCH_SIZE,
+            )
 
-            org_mem = await conn.fetch("""
+            org_mem = await conn.fetch(
+                """
                 SELECT id, content AS text_to_embed, 'org_memory' AS tbl
                 FROM org_memory
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
                 LIMIT $1
                 FOR UPDATE SKIP LOCKED
-            """, EMBEDDING_BATCH_SIZE)
+            """,
+                EMBEDDING_BATCH_SIZE,
+            )
 
-            org_know = await conn.fetch("""
+            org_know = await conn.fetch(
+                """
                 SELECT id, index_summary AS text_to_embed, 'org_knowledge' AS tbl
                 FROM org_knowledge
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
                 LIMIT $1
                 FOR UPDATE SKIP LOCKED
-            """, EMBEDDING_BATCH_SIZE)
+            """,
+                EMBEDDING_BATCH_SIZE,
+            )
 
             rows = [dict(r) for r in list(hindsight) + list(org_mem) + list(org_know)]
 
@@ -306,7 +355,8 @@ async def _embed_single_row(row: dict) -> None:  # type: ignore[type-arg]
         async with get_main_pool().acquire() as conn:
             await conn.execute(
                 f"UPDATE {row['tbl']} SET embedding = $1::vector WHERE id = $2",
-                str(embedding), row["id"],
+                str(embedding),
+                row["id"],
             )
     except Exception as exc:
         async with get_main_pool().acquire() as conn:
@@ -318,13 +368,15 @@ async def _embed_single_row(row: dict) -> None:  # type: ignore[type-arg]
                 f"SELECT embedding_attempts FROM {row['tbl']} WHERE id = $1", row["id"]
             )
         if attempts and attempts >= 3:
-            logger.warning({
-                "event": "embedding_failed",
-                "table": row["tbl"],
-                "row_id": str(row["id"]),
-                "attempts": attempts,
-                "error": str(exc),
-            })
+            logger.warning(
+                {
+                    "event": "embedding_failed",
+                    "table": row["tbl"],
+                    "row_id": str(row["id"]),
+                    "attempts": attempts,
+                    "error": str(exc),
+                }
+            )
 
 
 async def _get_embedding(text: str) -> list[float]:
@@ -335,4 +387,4 @@ async def _get_embedding(text: str) -> list[float]:
         timeout=30.0,
     )
     resp.raise_for_status()
-    return resp.json()["data"][0]["embedding"]
+    return resp.json()["data"][0]["embedding"]  # type: ignore[no-any-return]
