@@ -1,7 +1,6 @@
 """Qortia API integration tests."""
 from __future__ import annotations
 
-import asyncio
 import json
 from uuid import uuid4
 
@@ -9,11 +8,7 @@ import asyncpg
 import pytest
 from httpx import AsyncClient
 
-from tests.integration.conftest import fresh_agent_headers, VAULT_TOKEN, create_active_agent
-
-
-def _call(loop: asyncio.AbstractEventLoop, coro):  # type: ignore[return]
-    return loop.run_until_complete(coro)
+from tests.integration.conftest import fresh_agent_headers, VAULT_TOKEN, create_active_agent, _call
 
 
 def _active_agent(loop, conn, tenant_id: str) -> str:
