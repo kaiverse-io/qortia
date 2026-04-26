@@ -1168,6 +1168,411 @@
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
       }
+    },
+    {
+      "id": "reh-031",
+      "description": "org memory vector \u2014 semantic paraphrase for handoff content",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "embedding worker multi-tenant fix",
+            "content": "Fixed the embedding worker to group rows by tenant_id and use per-tenant LiteLLM virtual keys. Master key now only used for startup dimension validation."
+          },
+          {
+            "type": "handoff",
+            "title": "LiteLLM gateway upgrade",
+            "content": "Upgraded LiteLLM gateway from v1.82.0 to v1.83.7-stable. No breaking changes to /embeddings or /chat/completions endpoints."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "how the embedding worker handles multiple tenants",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-032",
+      "description": "org memory vector \u2014 semantic paraphrase for security handoff",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "RLS audit automation",
+            "content": "Added audit_rls.py to CI. Script verifies RLS is enabled on all data tables and disabled on all auth.* tables. Runs before integration tests on every PR."
+          },
+          {
+            "type": "handoff",
+            "title": "Kyverno policy update",
+            "content": "Updated Kyverno network policies to restrict egress from agent pods to platform API only. No direct internet access from agent containers."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "automated check that row level security is configured correctly",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-033",
+      "description": "org memory vector \u2014 semantic paraphrase for process handoff",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "ADR process established",
+            "content": "Team agreed: any change that alters agent behaviour (tool interface, memory schema, boot sequence) requires an ADR before implementation. ADR numbers are sequential, never reused. ADR-022 and ADR-029 are retired."
+          },
+          {
+            "type": "handoff",
+            "title": "sprint planning notes",
+            "content": "Sprint 14 planning complete. 8 story points committed. Focus: qortia enhancements Phase 1."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "when does a change require a design decision document",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-034",
+      "description": "org memory vector \u2014 semantic paraphrase for infra handoff",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "canary promotion checklist enforced",
+            "content": "Production deploys now require: staging canary active for 30+ minutes, boot_complete in Loki, at least one successful tool call, no ERROR logs for canary agent_id."
+          },
+          {
+            "type": "handoff",
+            "title": "staging deploy pipeline update",
+            "content": "Updated deploy-staging.yaml to sign images with Cosign and generate CycloneDX SBOMs. Artifacts retained for 90 days."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "requirements before promoting a release to production",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-035",
+      "description": "org memory vector \u2014 semantic paraphrase for observability handoff",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "structured logging standard adopted",
+            "content": "All platform log calls now use dict payloads with an 'event' field. Bare string logging is banned. redact_secrets() must be called before logging any user-provided data."
+          },
+          {
+            "type": "handoff",
+            "title": "Grafana dashboard update",
+            "content": "Added recall latency histogram and embedding worker throughput panels to the Qortia dashboard. Alerts configured for p99 > 400ms."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "how we format log messages in the platform",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-036",
+      "description": "knowledge BM25 \u2014 named entity in index, same-doc different-section hard negative",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/qortia.md",
+            "content": "## Recall Pipeline\n\nThe recall pipeline uses BM25 and vector search fused via RRF. BM25 uses the 'simple' text search configuration for multilingual support. Vector search uses pgvector cosine similarity with a 0.35 minimum score threshold.\n\n## Memory Types\n\nFive memory types are supported: episodic, experiential, mental_model, decision, lesson. Importance is platform-assigned per type and cannot be overridden by the agent."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "BM25 recall pipeline simple configuration",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-037",
+      "description": "knowledge BM25 \u2014 unique token (pgvector), BM25 dominant",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/data-model.md",
+            "content": "## Vector Storage\n\nAll embedding columns use pgvector's vector(768) type. HNSW indexes are created with m=16, ef_construction=64. The embedding model is text-embedding-3-small producing 768-dimensional vectors.\n\n## Connection Pooling\n\nThe platform uses asyncpg with a pool size of 20 connections per worker process."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "pgvector HNSW index configuration",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-038",
+      "description": "knowledge BM25 \u2014 unique token (Flyway), BM25 dominant",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/migrations.md",
+            "content": "## Migration Rules\n\nAll migrations use Flyway with versioned V{N}__description.sql files. Never edit an existing migration \u2014 Flyway validates checksums on startup. New migrations must be created as V{N+1}. Run as qortia_platform role, not superuser.\n\n## RLS Requirements\n\nNew tenant-scoped tables must enable RLS and add a tenant_isolation policy."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "Flyway migration versioning rules",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-039",
+      "description": "knowledge BM25 \u2014 unique token (agent-start.sh), BM25 dominant",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/agent-boot.md",
+            "content": "## Boot Sequence\n\nagent-start.sh implements an 11-step boot sequence. Steps must remain in order \u2014 Vault auth precedes config fetch, config fetch precedes workspace write. New steps insert between existing steps with a STEP N comment. Never reorder existing steps.\n\n## Boot Failure Handling\n\nIf any step fails, the container exits with a boot_failed event logged to Loki with the step name."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "agent-start.sh boot sequence step ordering",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-040",
+      "description": "knowledge BM25 \u2014 unique token (mcp_bridge), BM25 dominant",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/mcp-tools.md",
+            "content": "## Adding a New MCP Tool\n\nTo add a tool to mcp_bridge.py: implement the function, add a case branch to _dispatch_tool(), add a Tool() entry to list_tools(), update AGENTS.md. Tool names are snake_case. No enforcement logic in the bridge \u2014 enforcement belongs in the platform API.\n\n## Tool Retirement\n\nDeprecate first, drain work orders, then remove. Document in an ADR."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "mcp_bridge adding new tool steps",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
     }
   ]
 }
