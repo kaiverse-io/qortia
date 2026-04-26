@@ -773,6 +773,401 @@
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
       }
+    },
+    {
+      "id": "reh-021",
+      "description": "mental model hybrid \u2014 full pipeline, related-but-wrong hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "Agents that accumulate more than 30 episodic memories without a reflection cycle develop context drift \u2014 their tool calls become less precise because the LLM context is dominated by raw events rather than synthesised patterns.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Triggered a reflection cycle after 35 episodic memories. Tool call precision improved in the next session.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "Agents that accumulate more than 30 org memories without a weekly summary develop knowledge fragmentation \u2014 their recall becomes less coherent because the org memory corpus is too large.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "what happens when agents skip reflection for too long",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-022",
+      "description": "mental model hybrid \u2014 architectural pattern, paraphrased query",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "The vault.py boundary invariant: no file outside vault.py may call _vault_client directly. This prevents scattered Vault logic and ensures all error handling is centralised.",
+            "scope": "private"
+          },
+          {
+            "type": "mental_model",
+            "content": "The tenant_transaction invariant: all tenant-scoped DB writes must go through tenant_transaction() to ensure RLS context is set correctly.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "The db.py boundary invariant: no file outside db.py may call asyncpg directly. This prevents scattered connection management.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "rules about accessing the secrets store from application code",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-023",
+      "description": "mental model hybrid \u2014 operational pattern, semantic query",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "Boot failures in agent containers almost always trace to one of three root causes: Vault token expired, runtime.json schema mismatch, or missing capability (CAP_DAC_OVERRIDE). Check Loki for the boot_failed.step field first.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Investigated a boot failure. Root cause was a stale Vault token after a Vault restart.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "Platform startup failures almost always trace to one of three root causes: database connection refused, LiteLLM gateway unreachable, or missing environment variable. Check the platform logs first.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "how to diagnose why an agent container will not start",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-024",
+      "description": "mental model hybrid \u2014 quality pattern, semantic query",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "LLM reranking on recall results with fewer than 2 items adds latency without quality gain. The reranker needs at least 2 candidates to produce a meaningful ordering.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Observed 35-second recall latency spikes on cold-start agents. Root cause was unconditional LLM rerank on single-result sets.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "LLM summarisation on memory sets with fewer than 3 items adds cost without quality gain. The summariser needs at least 3 items to produce a meaningful summary.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "when reranking hurts more than it helps",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-025",
+      "description": "mental model hybrid \u2014 multi-tenancy pattern, semantic query",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "Any finding that allows Tenant A to read data belonging to Tenant B is automatically Critical severity, regardless of exploit complexity. Tenant isolation is the primary security invariant of the platform.",
+            "scope": "private"
+          },
+          {
+            "type": "mental_model",
+            "content": "RLS policies must be enabled on all data tables and disabled on all auth.* tables. The audit_rls.py script enforces this on every PR.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "Any finding that allows User A to read data belonging to User B within the same tenant is High severity. User isolation within a tenant is enforced by application-level checks.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "severity of cross-tenant data access vulnerabilities",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-026",
+      "description": "org memory BM25 \u2014 named entity, same-org different-process hard negative",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "AuthService rate limiting complete",
+            "content": "Completed the rate limiting implementation for AuthService. Token bucket algorithm, Redis backend, 10k req/s sustained. Owner: @alice."
+          },
+          {
+            "type": "handoff",
+            "title": "PaymentService audit complete",
+            "content": "Completed the security audit for PaymentService. Found 2 medium-severity issues. Owner: @bob."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder private memory to satisfy seed_case requirement.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting handoff",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-027",
+      "description": "org memory BM25 \u2014 unique token (qortia-patches), BM25 dominant",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "agent-runtime submodule upgrade",
+            "content": "Upgraded agent-runtime submodule from v0.0.24 to v0.0.25. Rebased qortia-patches branch. Both chown patches survived. Boot sequence verified."
+          },
+          {
+            "type": "handoff",
+            "title": "platform dependency audit",
+            "content": "Audited all platform Python dependencies. Updated floor constraints in pyproject.toml. No breaking changes."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder private memory.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "qortia-patches agent-runtime upgrade",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-028",
+      "description": "org memory BM25 \u2014 process decision, same-topic different-outcome hard negative",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "CI coverage floor policy",
+            "content": "Team agreed: coverage floors are never lowered. If tests are deleted, the floor must be re-evaluated and documented in a PR comment. Violations block merge."
+          },
+          {
+            "type": "handoff",
+            "title": "sprint retrospective",
+            "content": "Retrospective notes: team velocity improved. No blockers. Next sprint focus: qortia enhancements."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder private memory.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "team policy on test coverage thresholds",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-029",
+      "description": "org memory BM25 \u2014 security incident, same-class different-system hard negative",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "Vault token exposure incident",
+            "content": "Incident: Vault token was passed as subprocess argument in boot_configure.py. Exposed in /proc/<pid>/cmdline. Fixed: switched to urllib X-Vault-Token header. ADR-072 updated."
+          },
+          {
+            "type": "handoff",
+            "title": "Q3 security review complete",
+            "content": "Completed Q3 security review. No critical findings. 3 medium findings remediated. Next review scheduled for Q4."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder private memory.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "Vault token subprocess security incident",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-030",
+      "description": "org memory BM25 \u2014 architectural handoff, unique token (tenant_transaction)",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "DB access invariant enforced",
+            "content": "Refactored all qortia modules to use tenant_transaction() for tenant-scoped DB access. Removed all raw SET LOCAL calls. Lint gate added to CI."
+          },
+          {
+            "type": "handoff",
+            "title": "connection pool tuning",
+            "content": "Tuned asyncpg connection pool size to 20 per worker. Reduced connection wait time by 40% under load."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder private memory.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "tenant_transaction refactor handoff",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
     }
   ]
 }
