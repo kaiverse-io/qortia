@@ -3,7 +3,7 @@
   "cases": [
     {
       "id": "reh-001",
-      "description": "episodic temporal — named entity, BM25 dominant",
+      "description": "episodic temporal \u2014 named entity, BM25 dominant",
       "setup": {
         "memories": [
           {
@@ -35,13 +35,15 @@
       },
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
-        "must_contain_in_top_result": ["AuthService"],
+        "must_contain_in_top_result": [
+          "AuthService"
+        ],
         "min_results": 1
       }
     },
     {
       "id": "reh-002",
-      "description": "episodic temporal — recent 7-day window, recency boost",
+      "description": "episodic temporal \u2014 recent 7-day window, recency boost",
       "setup": {
         "memories": [
           {
@@ -73,13 +75,15 @@
       },
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
-        "must_contain_in_top_result": ["onboarding"],
+        "must_contain_in_top_result": [
+          "onboarding"
+        ],
         "min_results": 1
       }
     },
     {
       "id": "reh-003",
-      "description": "episodic temporal — unique technical keyword (pg_stat_statements), BM25 dominant",
+      "description": "episodic temporal \u2014 unique technical keyword (pg_stat_statements), BM25 dominant",
       "setup": {
         "memories": [
           {
@@ -111,13 +115,15 @@
       },
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
-        "must_contain_in_top_result": ["pg_stat_statements"],
+        "must_contain_in_top_result": [
+          "pg_stat_statements"
+        ],
         "min_results": 1
       }
     },
     {
       "id": "reh-004",
-      "description": "episodic temporal — CAP_SETPCAP unique token, BM25 dominant",
+      "description": "episodic temporal \u2014 CAP_SETPCAP unique token, BM25 dominant",
       "setup": {
         "memories": [
           {
@@ -149,13 +155,15 @@
       },
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
-        "must_contain_in_top_result": ["CAP_SETPCAP"],
+        "must_contain_in_top_result": [
+          "CAP_SETPCAP"
+        ],
         "min_results": 1
       }
     },
     {
       "id": "reh-005",
-      "description": "episodic temporal — multi-entity query, both entities must be present",
+      "description": "episodic temporal \u2014 multi-entity query, both entities must be present",
       "setup": {
         "memories": [
           {
@@ -187,13 +195,15 @@
       },
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
-        "must_contain_in_top_result": ["Alice"],
+        "must_contain_in_top_result": [
+          "Alice"
+        ],
         "min_results": 1
       }
     },
     {
       "id": "reh-006",
-      "description": "episodic BM25 fallback — paraphrased query, semantic search dominant",
+      "description": "episodic BM25 fallback \u2014 paraphrased query, semantic search dominant",
       "setup": {
         "memories": [
           {
@@ -230,7 +240,7 @@
     },
     {
       "id": "reh-007",
-      "description": "episodic BM25 fallback — semantic paraphrase, vector dominant",
+      "description": "episodic BM25 fallback \u2014 semantic paraphrase, vector dominant",
       "setup": {
         "memories": [
           {
@@ -267,7 +277,7 @@
     },
     {
       "id": "reh-008",
-      "description": "episodic BM25 fallback — qortia-patches unique token",
+      "description": "episodic BM25 fallback \u2014 qortia-patches unique token",
       "setup": {
         "memories": [
           {
@@ -299,13 +309,15 @@
       },
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
-        "must_contain_in_top_result": ["qortia-patches"],
+        "must_contain_in_top_result": [
+          "qortia-patches"
+        ],
         "min_results": 1
       }
     },
     {
       "id": "reh-009",
-      "description": "episodic BM25 fallback — semantic query for infrastructure concept",
+      "description": "episodic BM25 fallback \u2014 semantic query for infrastructure concept",
       "setup": {
         "memories": [
           {
@@ -342,7 +354,7 @@
     },
     {
       "id": "reh-010",
-      "description": "episodic BM25 fallback — semantic paraphrase for security concept",
+      "description": "episodic BM25 fallback \u2014 semantic paraphrase for security concept",
       "setup": {
         "memories": [
           {
@@ -379,7 +391,7 @@
     },
     {
       "id": "reh-011",
-      "description": "decision BM25 — named entity, superseded decision hard negative",
+      "description": "decision BM25 \u2014 named entity, superseded decision hard negative",
       "setup": {
         "memories": [
           {
@@ -411,7 +423,354 @@
       },
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
-        "must_contain_in_top_result": ["Redis"],
+        "must_contain_in_top_result": [
+          "Redis"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-012",
+      "description": "decision BM25 \u2014 architecture choice, same-topic superseded hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided to use pgvector for semantic search instead of a dedicated vector database. Rationale: fewer moving parts, RLS enforcement, ADR-049.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Evaluated Pinecone, Weaviate, and pgvector for the memory search layer.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Decided to use Pinecone for semantic search. Rationale: managed service, no Postgres dependency.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "vector search database decision",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "pgvector"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-013",
+      "description": "decision BM25 \u2014 security decision, same-topic wrong-outcome hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided to use OpenBao instead of HashiCorp Vault for secrets management. Rationale: open-source, no BSL license risk, API-compatible.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed the BSL license change for HashiCorp products.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Decided to use HashiCorp Vault for secrets management. Rationale: mature product, enterprise support.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "secrets management vault decision",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "OpenBao"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-014",
+      "description": "decision BM25 \u2014 infra decision with unique token (tenant_transaction)",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided that tenant_transaction() is the only permitted way to acquire a tenant-scoped DB connection. Raw SET LOCAL is forbidden outside this context manager.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed the database connection pooling strategy for the platform.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Decided to use raw asyncpg connections for tenant-scoped queries to reduce overhead.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "tenant_transaction database connection rule",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "tenant_transaction"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-015",
+      "description": "decision BM25 \u2014 deployment decision, same-topic wrong-env hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided that production deploys are always manual via workflow_dispatch. No automatic deploys to production. Rationale: canary verification required.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed the CI/CD pipeline configuration for the staging environment.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Decided that staging deploys are automatic on every push to main. Rationale: fast feedback loop.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "production deploy manual workflow decision",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "production"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-016",
+      "description": "lesson vector \u2014 paraphrased query, semantic dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "When an agent boot fails with a Vault authentication error, the root cause is almost always a stale token. Rotating the token and reprovisioning resolves it within 2 minutes.",
+            "scope": "private"
+          },
+          {
+            "type": "lesson",
+            "content": "Reflection cycles that produce more than 5 new mental models in one pass are usually a sign of too many episodic memories queued. Increase the reflection threshold.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "When a database connection fails with an authentication error, the root cause is usually an expired password. Rotating the password and restarting the service resolves it.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "agent fails to start because of authentication problem",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-017",
+      "description": "lesson vector \u2014 semantic paraphrase for operational pattern",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "Never lower a coverage floor in CI. If tests are deleted, re-evaluate the floor and document the decision. Silent coverage drops hide regressions.",
+            "scope": "private"
+          },
+          {
+            "type": "lesson",
+            "content": "Always pin security scanner actions to exact tags in CI. Floating @main is a supply-chain risk.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "Never lower a performance budget in the frontend build. If components are removed, re-evaluate the budget.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "what we learned about test coverage thresholds",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-018",
+      "description": "lesson vector \u2014 semantic paraphrase for security lesson",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "Passing secrets as subprocess arguments exposes them in /proc/<pid>/cmdline. Always use environment variables or file descriptors for secret injection.",
+            "scope": "private"
+          },
+          {
+            "type": "lesson",
+            "content": "Floating Docker image tags in production cause non-deterministic builds. Always pin to a specific digest or version tag.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "Passing user input directly to SQL queries causes injection vulnerabilities. Always use parameterised queries.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "how secrets can leak through process metadata",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-019",
+      "description": "lesson vector \u2014 semantic paraphrase for async pattern",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "asyncio primitives (Event, Queue, Lock) bind to the running event loop at first use in Python 3.13. Creating them outside a coroutine causes LoopBoundMixin errors in multi-threaded test setups.",
+            "scope": "private"
+          },
+          {
+            "type": "lesson",
+            "content": "Using pytest-asyncio with a background thread for the app server requires all asyncio objects to be created inside the background coroutine.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "threading.Event and threading.Lock are safe to create outside coroutines. They are not bound to an event loop.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "problems with event loop and async objects in tests",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-020",
+      "description": "lesson vector \u2014 semantic paraphrase for migration pattern",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "Never edit an existing Flyway migration. Flyway validates checksums on startup and will reject a modified migration with a checksum mismatch error, blocking all deployments.",
+            "scope": "private"
+          },
+          {
+            "type": "lesson",
+            "content": "Always add a DEFAULT value when adding a new column to an existing table. Postgres will reject the migration if existing rows cannot satisfy a NOT NULL constraint without a default.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "Never edit an existing Liquibase changeset. Liquibase validates checksums and will fail if a changeset is modified after it has been applied.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "why you cannot change a migration after it runs",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
       }
     }
