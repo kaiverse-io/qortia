@@ -120,20 +120,28 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
     model = domain.get("model", "anthropic/claude-3-haiku-20240307")
 
     litellm_key = await get_litellm_key(str(agent.tenant_id))
-    new_memories = await _call_litellm_reflect(
+    reflections = await _call_litellm_reflect(
         model=model,
         recent=[r["content"] for r in recent],
-        existing=[{"type": r["type"], "content": r["content"]} for r in existing],
+        existing=[
+            {"id": str(r["id"]), "type": r["type"], "content": r["content"]}
+            for r in existing
+        ],
         litellm_key=litellm_key,
         agent_id=agent.agent_id,
         tenant_id=agent.tenant_id,
     )
 
-    # Write transaction — supersede-first order (Q28, safety-critical)
+    # Write transaction
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
-        # 6a. SUPERSEDE FIRST — crash here leaves old set intact
+        active_ids = []
+        for r in reflections:
+            if r["action"] in ("UPDATE", "RETAIN"):
+                active_ids.append(UUID(r["id"]))
+
+        # 6a. PRUNE — anything not returned by LLM is marked non-consolidated
         if existing:
             await conn.execute(
                 """
@@ -142,17 +150,34 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 WHERE agent_id = $1
                   AND type IN ('mental_model', 'lesson')
                   AND is_consolidated = true
+                  AND id != ALL($2::uuid[])
             """,
                 agent.agent_id,
+                active_ids,
             )
 
-        # 6b. Write new consolidated memories
         new_ids = []
-        for mem in new_memories:
+        for r in reflections:
+            if r["action"] == "RETAIN":
+                continue
+
+            # For UPDATE, we first deactivate the old one
+            if r["action"] == "UPDATE":
+                await conn.execute(
+                    """
+                    UPDATE hindsight_memories
+                    SET is_consolidated = false
+                    WHERE id = $1 AND agent_id = $2
+                """,
+                    UUID(r["id"]),
+                    agent.agent_id,
+                )
+
+            # Insert new version (for CREATE or UPDATE)
             try:
                 from app.qortia.knowledge import extract_entities
 
-                entities = extract_entities(mem["content"])
+                entities = extract_entities(r["content"])
             except Exception:
                 entities = []
 
@@ -165,12 +190,12 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             """,
                 agent.tenant_id,
                 agent.agent_id,
-                mem["type"],
-                mem["content"],
-                float(mem["importance"]),
+                r["type"],
+                r["content"],
+                float(r["importance"]),
                 json.dumps(entities),
             )
-            new_ids.append(row_id)
+            new_ids.append((row_id, r.get("id")))
 
         # 6c. Decrement reflection_counter atomically
         new_counter = await conn.fetchval(
@@ -185,17 +210,21 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             agent.agent_id,
         )
 
-        # 6d. Audit trail
-        for row_id in new_ids:
+        # 6d. Audit trail (with lineage for updates)
+        for row_id, parent_id in new_ids:
+            metadata = {}
+            if parent_id:
+                metadata["parent_id"] = parent_id
             await conn.execute(
                 """
                 INSERT INTO memory_history
                     (tenant_id, agent_id, operation, target_table, target_id, metadata)
-                VALUES ($1, $2, 'reflect', 'hindsight_memories', $3, '{}')
+                VALUES ($1, $2, 'reflect', 'hindsight_memories', $3, $4)
             """,
                 agent.tenant_id,
                 agent.agent_id,
                 row_id,
+                json.dumps(metadata),
             )
 
     return ReflectResponse(
@@ -231,16 +260,22 @@ async def _call_litellm_reflect(
     try:
         raw = resp.json()["choices"][0]["message"]["content"]
         parsed = json.loads(raw)
-        memories = parsed["memories"]
-        if not memories:
-            raise ValueError("empty memories array")
-        for m in memories:
-            if m["type"] not in ("mental_model", "lesson"):
-                raise ValueError(f"invalid type: {m['type']}")
-            if not isinstance(m.get("importance"), (int, float)):
-                raise ValueError("importance must be numeric")
-            if not m.get("content"):
-                raise ValueError("content must not be empty")
+        reflections = parsed.get("reflections", [])
+        if not reflections:
+            raise ValueError("empty reflections array")
+        for r in reflections:
+            action = r.get("action")
+            if action not in ("CREATE", "UPDATE", "RETAIN"):
+                raise ValueError(f"invalid action: {action}")
+            if action in ("UPDATE", "RETAIN") and not r.get("id"):
+                raise ValueError(f"id required for {action}")
+            if action in ("CREATE", "UPDATE"):
+                if r.get("type") not in ("mental_model", "lesson"):
+                    raise ValueError(f"invalid type: {r['type']}")
+                if not isinstance(r.get("importance"), (int, float)):
+                    raise ValueError("importance must be numeric")
+                if not r.get("content"):
+                    raise ValueError("content must not be empty")
     except (KeyError, ValueError, json.JSONDecodeError) as exc:
         logger.error({"event": "reflection_llm_malformed", "error": str(exc)})
         raise HTTPException(500, "Reflection failed: malformed LLM response")
@@ -258,35 +293,40 @@ async def _call_litellm_reflect(
             )
         )
 
-    return memories  # type: ignore[no-any-return]
+    return reflections  # type: ignore[no-any-return]
 
 
 def _build_reflect_prompt(recent: list[str], existing: list[dict]) -> str:  # type: ignore[type-arg]
     recent_block = "\n".join(f"- {m}" for m in recent) or "(none)"
     existing_block = (
-        "\n".join(f"- [{m['type']}] {m['content']}" for m in existing) or "(none)"
+        "\n".join(f"- [{m['id']}] [{m['type']}] {m['content']}" for m in existing)
+        or "(none)"
     )
     return f"""You are synthesising an agent's recent experiences into durable mental models and lessons.
 
 Recent episodic and experiential memories (last 7 days):
 {recent_block}
 
-Existing consolidated knowledge (will be superseded by your output):
+Existing consolidated knowledge:
 {existing_block}
+
+Your task is to refine the agent's knowledge. You can CREATE new models, UPDATE existing ones with more detail, or RETAIN existing ones that are still accurate.
 
 Return a JSON object with this exact schema:
 {{
-  "memories": [
-    {{"type": "mental_model", "content": "...", "importance": 0.85}},
-    {{"type": "lesson", "content": "...", "importance": 0.90}}
+  "reflections": [
+    {{"action": "CREATE", "type": "mental_model", "content": "...", "importance": 0.85}},
+    {{"action": "UPDATE", "id": "uuid-here", "type": "lesson", "content": "updated content", "importance": 0.90}},
+    {{"action": "RETAIN", "id": "uuid-here"}}
   ]
 }}
 
 Rules:
+- action must be "CREATE", "UPDATE", or "RETAIN"
 - type must be "mental_model" or "lesson" only
 - importance is a float between 0.0 and 1.0
 - content must be a non-empty string
-- Return at least one memory
+- Return all knowledge items that should remain consolidated. Any existing ID NOT returned will be pruned (deleted).
 - Do not reference specific dates or ephemeral details
 - Synthesise patterns, not events"""
 
@@ -470,8 +510,8 @@ async def _populate_graph_batch() -> None:
                             """
                             INSERT INTO qortia_entities (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
                             VALUES ($1, $2, $3, 'CONCEPT', ARRAY[$4::uuid])
-                            ON CONFLICT (tenant_id, agent_id, entity_text) WHERE agent_id IS NOT NULL 
-                            DO UPDATE SET 
+                            ON CONFLICT (tenant_id, agent_id, entity_text) WHERE agent_id IS NOT NULL
+                            DO UPDATE SET
                                 linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $4),
                                 updated_at = now()
                             WHERE NOT ($4 = ANY(qortia_entities.linked_memory_ids))
@@ -507,8 +547,8 @@ async def _populate_graph_batch() -> None:
                             """
                             INSERT INTO qortia_entities (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
                             VALUES ($1, NULL, $2, 'CONCEPT', ARRAY[$3::uuid])
-                            ON CONFLICT (tenant_id, entity_text) WHERE agent_id IS NULL 
-                            DO UPDATE SET 
+                            ON CONFLICT (tenant_id, entity_text) WHERE agent_id IS NULL
+                            DO UPDATE SET
                                 linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $3),
                                 updated_at = now()
                             WHERE NOT ($3 = ANY(qortia_entities.linked_memory_ids))
