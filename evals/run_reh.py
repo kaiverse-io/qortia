@@ -1,77 +1,200 @@
-import json
+"""
+Layer 1: Retrieval Evaluation Harness (REH).
+
+Measures recall.py pipeline in isolation. Outputs Recall@5, Recall@10, MRR, and
+Semantic Drift gap. Exits 0 if regression floors are met, 1 otherwise.
+
+Usage:
+    cd platform
+    EVAL_MODE=true python3 evals/run_reh.py [--dataset evals/datasets/recall_v1.json]
+
+North star targets (docs/platform/05-memory-benchmarking.md §2.2):
+    Recall@5            > 0.85
+    Recall@10           > 0.95
+    MRR                 > 0.75
+    Semantic Drift gap  > 0.15
+
+Regression floors (set 5% below measured baseline — update after first run):
+    Recall@5  >= 0.80
+    MRR       >= 0.65
+"""
+
+from __future__ import annotations
+
 import asyncio
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
 import httpx
-from uuid import UUID
+
+from evals.dataset_loader import (
+    EMBEDDING_WAIT_SECONDS,
+    PLATFORM_URL,
+    load_dataset,
+    provision_eval_agent,
+    seed_case,
+    seed_knowledge,
+    seed_org_memories,
+)
+
+# North star targets
+RECALL_AT_5_TARGET = 0.85
+RECALL_AT_10_TARGET = 0.95
+MRR_TARGET = 0.75
+SEMANTIC_DRIFT_TARGET = 0.15
+
+# Regression floors — update after baseline run in ADR-073
+RECALL_AT_5_FLOOR = 0.80
+MRR_FLOOR = 0.65
 
 
-async def run_eval(
-    platform_url: str, dataset_path: str, tenant_id: UUID, agent_id: UUID
-):
-    with open(dataset_path, "r") as f:
-        cases = json.load(f)
+async def run_reh(dataset_path: Path) -> int:
+    cases = load_dataset(dataset_path)
+    case_results: list[dict[str, Any]] = []
 
-    total_cases = len(cases)
-    recall_at_5 = 0
-    mrr = 0.0
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=60.0) as client:
         for case in cases:
-            print(f"Running case: {case['id']} - {case['query']}")
-            resp = await client.post(
-                f"{platform_url}/v1/internal/eval/recall",
-                params={
-                    "query": case["query"],
-                    "tenant_id": str(tenant_id),
-                    "agent_id": str(agent_id),
-                    "limit": 5,
-                },
-            )
-            resp.raise_for_status()
-            results = resp.json()["results"]
+            result = await _run_reh_case(client, case)
+            case_results.append(result)
+            status = "PASS" if result["pass"] else "FAIL"
+            print(f"  [{status}] {case['id']}: {case.get('description', '')}")
+            if not result["pass"]:
+                print(f"         reason: {result['reason']}")
 
-            # Since our seeded memories in DB will have dynamic IDs,
-            # we check for content match instead of ID match in this basic version,
-            # or we map the content to the ID during seeding.
+    if not case_results:
+        print("No cases found.")
+        return 1
 
-            # For this version, we'll look for the ground truth content in the results.
-            # Ground truth IDs in the JSON correspond to the 'id' field in the 'memories' list.
-            gt_contents = {
-                m["content"]
-                for m in case["memories"]
-                if m["id"] in case["ground_truth_ids"]
-            }
+    recall_at_5 = sum(1 for r in case_results if r["recall_at_5"]) / len(case_results)
+    recall_at_10 = sum(1 for r in case_results if r["recall_at_10"]) / len(case_results)
+    mrr = sum(r["mrr"] for r in case_results) / len(case_results)
+    drift_gaps = [
+        r["semantic_drift_gap"]
+        for r in case_results
+        if r["semantic_drift_gap"] is not None
+    ]
+    avg_drift = sum(drift_gaps) / len(drift_gaps) if drift_gaps else 0.0
 
-            found_rank = None
-            for i, res in enumerate(results):
-                if res["content"] in gt_contents:
-                    found_rank = i + 1
-                    break
+    print(f"\n{'Metric':<25} {'Score':>8}  {'Target':>8}  Status")
+    print("-" * 55)
+    _print_metric("Recall@5", recall_at_5, RECALL_AT_5_TARGET)
+    _print_metric("Recall@10", recall_at_10, RECALL_AT_10_TARGET)
+    _print_metric("MRR", mrr, MRR_TARGET)
+    _print_metric("Semantic Drift gap", avg_drift, SEMANTIC_DRIFT_TARGET)
 
-            if found_rank:
-                recall_at_5 += 1
-                mrr += 1.0 / found_rank
-                print(f"  MATCH at rank {found_rank}")
-            else:
-                print("  MISS")
+    report = {
+        "recall_at_5": recall_at_5,
+        "recall_at_10": recall_at_10,
+        "mrr": mrr,
+        "semantic_drift_avg": avg_drift,
+        "cases": case_results,
+    }
+    out = Path("evals/results/reh_latest.json")
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(json.dumps(report, indent=2))
+    print(f"\nReport written to {out}")
 
-    print("\n" + "=" * 40)
-    print("RECALL EVALUATION RESULTS")
-    print("=" * 40)
-    print(f"Total cases: {total_cases}")
-    print(f"Recall@5:    {recall_at_5 / total_cases:.2%}")
-    print(f"MRR:         {mrr / total_cases:.4f}")
-    print("=" * 40)
+    passed = recall_at_5 >= RECALL_AT_5_FLOOR and mrr >= MRR_FLOOR
+    print(f"Regression gate: {'PASS' if passed else 'FAIL'}")
+    return 0 if passed else 1
+
+
+def _print_metric(name: str, score: float, target: float) -> None:
+    status = "✓" if score >= target else "✗"
+    print(f"  {name:<23} {score:>8.3f}  {target:>8.3f}  {status}")
+
+
+async def _run_reh_case(
+    client: httpx.AsyncClient,
+    case: dict[str, Any],
+) -> dict[str, Any]:
+    tenant_id, agent_id, token = await provision_eval_agent(client)
+    id_map = await seed_case(client, case, tenant_id, agent_id)
+    await seed_org_memories(client, case, tenant_id, agent_id, token)
+    await seed_knowledge(client, case, token)
+    await asyncio.sleep(EMBEDDING_WAIT_SECONDS)
+
+    ground_truth_idx = case.get("ground_truth_index", 0)
+    ground_truth_id = id_map.get(ground_truth_idx)
+
+    query_body = case["query"]
+    resp = await client.post(
+        "/v1/recall",
+        json=query_body,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if resp.status_code != 200:
+        return _failed(case["id"], f"recall HTTP {resp.status_code}: {resp.text[:200]}")
+
+    results = resp.json().get("results", [])
+    result_ids = [r["id"] for r in results]
+
+    recall_at_5 = bool(ground_truth_id and ground_truth_id in result_ids[:5])
+    recall_at_10 = bool(ground_truth_id and ground_truth_id in result_ids[:10])
+
+    mrr = 0.0
+    if ground_truth_id and ground_truth_id in result_ids:
+        mrr = 1.0 / (result_ids.index(ground_truth_id) + 1)
+
+    # Semantic Drift: rank gap between ground truth and best hard negative
+    setup = case["setup"]
+    hard_negative_count = len(setup.get("hard_negatives", []))
+    # Hard negatives are seeded after setup.memories — their IDs are NOT in id_map
+    # We identify them by exclusion: any result ID not in id_map.values()
+    gt_ids = set(id_map.values())
+    hard_negative_result_ids = [rid for rid in result_ids if rid not in gt_ids]
+
+    semantic_drift_gap = None
+    if ground_truth_id and hard_negative_count > 0 and ground_truth_id in result_ids:
+        gt_rank = result_ids.index(ground_truth_id)
+        hn_ranks = [
+            result_ids.index(hid)
+            for hid in hard_negative_result_ids
+            if hid in result_ids
+        ]
+        if hn_ranks:
+            best_hn_rank = min(hn_ranks)
+            semantic_drift_gap = (best_hn_rank - gt_rank) / max(len(result_ids), 1)
+
+    passed = recall_at_5
+
+    # Check must_contain_in_top_result
+    if passed and case.get("expected", {}).get("must_contain_in_top_result"):
+        top_content = results[0]["content"] if results else ""
+        for phrase in case["expected"]["must_contain_in_top_result"]:
+            if phrase.lower() not in top_content.lower():
+                passed = False
+                break
+
+    return {
+        "id": case["id"],
+        "pass": passed,
+        "recall_at_5": recall_at_5,
+        "recall_at_10": recall_at_10,
+        "mrr": mrr,
+        "semantic_drift_gap": semantic_drift_gap,
+        "reason": None if passed else "ground truth not in top 5",
+    }
+
+
+def _failed(case_id: str, reason: str) -> dict[str, Any]:
+    return {
+        "id": case_id,
+        "pass": False,
+        "recall_at_5": False,
+        "recall_at_10": False,
+        "mrr": 0.0,
+        "semantic_drift_gap": None,
+        "reason": reason,
+    }
 
 
 if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) < 4:
-        print(
-            "Usage: python3 run_reh.py <platform_url> <dataset_path> <tenant_id> <agent_id>"
-        )
-        sys.exit(1)
-
-    asyncio.run(
-        run_eval(sys.argv[1], sys.argv[2], UUID(sys.argv[3]), UUID(sys.argv[4]))
+    dataset = (
+        Path(sys.argv[1])
+        if len(sys.argv) > 1
+        else Path("evals/datasets/recall_v1.json")
     )
+    sys.exit(asyncio.run(run_reh(dataset)))

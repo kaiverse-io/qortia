@@ -1,40 +1,419 @@
-[
-  {
-    "id": "case_001",
-    "query": "Who is the chief architect of the platform?",
-    "ground_truth_ids": ["mem_001"],
-    "memories": [
-      {
-        "id": "mem_001",
-        "type": "episodic",
-        "content": "Scout is the chief architect and primary lead for the platform infrastructure.",
-        "scope": "private"
+{
+  "version": "1",
+  "cases": [
+    {
+      "id": "reh-001",
+      "description": "episodic temporal — named entity, BM25 dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Completed the rate limiting design for AuthService. Used token bucket algorithm with Redis backend.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed PR #142 for the payment gateway. Found a SQL injection risk in the order query.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Reviewed the rate limiting design for PaymentService. Used leaky bucket algorithm with Postgres backend.",
+            "scope": "private"
+          }
+        ]
       },
-      {
-        "id": "mem_002",
+      "ground_truth_index": 0,
+      "query": {
+        "query": "rate limiting AuthService",
+        "scope": "private",
         "type": "episodic",
-        "content": "Alex is a junior engineer working on the dashboard UI.",
-        "scope": "private"
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["AuthService"],
+        "min_results": 1
       }
-    ]
-  },
-  {
-    "id": "case_002",
-    "query": "What was the decision about Redis?",
-    "ground_truth_ids": ["mem_003"],
-    "memories": [
-      {
-        "id": "mem_003",
+    },
+    {
+      "id": "reh-002",
+      "description": "episodic temporal — recent 7-day window, recency boost",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Deployed the new onboarding flow to staging. All smoke tests passed.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Investigated a memory leak in the worker process. Root cause was unclosed asyncpg connections.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Deployed the legacy onboarding flow to production six months ago. Tests failed initially.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "onboarding flow staging deployment",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["onboarding"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-003",
+      "description": "episodic temporal — unique technical keyword (pg_stat_statements), BM25 dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Enabled pg_stat_statements on the production Postgres instance to track slow queries.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed the Postgres configuration for connection pooling settings.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Enabled query logging on the staging Postgres instance to track slow queries.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "pg_stat_statements production",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["pg_stat_statements"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-004",
+      "description": "episodic temporal — CAP_SETPCAP unique token, BM25 dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Dropped CAP_SETPCAP from the agent container runtime to prevent privilege escalation. Boot sequence updated.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed container security hardening checklist. Removed unnecessary capabilities.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Dropped CAP_NET_ADMIN from the gateway container to reduce attack surface.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "CAP_SETPCAP agent container",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["CAP_SETPCAP"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-005",
+      "description": "episodic temporal — multi-entity query, both entities must be present",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Alice and Bob pair-programmed on the Vault token rotation logic. Completed in one session.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Alice reviewed the Vault policy for the new tenant provisioning flow.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Bob and Carol pair-programmed on the JWT refresh logic. Completed in two sessions.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "Alice Bob Vault token rotation",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["Alice"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-006",
+      "description": "episodic BM25 fallback — paraphrased query, semantic search dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "The database performance monitor showed that the query planner was choosing a sequential scan instead of the index.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed the API gateway logs for unusual traffic patterns.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "The network monitor showed unusual packet loss on the primary interface.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "the thing that monitors db performance",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-007",
+      "description": "episodic BM25 fallback — semantic paraphrase, vector dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Implemented exponential backoff for the LiteLLM retry logic to handle transient API failures gracefully.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Updated the CI pipeline to run integration tests in parallel.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Implemented linear backoff for the database retry logic to handle connection timeouts.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "how we handle LLM API failures with retries",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-008",
+      "description": "episodic BM25 fallback — qortia-patches unique token",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Rebased the qortia-patches branch onto agent-runtime v0.0.25. Two patches survived: chown removal for CAP_DAC_OVERRIDE.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Updated the agent-runtime submodule pointer in the parent repo after the rebase.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Rebased the feature-branch onto main. Resolved three merge conflicts in the migration files.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "qortia-patches rebase agent-runtime",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["qortia-patches"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-009",
+      "description": "episodic BM25 fallback — semantic query for infrastructure concept",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Configured Flyway to run migrations as the qortia_platform role, not superuser, to enforce least privilege.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed the Postgres role hierarchy for the platform database.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Configured Liquibase to run migrations as the app_user role on the analytics database.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "database migration tool role permissions",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-010",
+      "description": "episodic BM25 fallback — semantic paraphrase for security concept",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Discovered that the Vault token was being passed as a subprocess argument, exposing it in /proc/<pid>/cmdline. Fixed by switching to urllib with X-Vault-Token header.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed the Vault authentication flow for the agent provisioning service.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Discovered that the database password was hardcoded in the config file. Fixed by moving to environment variables.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "secret token leaking in process arguments",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-011",
+      "description": "decision BM25 — named entity, superseded decision hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided to remove Redis from the stack entirely. All session state moves to Postgres. Rationale: operational simplicity, ADR-049.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Benchmarked Redis vs Postgres for session storage. Redis was 3x faster at 10k req/s.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Decided to use Redis for session storage to improve latency. Postgres was too slow at peak load.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "Redis decision stack removal",
+        "scope": "private",
         "type": "decision",
-        "content": "We decided to remove Redis from the stack to simplify infrastructure and reduce cost, moving all state to Postgres.",
-        "scope": "private"
+        "rerank": false,
+        "entities": null
       },
-      {
-        "id": "mem_004",
-        "type": "episodic",
-        "content": "Redis is a popular key-value store used for caching.",
-        "scope": "private"
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["Redis"],
+        "min_results": 1
       }
-    ]
-  }
-]
+    }
+  ]
+}
