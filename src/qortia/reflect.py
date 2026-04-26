@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from uuid import UUID
@@ -157,9 +158,19 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             )
 
         new_ids = []
+        seen_hashes: set[str] = set()
         for r in reflections:
             if r["action"] == "RETAIN":
                 continue
+
+            # MD5 pre-filter: skip exact/near-exact duplicates within this batch
+            content_hash = hashlib.md5(
+                r["content"].lower().strip().encode()
+            ).hexdigest()
+            if content_hash in seen_hashes:
+                logger.info({"event": "reflect_dedup_skipped", "hash": content_hash})
+                continue
+            seen_hashes.add(content_hash)
 
             # For UPDATE, we first deactivate the old one
             if r["action"] == "UPDATE":
@@ -307,7 +318,7 @@ def _build_reflect_prompt(recent: list[str], existing: list[dict]) -> str:  # ty
 Recent episodic and experiential memories (last 7 days):
 {recent_block}
 
-Existing consolidated knowledge:
+Existing consolidated knowledge (will be superseded by your output):
 {existing_block}
 
 Your task is to refine the agent's knowledge. You can CREATE new models, UPDATE existing ones with more detail, or RETAIN existing ones that are still accurate.
@@ -327,8 +338,17 @@ Rules:
 - importance is a float between 0.0 and 1.0
 - content must be a non-empty string
 - Return all knowledge items that should remain consolidated. Any existing ID NOT returned will be pruned (deleted).
-- Do not reference specific dates or ephemeral details
-- Synthesise patterns, not events"""
+- Synthesise patterns, not events
+- Preserve named entities (people, systems, organisations) — they are recall anchors
+- When a memory contains a temporal marker ("last quarter", "in March"), preserve it — do not strip temporal context
+- Attribute observations to their source when relevant: "user reported X", "agent observed Y", "team decided Z"
+
+NEVER include:
+- Specific dates or timestamps unless they define a durable pattern
+- Pronouns or vague references ("they", "it", "the thing")
+- Single-occurrence events that have not recurred
+- Ephemeral details (ticket numbers, session IDs, temporary values)
+- Abstract concepts without grounding ("things went well", "it was difficult")"""
 
 
 # ── Embedding worker ─────────────────────────────────────────

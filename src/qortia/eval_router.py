@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 router: APIRouter = APIRouter(prefix="/v1/internal/eval")
 
 
+# lint:allow-cross-tenant — ADR-073: eval endpoints seed test data across tenants by design;
+# only reachable when settings.eval_mode is True (never enabled in production).
 @router.post("/seed-agent")
 async def seed_eval_agent(
     agent_id: UUID, tenant_id: UUID, name: str = "eval_agent", role: str = "custom"

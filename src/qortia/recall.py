@@ -22,6 +22,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 RRF_K = 60
+SEARCH_FETCH_MULTIPLIER = 2
+PRIVATE_RESULT_LIMIT = 20
+ORG_RESULT_LIMIT = 10
+KNOWLEDGE_RESULT_LIMIT = 16
+
+
+def _bm25_normalization(query: str) -> int:
+    """ts_rank_cd normalization: 32 for short queries (≤3 tokens), 0 otherwise."""
+    return 32 if len(query.split()) <= 3 else 0
 
 
 # ── Dynamic importance (Q95) ─────────────────────────────────
@@ -123,14 +132,15 @@ async def _recall_decisions(
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
+        norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
             f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
-                   ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) AS rank
+                   ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM hindsight_memories
             WHERE agent_id = $2
               AND type = 'decision'
-              AND content_tsv @@ plainto_tsquery('english', $1)
+              AND content_tsv @@ plainto_tsquery('simple', $1)
               {entity_clause}
             ORDER BY created_at DESC, rank DESC
             LIMIT 10
@@ -184,15 +194,16 @@ async def _recall_episodic(
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
+        norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
             f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
-                   ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) AS rank
+                   ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM hindsight_memories
             WHERE agent_id = $2
               AND type = 'episodic'
               AND (
-                content_tsv @@ plainto_tsquery('english', $1)
+                content_tsv @@ plainto_tsquery('simple', $1)
                 OR created_at > now() - interval '7 days'
               )
               {entity_clause}
@@ -220,16 +231,17 @@ async def _bm25_private(
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
+        norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
-                   ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) AS rank
+                   ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM hindsight_memories
             WHERE agent_id = $2
-              AND content_tsv @@ plainto_tsquery('english', $1)
+              AND content_tsv @@ plainto_tsquery('simple', $1)
               {type_clause}
               {entity_clause}
-            ORDER BY rank DESC LIMIT 20
+            ORDER BY rank DESC LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
             agent.agent_id,
@@ -259,7 +271,7 @@ async def _vector_private(
               AND embedding IS NOT NULL
               {type_clause}
               {entity_clause}
-            ORDER BY embedding <=> $1::vector LIMIT 20
+            ORDER BY embedding <=> $1::vector LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             qe,
             agent.agent_id,
@@ -274,16 +286,17 @@ async def _bm25_org(body: RecallRequest, agent: AgentIdentity) -> list[RecallRes
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
+        norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
-                   ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) AS rank
+                   ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM org_memory
             WHERE tenant_id = $2
-              AND content_tsv @@ plainto_tsquery('english', $1)
+              AND content_tsv @@ plainto_tsquery('simple', $1)
               {entity_clause}
-            ORDER BY rank DESC LIMIT 10
+            ORDER BY rank DESC LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
             agent.tenant_id,
@@ -308,7 +321,7 @@ async def _vector_org(
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
               {entity_clause}
-            ORDER BY embedding <=> $1::vector LIMIT 10
+            ORDER BY embedding <=> $1::vector LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             qe,
             agent.tenant_id,
@@ -323,15 +336,16 @@ async def _bm25_knowledge(
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
+        norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
-            """
+            f"""
             SELECT id, 'knowledge' AS type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
-                   ts_rank_cd(index_tsv, plainto_tsquery('english', $1)) AS rank
+                   ts_rank_cd(index_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM org_knowledge
             WHERE tenant_id = $2
-              AND index_tsv @@ plainto_tsquery('english', $1)
-            ORDER BY rank DESC LIMIT 16
+              AND index_tsv @@ plainto_tsquery('simple', $1)
+            ORDER BY rank DESC LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
             agent.tenant_id,
@@ -346,14 +360,14 @@ async def _vector_knowledge(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
         rows = await conn.fetch(
-            """
+            f"""
             SELECT id, 'knowledge' AS type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
                    1 - (embedding <=> $1::vector) AS score
             FROM org_knowledge
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
-            ORDER BY embedding <=> $1::vector LIMIT 16
+            ORDER BY embedding <=> $1::vector LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             qe,
             agent.tenant_id,
