@@ -32,6 +32,7 @@ import httpx
 from evals.dataset_loader import (
     EMBEDDING_WAIT_SECONDS,
     PLATFORM_URL,
+    _agent_headers,
     load_dataset,
     provision_eval_agent,
     seed_case,
@@ -110,26 +111,52 @@ async def _run_reh_case(
     client: httpx.AsyncClient,
     case: dict[str, Any],
 ) -> dict[str, Any]:
-    tenant_id, agent_id, token = await provision_eval_agent(client)
+    tenant_id, agent_id = await provision_eval_agent(client)
     id_map = await seed_case(client, case, tenant_id, agent_id)
-    await seed_org_memories(client, case, tenant_id, agent_id, token)
-    await seed_knowledge(client, case, token)
+    org_id_map = await seed_org_memories(client, case, tenant_id, agent_id)
+    await seed_knowledge(client, case, tenant_id, agent_id)
     await asyncio.sleep(EMBEDDING_WAIT_SECONDS)
 
     ground_truth_idx = case.get("ground_truth_index", 0)
-    ground_truth_id = id_map.get(ground_truth_idx)
+    ground_truth_source = case.get("ground_truth_source", "memories")
+
+    # Resolve ground truth ID based on source
+    ground_truth_id: str | None = None
+    ground_truth_content: str | None = None
+    if ground_truth_source == "org_memories":
+        ground_truth_id = org_id_map.get(ground_truth_idx)
+        org_mems = case["setup"].get("org_memories", [])
+        if ground_truth_idx < len(org_mems):
+            ground_truth_content = org_mems[ground_truth_idx].get("content", "")
+    elif ground_truth_source == "knowledge":
+        # Knowledge doesn't return IDs — use content-based matching
+        know_items = case["setup"].get("knowledge", [])
+        if ground_truth_idx < len(know_items):
+            ground_truth_content = know_items[ground_truth_idx].get("content", "")
+    else:
+        ground_truth_id = id_map.get(ground_truth_idx)
 
     query_body = case["query"]
     resp = await client.post(
         "/v1/recall",
         json=query_body,
-        headers={"Authorization": f"Bearer {token}"},
+        headers=_agent_headers(agent_id, tenant_id),
     )
     if resp.status_code != 200:
         return _failed(case["id"], f"recall HTTP {resp.status_code}: {resp.text[:200]}")
 
     results = resp.json().get("results", [])
     result_ids = [r["id"] for r in results]
+    result_contents = [r["content"] for r in results]
+
+    # For knowledge cases: find ground truth by content substring match
+    if ground_truth_source == "knowledge" and ground_truth_content:
+        # Use first 80 chars of ground truth content as fingerprint
+        fingerprint = ground_truth_content[:80].lower()
+        for i, content in enumerate(result_contents):
+            if fingerprint[:40] in content.lower():
+                ground_truth_id = result_ids[i]
+                break
 
     recall_at_5 = bool(ground_truth_id and ground_truth_id in result_ids[:5])
     recall_at_10 = bool(ground_truth_id and ground_truth_id in result_ids[:10])
@@ -141,10 +168,12 @@ async def _run_reh_case(
     # Semantic Drift: rank gap between ground truth and best hard negative
     setup = case["setup"]
     hard_negative_count = len(setup.get("hard_negatives", []))
-    # Hard negatives are seeded after setup.memories — their IDs are NOT in id_map
-    # We identify them by exclusion: any result ID not in id_map.values()
     gt_ids = set(id_map.values())
     hard_negative_result_ids = [rid for rid in result_ids if rid not in gt_ids]
+    if ground_truth_id:
+        hard_negative_result_ids = [
+            rid for rid in hard_negative_result_ids if rid != ground_truth_id
+        ]
 
     semantic_drift_gap = None
     if ground_truth_id and hard_negative_count > 0 and ground_truth_id in result_ids:
@@ -167,6 +196,11 @@ async def _run_reh_case(
             if phrase.lower() not in top_content.lower():
                 passed = False
                 break
+
+    # For org/knowledge cases: also check min_results
+    if passed and case.get("expected", {}).get("min_results"):
+        if len(results) < case["expected"]["min_results"]:
+            passed = False
 
     return {
         "id": case["id"],

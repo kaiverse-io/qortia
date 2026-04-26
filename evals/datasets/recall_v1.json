@@ -39,7 +39,8 @@
           "AuthService"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-002",
@@ -79,7 +80,8 @@
           "onboarding"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-003",
@@ -119,7 +121,8 @@
           "pg_stat_statements"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-004",
@@ -159,7 +162,8 @@
           "CAP_SETPCAP"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-005",
@@ -199,7 +203,8 @@
           "Alice"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-006",
@@ -236,7 +241,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-007",
@@ -273,7 +279,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-008",
@@ -313,7 +320,8 @@
           "qortia-patches"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-009",
@@ -350,7 +358,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-010",
@@ -387,7 +396,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-011",
@@ -427,7 +437,8 @@
           "Redis"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-012",
@@ -467,7 +478,8 @@
           "pgvector"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-013",
@@ -507,7 +519,8 @@
           "OpenBao"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-014",
@@ -547,7 +560,8 @@
           "tenant_transaction"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-015",
@@ -587,7 +601,8 @@
           "production"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-016",
@@ -624,7 +639,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-017",
@@ -661,7 +677,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-018",
@@ -698,7 +715,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-019",
@@ -735,7 +753,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-020",
@@ -772,7 +791,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-021",
@@ -808,7 +828,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-022",
@@ -844,7 +865,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-023",
@@ -880,7 +902,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-024",
@@ -916,7 +939,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-025",
@@ -952,7 +976,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-026",
@@ -995,7 +1020,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-027",
@@ -1038,7 +1064,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-028",
@@ -1081,7 +1108,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-029",
@@ -1124,7 +1152,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-030",
@@ -1167,7 +1196,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-031",
@@ -1210,7 +1240,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-032",
@@ -1253,7 +1284,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-033",
@@ -1296,7 +1328,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-034",
@@ -1339,7 +1372,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-035",
@@ -1382,7 +1416,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-036",
@@ -1390,7 +1425,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/qortia.md",
             "content": "## Recall Pipeline\n\nThe recall pipeline uses BM25 and vector search fused via RRF. BM25 uses the 'simple' text search configuration for multilingual support. Vector search uses pgvector cosine similarity with a 0.35 minimum score threshold.\n\n## Memory Types\n\nFive memory types are supported: episodic, experiential, mental_model, decision, lesson. Importance is platform-assigned per type and cannot be overridden by the agent."
           }
@@ -1420,7 +1455,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-037",
@@ -1428,7 +1464,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/data-model.md",
             "content": "## Vector Storage\n\nAll embedding columns use pgvector's vector(768) type. HNSW indexes are created with m=16, ef_construction=64. The embedding model is text-embedding-3-small producing 768-dimensional vectors.\n\n## Connection Pooling\n\nThe platform uses asyncpg with a pool size of 20 connections per worker process."
           }
@@ -1458,7 +1494,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-038",
@@ -1466,7 +1503,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/migrations.md",
             "content": "## Migration Rules\n\nAll migrations use Flyway with versioned V{N}__description.sql files. Never edit an existing migration \u2014 Flyway validates checksums on startup. New migrations must be created as V{N+1}. Run as qortia_platform role, not superuser.\n\n## RLS Requirements\n\nNew tenant-scoped tables must enable RLS and add a tenant_isolation policy."
           }
@@ -1496,7 +1533,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-039",
@@ -1504,7 +1542,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/agent-boot.md",
             "content": "## Boot Sequence\n\nagent-start.sh implements an 11-step boot sequence. Steps must remain in order \u2014 Vault auth precedes config fetch, config fetch precedes workspace write. New steps insert between existing steps with a STEP N comment. Never reorder existing steps.\n\n## Boot Failure Handling\n\nIf any step fails, the container exits with a boot_failed event logged to Loki with the step name."
           }
@@ -1534,7 +1572,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-040",
@@ -1542,7 +1581,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/mcp-tools.md",
             "content": "## Adding a New MCP Tool\n\nTo add a tool to mcp_bridge.py: implement the function, add a case branch to _dispatch_tool(), add a Tool() entry to list_tools(), update AGENTS.md. Tool names are snake_case. No enforcement logic in the bridge \u2014 enforcement belongs in the platform API.\n\n## Tool Retirement\n\nDeprecate first, drain work orders, then remove. Document in an ADR."
           }
@@ -1572,7 +1611,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-041",
@@ -1580,7 +1620,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/security.md",
             "content": "## Tenant Isolation\n\nTenant isolation is enforced at three layers: RLS policies on all data tables, tenant_transaction() context manager that sets app.tenant_id, and the tenant isolation lint gate in CI that rejects any SQL query on a tenant-scoped table without a WHERE tenant_id clause.\n\n## Secret Management\n\nAll secrets are stored in OpenBao. Agents access secrets via the MCP bridge using per-tenant virtual keys. The master key is never exposed to agent containers."
           }
@@ -1610,7 +1650,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-042",
@@ -1618,7 +1659,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/observability.md",
             "content": "## Log Format\n\nAll platform logs use structured dict payloads. The 'event' field is required and must be snake_case. The 'agent_id' and 'tenant_id' fields are included when the log is scoped to a specific agent or tenant. Secrets must be redacted via redact_secrets() before logging.\n\n## Metrics\n\nAll metrics use the qortia_ prefix. agent_id is never used as a Prometheus label due to unbounded cardinality."
           }
@@ -1648,7 +1689,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-043",
@@ -1656,7 +1698,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/testing.md",
             "content": "## Integration Test Architecture\n\nThe platform app runs on a dedicated background thread with its own event loop. This is mandatory \u2014 pytest-asyncio manages its own per-test loop and running the app on the same loop causes LifespanManager to deadlock. All asyncio primitives must be created inside the background coroutine.\n\n## Container Images\n\nIntegration tests use openbao/openbao:2.5.3, never hashicorp/vault. The root token env var is BAO_DEV_ROOT_TOKEN_ID."
           }
@@ -1686,7 +1728,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-044",
@@ -1694,7 +1737,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/ci-cd.md",
             "content": "## Security Scanners\n\nTruffleHog scans the PR diff for verified secrets. Trivy scans the filesystem for CRITICAL/HIGH CVEs. Both are pinned to exact tags \u2014 never @main or @master. A failing security scan blocks merge.\n\n## Coverage Floors\n\nPlatform unit tests: 60% floor. Mission Control: 80% lines and functions. Integration tests: 40% floor. Floors are never lowered."
           }
@@ -1724,7 +1767,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-045",
@@ -1732,7 +1776,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/dependencies.md",
             "content": "## Hard Pinning Rules\n\nFour dependencies are always exact-pinned: openbao/openbao (secrets store), mcp SDK (stdio protocol), en-core-web-sm spaCy model (must match spaCy major.minor), security scanner actions in CI. Floating these creates silent breaking changes or supply-chain risk.\n\n## Renovate\n\nRenovate manages all six dependency layers automatically. openbao, agent-runtime, mcp SDK, and security scanners never auto-merge \u2014 they require human review."
           }
@@ -1762,7 +1806,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-046",
@@ -1809,7 +1854,8 @@
           "Alice"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-047",
@@ -1854,7 +1900,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-048",
@@ -1896,7 +1943,8 @@
           "LiteLLM"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-049",
@@ -1904,12 +1952,12 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/vault-policy.md",
             "content": "## OpenBao Vault Policy\n\nAgent vault policies are scoped to {tenant_id}/agents/{agent_id}/*. Paths outside these prefixes require an ADR and security review. The create_agent_policy() function in vault.py generates the policy. Never access _vault_client directly outside vault.py."
           },
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/litellm-config.md",
             "content": "## LiteLLM Configuration\n\nLiteLLM is configured via litellm_config.yaml. Per-tenant virtual keys are provisioned by the platform and stored in OpenBao. The master key is used only for startup validation."
           }
@@ -1941,7 +1989,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-050",
@@ -1983,7 +2032,8 @@
           "Flyway"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-051",
@@ -2021,7 +2071,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-052",
@@ -2029,7 +2080,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/agent-channels.md",
             "content": "## Adding a New Agent Channel\n\nTo add a new channel: add the channel name to SUPPORTED_CHANNELS in provisioning.py, add a builder lambda to CHANNEL_REGISTRY in boot_configure.py, add the channel to _write_channel_tokens if it has non-standard fields. Commit the agent runtime change in submodule first, then bump pointer in parent."
           }
@@ -2059,7 +2110,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-053",
@@ -2081,7 +2133,7 @@
         ],
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/deployment.md",
             "content": "## Rollback\n\nRollback is performed via kubectl rollout undo. The exact command depends on the deployment name and namespace. Always verify the rollout status after rollback."
           }
@@ -2104,7 +2156,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-054",
@@ -2142,7 +2195,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-055",
@@ -2150,7 +2204,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/work-orders.md",
             "content": "## Work Order State Machine\n\nWork orders follow a deterministic state machine: pending -> claimed -> in_progress -> completed|failed|canceled. Invalid transitions are rejected with a 409. The wo_watcher.sh background script polls for new work orders and writes them to /sandbox/qortia_inbox.ndjson \u2014 never /tmp/."
           }
@@ -2180,7 +2234,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     }
   ]
 }

@@ -12,14 +12,19 @@ from typing import Any
 
 import httpx
 
-PLATFORM_URL = "http://localhost:8000"
-EMBEDDING_WAIT_SECONDS = 12  # embedding worker runs every 10s
+PLATFORM_URL = "http://localhost:8080"
+EMBEDDING_WAIT_SECONDS = 15  # embedding worker runs every 10s; 15s gives one full cycle
+
+
+def _agent_headers(agent_id: str, tenant_id: str) -> dict[str, str]:
+    """Trusted headers for local-env agent identity (no JWT required)."""
+    return {"X-Agent-ID": agent_id, "X-Tenant-ID": tenant_id}
 
 
 async def provision_eval_agent(
     client: httpx.AsyncClient,
-) -> tuple[str, str, str]:
-    """Provision a fresh eval agent. Returns (tenant_id, agent_id, token)."""
+) -> tuple[str, str]:
+    """Provision a fresh eval agent. Returns (tenant_id, agent_id)."""
     tenant_id = str(uuid.uuid4())
     agent_id = str(uuid.uuid4())
     resp = await client.post(
@@ -32,9 +37,7 @@ async def provision_eval_agent(
         },
     )
     resp.raise_for_status()
-    data = resp.json()
-    token = data.get("token", "")
-    return tenant_id, agent_id, token
+    return tenant_id, agent_id
 
 
 async def seed_case(
@@ -75,27 +78,31 @@ async def seed_org_memories(
     case: dict[str, Any],
     tenant_id: str,
     agent_id: str,
-    token: str,
-) -> None:
-    for om in case["setup"].get("org_memories", []):
-        await client.post(
-            "/v1/remember-org",
-            json=om,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+) -> dict[int, str]:
+    """Seed org memories. Returns {index: org_memory_id}."""
+    headers = _agent_headers(agent_id, tenant_id)
+    org_id_map: dict[int, str] = {}
+    for i, om in enumerate(case["setup"].get("org_memories", [])):
+        resp = await client.post("/v1/remember-org", json=om, headers=headers)
+        if resp.status_code == 200:
+            org_id_map[i] = resp.json().get("id", "")
+    return org_id_map
 
 
 async def seed_knowledge(
     client: httpx.AsyncClient,
     case: dict[str, Any],
-    token: str,
-) -> None:
+    tenant_id: str,
+    agent_id: str,
+) -> list[str]:
+    """Seed knowledge entries. Returns list of source_paths (used for content lookup)."""
+    headers = _agent_headers(agent_id, tenant_id)
+    source_paths: list[str] = []
     for k in case["setup"].get("knowledge", []):
-        await client.post(
-            "/v1/knowledge",
-            json=k,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        resp = await client.post("/v1/knowledge", json=k, headers=headers)
+        if resp.status_code == 200:
+            source_paths.append(k.get("source_path", ""))
+    return source_paths
 
 
 def load_dataset(path: Path) -> list[dict[str, Any]]:

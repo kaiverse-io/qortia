@@ -176,7 +176,7 @@ async def _recall_lessons(
             ORDER BY embedding <=> $1::vector
             LIMIT 10
         """,
-            query_embedding,
+            str(query_embedding),
             agent.agent_id,
             *entity_params,
         )
@@ -273,7 +273,7 @@ async def _vector_private(
               {entity_clause}
             ORDER BY embedding <=> $1::vector LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
-            qe,
+            str(qe),
             agent.agent_id,
             *type_params,
             *entity_params,
@@ -323,7 +323,7 @@ async def _vector_org(
               {entity_clause}
             ORDER BY embedding <=> $1::vector LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
-            qe,
+            str(qe),
             agent.tenant_id,
             *entity_params,
         )
@@ -369,7 +369,7 @@ async def _vector_knowledge(
               AND embedding IS NOT NULL
             ORDER BY embedding <=> $1::vector LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
-            qe,
+            str(qe),
             agent.tenant_id,
         )
     results = []

@@ -39,7 +39,8 @@
           "AuthService"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-006",
@@ -76,7 +77,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-011",
@@ -116,7 +118,8 @@
           "Redis"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-016",
@@ -153,7 +156,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-021",
@@ -189,7 +193,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     },
     {
       "id": "reh-026",
@@ -232,7 +237,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-031",
@@ -275,7 +281,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "org_memories"
     },
     {
       "id": "reh-036",
@@ -283,7 +290,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/qortia.md",
             "content": "## Recall Pipeline\n\nThe recall pipeline uses BM25 and vector search fused via RRF. BM25 uses the 'simple' text search configuration for multilingual support. Vector search uses pgvector cosine similarity with a 0.35 minimum score threshold.\n\n## Memory Types\n\nFive memory types are supported: episodic, experiential, mental_model, decision, lesson. Importance is platform-assigned per type and cannot be overridden by the agent."
           }
@@ -313,7 +320,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-041",
@@ -321,7 +329,7 @@
       "setup": {
         "knowledge": [
           {
-            "source_type": "doc",
+            "source_type": "note",
             "source_path": "docs/platform/security.md",
             "content": "## Tenant Isolation\n\nTenant isolation is enforced at three layers: RLS policies on all data tables, tenant_transaction() context manager that sets app.tenant_id, and the tenant isolation lint gate in CI that rejects any SQL query on a tenant-scoped table without a WHERE tenant_id clause.\n\n## Secret Management\n\nAll secrets are stored in OpenBao. Agents access secrets via the MCP bridge using per-tenant virtual keys. The master key is never exposed to agent containers."
           }
@@ -351,7 +359,8 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "knowledge"
     },
     {
       "id": "reh-046",
@@ -398,7 +407,8 @@
           "Alice"
         ],
         "min_results": 1
-      }
+      },
+      "ground_truth_source": "memories"
     }
   ]
 }

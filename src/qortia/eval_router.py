@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.auth.models import AgentIdentity
 from app.db import get_main_pool
+from app.vault import provision_eval_litellm_key
 from pydantic import BaseModel
 from app.config import settings
 
@@ -27,6 +28,11 @@ async def seed_eval_agent(
 
     async with get_main_pool().acquire() as conn:
         await conn.execute(
+            "INSERT INTO auth.tenants (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
+            tenant_id,
+            f"eval-tenant-{str(tenant_id)[:8]}",
+        )
+        await conn.execute(
             """
             INSERT INTO auth.agents (id, tenant_id, name, role, status, soul_md, domain_md)
             VALUES ($1, $2, $3, $4, 'active', 'eval soul', 'eval domain')
@@ -38,6 +44,7 @@ async def seed_eval_agent(
             role,
         )
 
+    await provision_eval_litellm_key(str(tenant_id))
     return {"status": "seeded", "agent_id": str(agent_id)}
 
 
@@ -81,13 +88,10 @@ async def eval_recall(
     if not settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    # We call the internal recall logic directly
     from app.qortia.recall import recall
     from app.qortia.models import RecallRequest
 
-    # Mock agent identity
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
-
     body = RecallRequest(query=query, scope=scope)
     resp = await recall(body, agent)
     return resp.model_dump()
