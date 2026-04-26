@@ -1,0 +1,404 @@
+{
+  "version": "1",
+  "cases": [
+    {
+      "id": "reh-001",
+      "description": "episodic temporal \u2014 named entity, BM25 dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Completed the rate limiting design for AuthService. Used token bucket algorithm with Redis backend.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed PR #142 for the payment gateway. Found a SQL injection risk in the order query.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Reviewed the rate limiting design for PaymentService. Used leaky bucket algorithm with Postgres backend.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "rate limiting AuthService",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "AuthService"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-006",
+      "description": "episodic BM25 fallback \u2014 paraphrased query, semantic search dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "The database performance monitor showed that the query planner was choosing a sequential scan instead of the index.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Reviewed the API gateway logs for unusual traffic patterns.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "The network monitor showed unusual packet loss on the primary interface.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "the thing that monitors db performance",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-011",
+      "description": "decision BM25 \u2014 named entity, superseded decision hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided to remove Redis from the stack entirely. All session state moves to Postgres. Rationale: operational simplicity, ADR-049.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Benchmarked Redis vs Postgres for session storage. Redis was 3x faster at 10k req/s.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Decided to use Redis for session storage to improve latency. Postgres was too slow at peak load.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "Redis decision stack removal",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "Redis"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-016",
+      "description": "lesson vector \u2014 paraphrased query, semantic dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "When an agent boot fails with a Vault authentication error, the root cause is almost always a stale token. Rotating the token and reprovisioning resolves it within 2 minutes.",
+            "scope": "private"
+          },
+          {
+            "type": "lesson",
+            "content": "Reflection cycles that produce more than 5 new mental models in one pass are usually a sign of too many episodic memories queued. Increase the reflection threshold.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "When a database connection fails with an authentication error, the root cause is usually an expired password. Rotating the password and restarting the service resolves it.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "agent fails to start because of authentication problem",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-021",
+      "description": "mental model hybrid \u2014 full pipeline, related-but-wrong hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "Agents that accumulate more than 30 episodic memories without a reflection cycle develop context drift \u2014 their tool calls become less precise because the LLM context is dominated by raw events rather than synthesised patterns.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Triggered a reflection cycle after 35 episodic memories. Tool call precision improved in the next session.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "Agents that accumulate more than 30 org memories without a weekly summary develop knowledge fragmentation \u2014 their recall becomes less coherent because the org memory corpus is too large.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "what happens when agents skip reflection for too long",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-026",
+      "description": "org memory BM25 \u2014 named entity, same-org different-process hard negative",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "AuthService rate limiting complete",
+            "content": "Completed the rate limiting implementation for AuthService. Token bucket algorithm, Redis backend, 10k req/s sustained. Owner: @alice."
+          },
+          {
+            "type": "handoff",
+            "title": "PaymentService audit complete",
+            "content": "Completed the security audit for PaymentService. Found 2 medium-severity issues. Owner: @bob."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder private memory to satisfy seed_case requirement.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting handoff",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-031",
+      "description": "org memory vector \u2014 semantic paraphrase for handoff content",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "embedding worker multi-tenant fix",
+            "content": "Fixed the embedding worker to group rows by tenant_id and use per-tenant LiteLLM virtual keys. Master key now only used for startup dimension validation."
+          },
+          {
+            "type": "handoff",
+            "title": "LiteLLM gateway upgrade",
+            "content": "Upgraded LiteLLM gateway from v1.82.0 to v1.83.7-stable. No breaking changes to /embeddings or /chat/completions endpoints."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "how the embedding worker handles multiple tenants",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-036",
+      "description": "knowledge BM25 \u2014 named entity in index, same-doc different-section hard negative",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/qortia.md",
+            "content": "## Recall Pipeline\n\nThe recall pipeline uses BM25 and vector search fused via RRF. BM25 uses the 'simple' text search configuration for multilingual support. Vector search uses pgvector cosine similarity with a 0.35 minimum score threshold.\n\n## Memory Types\n\nFive memory types are supported: episodic, experiential, mental_model, decision, lesson. Importance is platform-assigned per type and cannot be overridden by the agent."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "BM25 recall pipeline simple configuration",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-041",
+      "description": "knowledge vector \u2014 semantic paraphrase for doc content",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/security.md",
+            "content": "## Tenant Isolation\n\nTenant isolation is enforced at three layers: RLS policies on all data tables, tenant_transaction() context manager that sets app.tenant_id, and the tenant isolation lint gate in CI that rejects any SQL query on a tenant-scoped table without a WHERE tenant_id clause.\n\n## Secret Management\n\nAll secrets are stored in OpenBao. Agents access secrets via the MCP bridge using per-tenant virtual keys. The master key is never exposed to agent containers."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "how the platform prevents one customer from seeing another customer's data",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-046",
+      "description": "entity filter \u2014 entities param narrows to correct memory",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Alice reviewed the AuthService rate limiting PR and approved it. Merge scheduled for Friday.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Bob reviewed the PaymentService rate limiting PR and requested changes.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Alice reviewed the database migration PR and found a missing index.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Carol reviewed the AuthService deployment plan and approved it.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "rate limiting PR review",
+        "scope": "private",
+        "rerank": false,
+        "entities": [
+          "Alice",
+          "AuthService"
+        ]
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "Alice"
+        ],
+        "min_results": 1
+      }
+    }
+  ]
+}

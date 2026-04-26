@@ -1573,6 +1573,614 @@
         "ground_truth_must_rank_above_hard_negatives": true,
         "min_results": 1
       }
+    },
+    {
+      "id": "reh-041",
+      "description": "knowledge vector \u2014 semantic paraphrase for doc content",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/security.md",
+            "content": "## Tenant Isolation\n\nTenant isolation is enforced at three layers: RLS policies on all data tables, tenant_transaction() context manager that sets app.tenant_id, and the tenant isolation lint gate in CI that rejects any SQL query on a tenant-scoped table without a WHERE tenant_id clause.\n\n## Secret Management\n\nAll secrets are stored in OpenBao. Agents access secrets via the MCP bridge using per-tenant virtual keys. The master key is never exposed to agent containers."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "how the platform prevents one customer from seeing another customer's data",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-042",
+      "description": "knowledge vector \u2014 semantic paraphrase for operational doc",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/observability.md",
+            "content": "## Log Format\n\nAll platform logs use structured dict payloads. The 'event' field is required and must be snake_case. The 'agent_id' and 'tenant_id' fields are included when the log is scoped to a specific agent or tenant. Secrets must be redacted via redact_secrets() before logging.\n\n## Metrics\n\nAll metrics use the qortia_ prefix. agent_id is never used as a Prometheus label due to unbounded cardinality."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "rules for what fields must be in every log entry",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-043",
+      "description": "knowledge vector \u2014 semantic paraphrase for testing doc",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/testing.md",
+            "content": "## Integration Test Architecture\n\nThe platform app runs on a dedicated background thread with its own event loop. This is mandatory \u2014 pytest-asyncio manages its own per-test loop and running the app on the same loop causes LifespanManager to deadlock. All asyncio primitives must be created inside the background coroutine.\n\n## Container Images\n\nIntegration tests use openbao/openbao:2.5.3, never hashicorp/vault. The root token env var is BAO_DEV_ROOT_TOKEN_ID."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "why integration tests run the app on a separate thread",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-044",
+      "description": "knowledge vector \u2014 semantic paraphrase for CI doc",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/ci-cd.md",
+            "content": "## Security Scanners\n\nTruffleHog scans the PR diff for verified secrets. Trivy scans the filesystem for CRITICAL/HIGH CVEs. Both are pinned to exact tags \u2014 never @main or @master. A failing security scan blocks merge.\n\n## Coverage Floors\n\nPlatform unit tests: 60% floor. Mission Control: 80% lines and functions. Integration tests: 40% floor. Floors are never lowered."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "what security scanning tools run in the CI pipeline",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-045",
+      "description": "knowledge vector \u2014 semantic paraphrase for dependency doc",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/dependencies.md",
+            "content": "## Hard Pinning Rules\n\nFour dependencies are always exact-pinned: openbao/openbao (secrets store), mcp SDK (stdio protocol), en-core-web-sm spaCy model (must match spaCy major.minor), security scanner actions in CI. Floating these creates silent breaking changes or supply-chain risk.\n\n## Renovate\n\nRenovate manages all six dependency layers automatically. openbao, agent-runtime, mcp SDK, and security scanners never auto-merge \u2014 they require human review."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "which dependencies must always be pinned to exact versions",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-046",
+      "description": "entity filter \u2014 entities param narrows to correct memory",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Alice reviewed the AuthService rate limiting PR and approved it. Merge scheduled for Friday.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Bob reviewed the PaymentService rate limiting PR and requested changes.",
+            "scope": "private"
+          },
+          {
+            "type": "episodic",
+            "content": "Alice reviewed the database migration PR and found a missing index.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Carol reviewed the AuthService deployment plan and approved it.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "rate limiting PR review",
+        "scope": "private",
+        "rerank": false,
+        "entities": [
+          "Alice",
+          "AuthService"
+        ]
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "Alice"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-047",
+      "description": "entity filter \u2014 entity narrows to correct org memory",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "OpenBao upgrade complete",
+            "content": "Upgraded OpenBao from 2.4.0 to 2.5.3. Raft storage format unchanged. All agent Vault tokens remain valid. Owner: @alice."
+          },
+          {
+            "type": "handoff",
+            "title": "Postgres upgrade complete",
+            "content": "Upgraded Postgres from 15 to 16. pgvector extension re-installed. All HNSW indexes rebuilt. Owner: @bob."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "infrastructure upgrade handoff",
+        "scope": "org",
+        "rerank": false,
+        "entities": [
+          "OpenBao"
+        ]
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-048",
+      "description": "entity filter \u2014 entity filter excludes wrong-entity match",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided to use LiteLLM as the inference gateway for all LLM calls. Rationale: unified API, per-tenant virtual keys, cost tracking.",
+            "scope": "private"
+          },
+          {
+            "type": "decision",
+            "content": "Decided to use Anthropic Claude 3 Haiku as the default model for agent reflection. Rationale: cost-effective, sufficient quality.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Decided to use OpenAI GPT-4o as the primary model for agent reasoning. Rationale: best quality for complex tasks.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "inference gateway decision",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": [
+          "LiteLLM"
+        ]
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "LiteLLM"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-049",
+      "description": "entity filter \u2014 entity filter on knowledge corpus",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/vault-policy.md",
+            "content": "## OpenBao Vault Policy\n\nAgent vault policies are scoped to {tenant_id}/agents/{agent_id}/*. Paths outside these prefixes require an ADR and security review. The create_agent_policy() function in vault.py generates the policy. Never access _vault_client directly outside vault.py."
+          },
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/litellm-config.md",
+            "content": "## LiteLLM Configuration\n\nLiteLLM is configured via litellm_config.yaml. Per-tenant virtual keys are provisioned by the platform and stored in OpenBao. The master key is used only for startup validation."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "vault policy path scoping rules",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": [
+          "OpenBao"
+        ]
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-050",
+      "description": "entity filter \u2014 entity filter on lesson type",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "When Flyway fails with a checksum mismatch, the root cause is always an edited migration file. Never edit V{N}__*.sql files after they have been applied. Create V{N+1} instead.",
+            "scope": "private"
+          },
+          {
+            "type": "lesson",
+            "content": "When Renovate opens a PR for Flyway, always check the migration checksum algorithm changelog before merging.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "When Liquibase fails with a checksum mismatch, the root cause is always an edited changeset. Never edit changesets after they have been applied.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "checksum mismatch error lesson",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": [
+          "Flyway"
+        ]
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": [
+          "Flyway"
+        ],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-051",
+      "description": "cross-scope all \u2014 ground truth in private, noise in org",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided to use the 'simple' text search configuration for BM25 queries to support multilingual agent content. ADR-076.",
+            "scope": "private"
+          }
+        ],
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "BM25 config review",
+            "content": "Reviewed BM25 configuration options. Team discussed 'english' vs 'simple' vs 'unicode61'. Decision deferred to individual agent teams."
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Reviewed the BM25 configuration for the search service. Used the 'english' configuration for English-only content.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "BM25 simple configuration decision",
+        "scope": "all",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-052",
+      "description": "cross-scope all \u2014 ground truth in knowledge, noise in private",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/agent-channels.md",
+            "content": "## Adding a New Agent Channel\n\nTo add a new channel: add the channel name to SUPPORTED_CHANNELS in provisioning.py, add a builder lambda to CHANNEL_REGISTRY in boot_configure.py, add the channel to _write_channel_tokens if it has non-standard fields. Commit the agent runtime change in submodule first, then bump pointer in parent."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Added Slack channel support to the provisioning flow. Tested with a staging agent.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Reviewed the channel configuration for the Discord integration. Found a missing token field.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "steps to add a new communication channel for agents",
+        "scope": "all",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-053",
+      "description": "cross-scope all \u2014 ground truth in org, noise in private and knowledge",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "production rollback procedure",
+            "content": "Production rollback procedure: kubectl rollout undo deployment/platform -n platform. Then open a post-mortem issue within 24 hours. Never skip the post-mortem \u2014 it is required by the ADLC Gate 5 protocol."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Practiced the rollback procedure on staging. Took 45 seconds end-to-end.",
+            "scope": "private"
+          }
+        ],
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/deployment.md",
+            "content": "## Rollback\n\nRollback is performed via kubectl rollout undo. The exact command depends on the deployment name and namespace. Always verify the rollout status after rollback."
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Reviewed the staging rollback procedure. Used helm rollback instead of kubectl.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "production rollback post-mortem requirement",
+        "scope": "all",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-054",
+      "description": "cross-scope all \u2014 semantic query, ground truth in private lesson",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "The OpenBao root token env var is BAO_DEV_ROOT_TOKEN_ID, not VAULT_DEV_ROOT_TOKEN_ID. Using the HashiCorp env var with OpenBao causes a silent failure \u2014 OpenBao generates a random token instead, and all Vault operations fail with 403.",
+            "scope": "private"
+          }
+        ],
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "OpenBao integration notes",
+            "content": "OpenBao 2.5.3 is API-compatible with HashiCorp Vault but has two silent differences: root token env var name and LogMessageWaitStrategy import path."
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Reviewed the HashiCorp Vault documentation for the dev mode root token configuration.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "why vault operations fail silently in tests",
+        "scope": "all",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "reh-055",
+      "description": "cross-scope all \u2014 semantic query, ground truth in knowledge",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "doc",
+            "source_path": "docs/platform/work-orders.md",
+            "content": "## Work Order State Machine\n\nWork orders follow a deterministic state machine: pending -> claimed -> in_progress -> completed|failed|canceled. Invalid transitions are rejected with a 409. The wo_watcher.sh background script polls for new work orders and writes them to /sandbox/qortia_inbox.ndjson \u2014 never /tmp/."
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Debugged a work order that was stuck in claimed state. Root cause was a crashed agent that never transitioned to in_progress.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Reviewed the work order schema. Found that the spec field allows arbitrary JSON.",
+            "scope": "private"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "where work order notifications are written on the agent filesystem",
+        "scope": "all",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      }
     }
   ]
 }
