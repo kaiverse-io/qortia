@@ -80,7 +80,7 @@ async def _record_llm_cost(
 
 @router.post("/v1/reflect", response_model=ReflectResponse)
 async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectResponse:
-    from app.qortia.remember import assert_agent_active
+    from app.qortia.common import assert_agent_active
 
     # Fetch data outside the write transaction — no DB lock held during LLM call
     async with tenant_transaction(
@@ -306,7 +306,7 @@ async def _process_embedding_batch() -> None:
         async with conn.transaction():
             hindsight = await conn.fetch(
                 """
-                SELECT id, content AS text_to_embed, 'hindsight_memories' AS tbl
+                SELECT id, tenant_id, content AS text_to_embed, 'hindsight_memories' AS tbl
                 FROM hindsight_memories
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
@@ -318,7 +318,7 @@ async def _process_embedding_batch() -> None:
 
             org_mem = await conn.fetch(
                 """
-                SELECT id, content AS text_to_embed, 'org_memory' AS tbl
+                SELECT id, tenant_id, content AS text_to_embed, 'org_memory' AS tbl
                 FROM org_memory
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
@@ -330,7 +330,7 @@ async def _process_embedding_batch() -> None:
 
             org_know = await conn.fetch(
                 """
-                SELECT id, index_summary AS text_to_embed, 'org_knowledge' AS tbl
+                SELECT id, tenant_id, index_summary AS text_to_embed, 'org_knowledge' AS tbl
                 FROM org_knowledge
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
@@ -342,16 +342,34 @@ async def _process_embedding_batch() -> None:
 
             rows = [dict(r) for r in list(hindsight) + list(org_mem) + list(org_know)]
 
-    # Step 2: embed + write each row — no transaction held during HTTP calls
+    # Group by tenant_id to minimise Vault round-trips (one key fetch per tenant per batch)
+    from collections import defaultdict
+
+    rows_by_tenant = defaultdict(list)
     for row in rows:
-        await _embed_single_row(row)
+        rows_by_tenant[str(row["tenant_id"])].append(row)
+
+    for tenant_id_str, tenant_rows in rows_by_tenant.items():
+        try:
+            litellm_key = await get_litellm_key(tenant_id_str)
+        except Exception as exc:
+            logger.warning(
+                {
+                    "event": "embedding_key_fetch_failed",
+                    "tenant_id": tenant_id_str,
+                    "error": str(exc),
+                }
+            )
+            continue
+        for row in tenant_rows:
+            await _embed_single_row(row, litellm_key)
 
 
-async def _embed_single_row(row: dict) -> None:  # type: ignore[type-arg]
+async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignore[type-arg]
     if not row.get("text_to_embed"):
         return
     try:
-        embedding = await _get_embedding(row["text_to_embed"])
+        embedding = await _get_embedding(row["text_to_embed"], litellm_key)
         async with get_main_pool().acquire() as conn:
             await conn.execute(
                 f"UPDATE {row['tbl']} SET embedding = $1::vector WHERE id = $2",
@@ -379,12 +397,27 @@ async def _embed_single_row(row: dict) -> None:  # type: ignore[type-arg]
             )
 
 
-async def _get_embedding(text: str) -> list[float]:
+async def _get_embedding(text: str, litellm_key: str) -> list[float]:
     resp = await get_litellm_client().post(
         "/embeddings",
-        headers={"Authorization": f"Bearer {settings.litellm_master_key}"},
+        headers={"Authorization": f"Bearer {litellm_key}"},
         json={"model": EMBEDDING_MODEL, "input": text},
         timeout=30.0,
     )
     resp.raise_for_status()
     return resp.json()["data"][0]["embedding"]  # type: ignore[no-any-return]
+
+
+async def validate_embedding_dimensions() -> None:
+    resp = await get_litellm_client().post(
+        "/embeddings",
+        headers={"Authorization": f"Bearer {settings.litellm_master_key}"},
+        json={"model": EMBEDDING_MODEL, "input": "dimension check"},
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    actual = len(resp.json()["data"][0]["embedding"])
+    if actual != 768:
+        raise RuntimeError(
+            f"Embedding dimension mismatch: schema expects 768, got {actual}."
+        )

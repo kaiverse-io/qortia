@@ -1,0 +1,40 @@
+[
+  {
+    "id": "case_001",
+    "query": "Who is the chief architect of the platform?",
+    "ground_truth_ids": ["mem_001"],
+    "memories": [
+      {
+        "id": "mem_001",
+        "type": "episodic",
+        "content": "Scout is the chief architect and primary lead for the platform infrastructure.",
+        "scope": "private"
+      },
+      {
+        "id": "mem_002",
+        "type": "episodic",
+        "content": "Alex is a junior engineer working on the dashboard UI.",
+        "scope": "private"
+      }
+    ]
+  },
+  {
+    "id": "case_002",
+    "query": "What was the decision about Redis?",
+    "ground_truth_ids": ["mem_003"],
+    "memories": [
+      {
+        "id": "mem_003",
+        "type": "decision",
+        "content": "We decided to remove Redis from the stack to simplify infrastructure and reduce cost, moving all state to Postgres.",
+        "scope": "private"
+      },
+      {
+        "id": "mem_004",
+        "type": "episodic",
+        "content": "Redis is a popular key-value store used for caching.",
+        "scope": "private"
+      }
+    ]
+  }
+]

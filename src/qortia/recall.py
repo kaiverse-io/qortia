@@ -215,7 +215,7 @@ async def _bm25_private(
     # type param is $3; entity param shifts to $4 when type filter is active
     type_clause, type_params = _type_filter_clause(body.type, param=3)
     entity_clause, entity_params = _entity_filter_clause(
-        body.entities, base_param=3 + len(type_params) + 1
+        body.entities, base_param=3 + len(type_params)
     )
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -245,7 +245,7 @@ async def _vector_private(
     # type param is $3; entity param shifts to $4 when type filter is active
     type_clause, type_params = _type_filter_clause(body.type, param=3)
     entity_clause, entity_params = _entity_filter_clause(
-        body.entities, base_param=3 + len(type_params) + 1
+        body.entities, base_param=3 + len(type_params)
     )
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -529,7 +529,11 @@ async def _llm_rerank(
 # ── Access tracking ──────────────────────────────────────────
 
 
-async def _record_recall_access(results: list[RecallResult]) -> None:
+async def _record_recall_access(
+    results: list[RecallResult],
+    tenant_id: UUID,
+    agent_id: UUID,
+) -> None:
     by_table: dict[str, list[str]] = defaultdict(list)
     for r in results:
         table = (
@@ -541,7 +545,7 @@ async def _record_recall_access(results: list[RecallResult]) -> None:
         )
         by_table[table].append(r.id)
     try:
-        async with get_main_pool().acquire() as conn:
+        async with tenant_transaction(get_main_pool(), tenant_id, agent_id) as conn:
             for table, ids in by_table.items():
                 await conn.execute(
                     f"""
@@ -549,7 +553,7 @@ async def _record_recall_access(results: list[RecallResult]) -> None:
                     SET recall_count = recall_count + 1,
                         last_recalled_at = now()
                     WHERE id = ANY($1::uuid[])
-                """,
+                    """,
                     ids,
                 )
     except Exception as exc:
@@ -564,7 +568,7 @@ async def recall(
     body: RecallRequest,
     agent: AgentIdentity = Depends(require_agent),
 ) -> RecallResponse:
-    from app.qortia.remember import assert_agent_active
+    from app.qortia.common import assert_agent_active
 
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -626,9 +630,9 @@ async def recall(
 
         results = fused_memory + knowledge_results
 
-    if body.rerank or len(results) < 3:
+    if body.rerank and len(results) >= 2:
         results = await _llm_rerank(body.query, results, agent)
 
-    asyncio.create_task(_record_recall_access(results))
+    asyncio.create_task(_record_recall_access(results, agent.tenant_id, agent.agent_id))
 
     return RecallResponse(results=results)

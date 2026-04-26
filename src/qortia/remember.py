@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import asyncpg
 import hashlib
 import json
 import logging
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -24,21 +22,10 @@ from app.qortia.models import (
     RememberResponse,
 )
 from app.db import get_main_pool, tenant_transaction
+from app.qortia.common import assert_agent_active
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-async def assert_agent_active(
-    agent_id: UUID, tenant_id: UUID, conn: asyncpg.Connection
-) -> None:
-    row = await conn.fetchrow(
-        "SELECT status FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-        agent_id,
-        tenant_id,
-    )
-    if row is None or row["status"] != "active":
-        raise HTTPException(403, "Agent is not active")
 
 
 @router.post("/v1/remember", response_model=RememberResponse)

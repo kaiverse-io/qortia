@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import asyncpg
 import datetime
 import hashlib
 import json
@@ -16,6 +15,7 @@ from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
 from app.qortia.models import KnowledgeIngestRequest
 from app.db import get_main_pool, tenant_transaction
+from app.qortia.common import assert_agent_active
 
 logger = logging.getLogger(__name__)
 
@@ -146,18 +146,6 @@ def extract_index_fields(heading: str, text: str) -> dict[str, Any]:
 router = APIRouter()
 
 
-async def _assert_agent_active(
-    agent_id: UUID, tenant_id: UUID, conn: asyncpg.Connection
-) -> None:
-    row = await conn.fetchrow(
-        "SELECT status FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-        agent_id,
-        tenant_id,
-    )
-    if row is None or row["status"] != "active":
-        raise HTTPException(403, "Agent is not active")
-
-
 @router.post("/v1/knowledge")
 async def ingest_knowledge(
     body: KnowledgeIngestRequest,
@@ -166,7 +154,7 @@ async def ingest_knowledge(
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
-        await _assert_agent_active(agent.agent_id, agent.tenant_id, conn)
+        await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
         role = await conn.fetchval(
             "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
             agent.agent_id,
@@ -286,7 +274,7 @@ async def delete_knowledge(
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
-        await _assert_agent_active(agent.agent_id, agent.tenant_id, conn)
+        await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
         role = await conn.fetchval(
             "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
             agent.agent_id,
