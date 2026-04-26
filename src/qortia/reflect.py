@@ -298,6 +298,7 @@ async def run_embedding_worker() -> None:
     while True:
         await asyncio.sleep(10)
         await _process_embedding_batch()
+        await _populate_graph_batch()
 
 
 async def _process_embedding_batch() -> None:
@@ -340,7 +341,25 @@ async def _process_embedding_batch() -> None:
                 EMBEDDING_BATCH_SIZE,
             )
 
-            rows = [dict(r) for r in list(hindsight) + list(org_mem) + list(org_know)]
+            entities = await conn.fetch(
+                """
+                SELECT id, tenant_id, entity_text AS text_to_embed, 'qortia_entities' AS tbl
+                FROM qortia_entities
+                WHERE embedding IS NULL AND embedding_attempts < 3
+                ORDER BY tenant_id, created_at ASC
+                LIMIT $1
+                FOR UPDATE SKIP LOCKED
+            """,
+                EMBEDDING_BATCH_SIZE,
+            )
+
+            rows = [
+                dict(r)
+                for r in list(hindsight)
+                + list(org_mem)
+                + list(org_know)
+                + list(entities)
+            ]
 
     # Group by tenant_id to minimise Vault round-trips (one key fetch per tenant per batch)
     from collections import defaultdict
@@ -421,3 +440,86 @@ async def validate_embedding_dimensions() -> None:
         raise RuntimeError(
             f"Embedding dimension mismatch: schema expects 768, got {actual}."
         )
+
+
+async def _populate_graph_batch() -> None:
+    """
+    Asynchronously links memories to the entity graph.
+    Runs in the background to avoid write amplification on the main API path.
+    """
+    try:
+        async with get_main_pool().acquire() as conn:
+            # 1. Hindsight Memories (Private)
+            rows = await conn.fetch(
+                """
+                SELECT id, tenant_id, agent_id, entities
+                FROM hindsight_memories
+                WHERE is_graphed = false AND entities != '[]'
+                LIMIT 50
+                FOR UPDATE SKIP LOCKED
+            """
+            )
+            for row in rows:
+                async with conn.transaction():
+                    try:
+                        entities = json.loads(row["entities"])
+                    except Exception:
+                        entities = []
+                    for ent in entities:
+                        await conn.execute(
+                            """
+                            INSERT INTO qortia_entities (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
+                            VALUES ($1, $2, $3, 'CONCEPT', ARRAY[$4::uuid])
+                            ON CONFLICT (tenant_id, agent_id, entity_text) WHERE agent_id IS NOT NULL 
+                            DO UPDATE SET 
+                                linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $4),
+                                updated_at = now()
+                            WHERE NOT ($4 = ANY(qortia_entities.linked_memory_ids))
+                        """,
+                            row["tenant_id"],
+                            row["agent_id"],
+                            ent,
+                            row["id"],
+                        )
+                    await conn.execute(
+                        "UPDATE hindsight_memories SET is_graphed = true WHERE id = $1",
+                        row["id"],
+                    )
+
+            # 2. Org Memories (Shared)
+            rows = await conn.fetch(
+                """
+                SELECT id, tenant_id, entities
+                FROM org_memory
+                WHERE is_graphed = false AND entities != '[]'
+                LIMIT 50
+                FOR UPDATE SKIP LOCKED
+            """
+            )
+            for row in rows:
+                async with conn.transaction():
+                    try:
+                        entities = json.loads(row["entities"])
+                    except Exception:
+                        entities = []
+                    for ent in entities:
+                        await conn.execute(
+                            """
+                            INSERT INTO qortia_entities (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
+                            VALUES ($1, NULL, $2, 'CONCEPT', ARRAY[$3::uuid])
+                            ON CONFLICT (tenant_id, entity_text) WHERE agent_id IS NULL 
+                            DO UPDATE SET 
+                                linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $3),
+                                updated_at = now()
+                            WHERE NOT ($3 = ANY(qortia_entities.linked_memory_ids))
+                        """,
+                            row["tenant_id"],
+                            ent,
+                            row["id"],
+                        )
+                    await conn.execute(
+                        "UPDATE org_memory SET is_graphed = true WHERE id = $1",
+                        row["id"],
+                    )
+    except Exception as exc:
+        logger.warning({"event": "graph_population_failed", "error": str(exc)})

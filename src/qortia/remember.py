@@ -227,6 +227,19 @@ async def forget(
 
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         await conn.execute(f"DELETE FROM {table} WHERE id = $1", row["id"])
+
+        # Obsidian Layer: Cleanup entity graph
+        await conn.execute(
+            """
+            UPDATE qortia_entities
+            SET linked_memory_ids = array_remove(linked_memory_ids, $1),
+                updated_at = now()
+            WHERE $1 = ANY(linked_memory_ids)
+              AND tenant_id = $2
+            """,
+            row["id"],
+            agent.tenant_id,
+        )
         await conn.execute(
             """
             INSERT INTO memory_history

@@ -369,7 +369,9 @@ async def _vector_knowledge(
 # ── RRF fusion ───────────────────────────────────────────────
 
 
-def _rrf_fuse(results: list[RecallResult]) -> list[RecallResult]:
+def _rrf_fuse(
+    results: list[RecallResult], entity_links: set[str] | None = None
+) -> list[RecallResult]:
     if not results:
         return []
     scores: dict[str, float] = {}
@@ -390,7 +392,10 @@ def _rrf_fuse(results: list[RecallResult]) -> list[RecallResult]:
             recall_count=r._recall_count,
             last_recalled_at=r._last_recalled_at,
         )
-        return scores[rid] * imp
+        boost = 1.0
+        if entity_links and rid in entity_links:
+            boost = 1.5  # 50% boost for entity adjacency
+        return scores[rid] * imp * boost
 
     return [by_id[rid] for rid in sorted(scores.keys(), key=final_score, reverse=True)]
 
@@ -618,7 +623,31 @@ async def recall(
                 else:
                     memory_results.append(r)
 
-        fused_memory = _rrf_fuse(memory_results)
+        # ── Entity Graph Boost (The Obsidian Layer) ──
+        from app.qortia.knowledge import extract_entities
+
+        query_entities = extract_entities(body.query)
+        entity_links = set()
+        if query_entities:
+            async with tenant_transaction(
+                get_main_pool(), agent.tenant_id, agent.agent_id
+            ) as conn:
+                # Query both org and agent entities
+                linked_rows = await conn.fetch(
+                    """
+                    SELECT unnest(linked_memory_ids) as mem_id
+                    FROM qortia_entities
+                    WHERE tenant_id = $1
+                      AND (agent_id IS NULL OR agent_id = $2)
+                      AND entity_text = ANY($3::text[])
+                """,
+                    agent.tenant_id,
+                    agent.agent_id,
+                    query_entities,
+                )
+                entity_links = {str(r["mem_id"]) for r in linked_rows}
+
+        fused_memory = _rrf_fuse(memory_results, entity_links=entity_links)
 
         if query_embedding and knowledge_candidates:
             knowledge_results = _mmr(
