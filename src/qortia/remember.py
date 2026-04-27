@@ -189,14 +189,18 @@ async def forget(
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
         hm = await conn.fetchrow(
-            "SELECT id, agent_id, type, content FROM hindsight_memories WHERE id = $1",
+            "SELECT id, agent_id, type, content FROM hindsight_memories"
+            " WHERE id = $1 AND agent_id = $2",
             body.id,
+            agent.agent_id,
         )
         om = None
         if hm is None:
             om = await conn.fetchrow(
-                "SELECT id, author_id, type, content FROM org_memory WHERE id = $1",
+                "SELECT id, author_id, type, content FROM org_memory"
+                " WHERE id = $1 AND tenant_id = $2",
                 body.id,
+                agent.tenant_id,
             )
 
         if hm is None and om is None:
