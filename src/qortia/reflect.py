@@ -127,6 +127,8 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             SELECT content FROM hindsight_memories
             WHERE agent_id = $1
               AND type IN ('episodic', 'experiential')
+              AND tier = 'active'
+              AND (expires_at IS NULL OR expires_at > now())
               AND created_at > now() - interval '7 days'
             ORDER BY created_at DESC LIMIT 30
         """,
@@ -431,6 +433,53 @@ NEVER include:
 - Single-occurrence events that have not recurred
 - Ephemeral details (ticket numbers, session IDs, temporary values)
 - Abstract concepts without grounding ("things went well", "it was difficult")"""
+
+
+# ── Archival background task ─────────────────────────────────
+
+
+async def run_archival_task() -> None:
+    while True:
+        await asyncio.sleep(86400 * 7)  # weekly
+        await _archive_old_episodic_memories()
+        await _purge_expired_short_term_memories()
+
+
+async def _archive_old_episodic_memories() -> None:
+    try:
+        async with get_main_pool().acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE hindsight_memories
+                SET tier = 'archive'
+                WHERE type = 'episodic'
+                  AND tier = 'active'
+                  AND created_at < now() - interval '30 days'
+                  AND importance < 0.4
+                  AND recall_count < 3
+                """
+            )
+            archived = int(result.split()[-1])
+            if archived > 0:
+                logger.info({"event": "memories_archived", "count": archived})
+    except Exception as exc:
+        logger.warning({"event": "archival_task_failed", "error": str(exc)})
+
+
+async def _purge_expired_short_term_memories() -> None:
+    try:
+        async with get_main_pool().acquire() as conn:
+            result = await conn.execute(
+                """
+                DELETE FROM hindsight_memories
+                WHERE type = 'short_term' AND expires_at < now()
+                """
+            )
+            purged = int(result.split()[-1])
+            if purged > 0:
+                logger.info({"event": "short_term_memories_purged", "count": purged})
+    except Exception as exc:
+        logger.warning({"event": "short_term_purge_failed", "error": str(exc)})
 
 
 # ── Embedding worker ─────────────────────────────────────────

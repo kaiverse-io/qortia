@@ -24,6 +24,7 @@ def test_importance_covers_all_types() -> None:
         "mental_model",
         "decision",
         "lesson",
+        "short_term",
     }
 
 
@@ -149,12 +150,53 @@ def test_recall_request_valid_entities() -> None:
 
 
 def test_recall_request_all_valid_scopes() -> None:
-    for scope in ("private", "org", "knowledge", "all"):
+    for scope in ("private", "org", "knowledge", "all", "archive"):
         req = RecallRequest(query="test", scope=scope)  # type: ignore[arg-type]
         assert req.scope == scope
 
 
 def test_recall_request_all_valid_types() -> None:
-    for t in ("episodic", "experiential", "mental_model", "decision", "lesson"):
+    for t in (
+        "episodic",
+        "experiential",
+        "mental_model",
+        "decision",
+        "lesson",
+        "short_term",
+    ):
         req = RecallRequest(query="test", type=t)  # type: ignore[arg-type]
         assert req.type == t
+
+
+# ── MemoryItem short_term / ttl_seconds ──────────────────────
+
+
+def test_short_term_memory_requires_ttl_seconds() -> None:
+    with pytest.raises(ValidationError, match="ttl_seconds"):
+        MemoryItem(type="short_term", content="user is reviewing Q3 report")
+
+
+def test_short_term_memory_zero_ttl_rejected() -> None:
+    with pytest.raises(ValidationError):
+        MemoryItem(type="short_term", content="context", ttl_seconds=0)
+
+
+def test_short_term_memory_negative_ttl_rejected() -> None:
+    with pytest.raises(ValidationError):
+        MemoryItem(type="short_term", content="context", ttl_seconds=-60)
+
+
+def test_short_term_memory_valid() -> None:
+    item = MemoryItem(
+        type="short_term", content="user is on payment flow", ttl_seconds=3600
+    )
+    assert item.ttl_seconds == 3600
+
+
+def test_ttl_seconds_on_non_short_term_rejected() -> None:
+    with pytest.raises(ValidationError, match="ttl_seconds"):
+        MemoryItem(type="episodic", content="something happened", ttl_seconds=60)
+
+
+def test_short_term_importance_is_lowest() -> None:
+    assert IMPORTANCE["short_term"] < IMPORTANCE["episodic"]

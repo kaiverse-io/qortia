@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -48,12 +49,18 @@ async def remember(
                 logger.warning({"event": "ner_extraction_failed", "error": str(exc)})
                 entities = []
 
+            expires_at = (
+                datetime.now(timezone.utc) + timedelta(seconds=mem.ttl_seconds)
+                if mem.type == "short_term" and mem.ttl_seconds
+                else None
+            )
+
             row_id = await conn.fetchval(
                 """
                 INSERT INTO hindsight_memories
                     (tenant_id, agent_id, type, content, importance,
-                     source_task_id, metadata, entities)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     source_task_id, metadata, entities, expires_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
             """,
                 agent.tenant_id,
@@ -64,6 +71,7 @@ async def remember(
                 mem.source_task_id,
                 json.dumps(mem.metadata) if mem.metadata else "{}",
                 json.dumps(entities),
+                expires_at,
             )
             ids.append(str(row_id))
 

@@ -64,7 +64,7 @@ def _entity_filter_clause(
 # ── Type filter helper (parameterised — never interpolated) ──
 
 _VALID_MEMORY_TYPES: frozenset[str] = frozenset(
-    {"episodic", "experiential", "mental_model", "decision", "lesson"}
+    {"episodic", "experiential", "mental_model", "decision", "lesson", "short_term"}
 )
 
 
@@ -126,8 +126,11 @@ async def _embed_query(query: str, tenant_id: UUID) -> list[float] | None:
 async def _recall_decisions(
     body: RecallRequest, agent: AgentIdentity
 ) -> list[RecallResult]:
-    if body.scope not in ("private", "all"):
+    if body.scope not in ("private", "all", "archive"):
         return []
+    tier_clause = (
+        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
+    )
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -141,6 +144,8 @@ async def _recall_decisions(
             WHERE agent_id = $2
               AND type = 'decision'
               AND content_tsv @@ plainto_tsquery('simple', $1)
+              {tier_clause}
+              AND (expires_at IS NULL OR expires_at > now())
               {entity_clause}
             ORDER BY rank DESC, created_at DESC
             LIMIT 10
@@ -155,8 +160,11 @@ async def _recall_decisions(
 async def _recall_lessons(
     body: RecallRequest, agent: AgentIdentity
 ) -> list[RecallResult]:
-    if body.scope not in ("private", "all"):
+    if body.scope not in ("private", "all", "archive"):
         return []
+    tier_clause = (
+        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
+    )
     query_embedding = await _embed_query(body.query, agent.tenant_id)
     if query_embedding is None:
         return []
@@ -172,6 +180,8 @@ async def _recall_lessons(
             WHERE agent_id = $2
               AND type = 'lesson'
               AND embedding IS NOT NULL
+              {tier_clause}
+              AND (expires_at IS NULL OR expires_at > now())
               {entity_clause}
             ORDER BY embedding <=> $1::vector
             LIMIT 10
@@ -188,8 +198,11 @@ async def _recall_lessons(
 async def _recall_episodic(
     body: RecallRequest, agent: AgentIdentity
 ) -> list[RecallResult]:
-    if body.scope not in ("private", "all"):
+    if body.scope not in ("private", "all", "archive"):
         return []
+    tier_clause = (
+        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
+    )
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -206,11 +219,44 @@ async def _recall_episodic(
                 content_tsv @@ plainto_tsquery('simple', $1)
                 OR created_at > now() - interval '7 days'
               )
+              {tier_clause}
+              AND (expires_at IS NULL OR expires_at > now())
               {entity_clause}
             ORDER BY
                 CASE WHEN content_tsv @@ plainto_tsquery('simple', $1) THEN 0 ELSE 1 END,
                 rank DESC,
                 created_at DESC
+            LIMIT 10
+        """,
+            body.query,
+            agent.agent_id,
+            *entity_params,
+        )
+    return [_to_result(dict(r), "private") for r in rows]
+
+
+async def _recall_short_term(
+    body: RecallRequest, agent: AgentIdentity
+) -> list[RecallResult]:
+    if body.scope not in ("private", "all"):
+        return []
+    entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
+    async with tenant_transaction(
+        get_main_pool(), agent.tenant_id, agent.agent_id
+    ) as conn:
+        norm = _bm25_normalization(body.query)
+        rows = await conn.fetch(
+            f"""
+            SELECT id, content, importance, created_at, recall_count, last_recalled_at,
+                   ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
+            FROM hindsight_memories
+            WHERE agent_id = $2
+              AND type = 'short_term'
+              AND content_tsv @@ plainto_tsquery('simple', $1)
+              AND tier = 'active'
+              AND (expires_at IS NULL OR expires_at > now())
+              {entity_clause}
+            ORDER BY rank DESC, created_at DESC
             LIMIT 10
         """,
             body.query,
@@ -226,6 +272,9 @@ async def _recall_episodic(
 async def _bm25_private(
     body: RecallRequest, agent: AgentIdentity
 ) -> list[RecallResult]:
+    tier_clause = (
+        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
+    )
     # type param is $3; entity param shifts to $4 when type filter is active
     type_clause, type_params = _type_filter_clause(body.type, param=3)
     entity_clause, entity_params = _entity_filter_clause(
@@ -242,6 +291,9 @@ async def _bm25_private(
             FROM hindsight_memories
             WHERE agent_id = $2
               AND content_tsv @@ plainto_tsquery('simple', $1)
+              AND type != 'short_term'
+              {tier_clause}
+              AND (expires_at IS NULL OR expires_at > now())
               {type_clause}
               {entity_clause}
             ORDER BY rank DESC LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
@@ -257,6 +309,9 @@ async def _bm25_private(
 async def _vector_private(
     body: RecallRequest, agent: AgentIdentity, qe: list[float]
 ) -> list[RecallResult]:
+    tier_clause = (
+        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
+    )
     # type param is $3; entity param shifts to $4 when type filter is active
     type_clause, type_params = _type_filter_clause(body.type, param=3)
     entity_clause, entity_params = _entity_filter_clause(
@@ -272,6 +327,9 @@ async def _vector_private(
             FROM hindsight_memories
             WHERE agent_id = $2
               AND embedding IS NOT NULL
+              AND type != 'short_term'
+              {tier_clause}
+              AND (expires_at IS NULL OR expires_at > now())
               {type_clause}
               {entity_clause}
             ORDER BY embedding <=> $1::vector LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
@@ -670,12 +728,14 @@ async def recall(
         results = await _recall_lessons(body, agent)
     elif body.type == "episodic":
         results = await _recall_episodic(body, agent)
+    elif body.type == "short_term":
+        results = await _recall_short_term(body, agent)
     else:
         # Full hybrid pipeline
         query_embedding = await _embed_query(body.query, agent.tenant_id)
         tasks = []
 
-        if body.scope in ("private", "all"):
+        if body.scope in ("private", "all", "archive"):
             tasks.append(_bm25_private(body, agent))
             if query_embedding:
                 tasks.append(_vector_private(body, agent, query_embedding))

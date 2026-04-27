@@ -4,7 +4,13 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 
 # ── remember ────────────────────────────────────────────────
@@ -15,16 +21,20 @@ IMPORTANCE: dict[str, float] = {
     "mental_model": 0.8,
     "decision": 0.9,
     "lesson": 0.95,
+    "short_term": 0.1,
 }
 
 
 class MemoryItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["episodic", "experiential", "mental_model", "decision", "lesson"]
+    type: Literal[
+        "episodic", "experiential", "mental_model", "decision", "lesson", "short_term"
+    ]
     content: str
     source_task_id: UUID | None = None
     metadata: dict | None = None  # type: ignore[type-arg]
+    ttl_seconds: int | None = None
 
     @field_validator("content")
     @classmethod
@@ -39,6 +49,16 @@ class MemoryItem(BaseModel):
         if v is not None and not isinstance(v, dict):
             raise ValueError("metadata must be a JSON object")
         return v
+
+    @model_validator(mode="after")
+    def validate_ttl(self) -> "MemoryItem":
+        if self.ttl_seconds is not None and self.type != "short_term":
+            raise ValueError("ttl_seconds is only valid for short_term memories")
+        if self.type == "short_term" and (
+            self.ttl_seconds is None or self.ttl_seconds <= 0
+        ):
+            raise ValueError("short_term memories require a positive ttl_seconds")
+        return self
 
 
 class RememberRequest(BaseModel):
@@ -116,9 +136,17 @@ class ReflectResponse(BaseModel):
 
 class RecallRequest(BaseModel):
     query: str
-    scope: Literal["private", "org", "knowledge", "all"] = "all"
+    scope: Literal["private", "org", "knowledge", "all", "archive"] = "all"
     type: (
-        Literal["episodic", "experiential", "mental_model", "decision", "lesson"] | None
+        Literal[
+            "episodic",
+            "experiential",
+            "mental_model",
+            "decision",
+            "lesson",
+            "short_term",
+        ]
+        | None
     ) = None
     rerank: bool = False
     entities: list[str] | None = None
