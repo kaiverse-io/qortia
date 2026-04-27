@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from uuid import UUID
 
@@ -7,6 +8,7 @@ from typing import Literal, Any
 from fastapi import APIRouter, HTTPException
 
 from app.auth.models import AgentIdentity
+from app.qortia.knowledge import extract_entities
 from app.db import get_main_pool
 from app.vault import provision_eval_litellm_key
 from pydantic import BaseModel
@@ -61,17 +63,23 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
     if not settings.eval_mode:
         raise HTTPException(404, "Not found")
 
+    try:
+        entities = extract_entities(req.content)
+    except Exception:
+        entities = []
+
     async with get_main_pool().acquire() as conn:
         row_id = await conn.fetchval(
             """
-            INSERT INTO hindsight_memories (tenant_id, agent_id, type, content, importance)
-            VALUES ($1, $2, $3, $4, 0.5)
+            INSERT INTO hindsight_memories (tenant_id, agent_id, type, content, importance, entities)
+            VALUES ($1, $2, $3, $4, 0.5, $5)
             RETURNING id
         """,
             req.tenant_id,
             req.agent_id,
             req.mem_type,
             req.content,
+            json.dumps(entities),
         )
 
     return {"status": "seeded", "memory_id": str(row_id)}
