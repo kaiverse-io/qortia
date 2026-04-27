@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
-from app.qortia.knowledge import extract_entities
+from app.qortia.knowledge import extract_entities_with_types
 from app.qortia.models import (
     ContextResponse,
     ContextMemories,
@@ -43,7 +43,7 @@ async def remember(
 
         for mem in body.memories:
             try:
-                entities = extract_entities(mem.content)
+                entities = extract_entities_with_types(mem.content)
             except Exception as exc:
                 logger.warning({"event": "ner_extraction_failed", "error": str(exc)})
                 entities = []
@@ -120,7 +120,7 @@ async def remember_org(
                 )
 
         try:
-            entities = extract_entities(body.content)
+            entities = extract_entities_with_types(body.content)
         except Exception as exc:
             logger.warning({"event": "ner_extraction_failed", "error": str(exc)})
             entities = []

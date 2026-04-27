@@ -548,6 +548,71 @@ async def _llm_rerank(
         return results
 
 
+# ── BFS entity traversal (16f) ─────────────────────────────
+
+
+async def _bfs_entity_traversal(
+    query_embedding: list[float],
+    seed_entity_ids: list[UUID],
+    tenant_id: UUID,
+    agent_id: UUID,
+    max_depth: int = 2,
+    decay: float = 0.5,
+) -> dict[str, float]:
+    """
+    BFS from seed entities via co-occurrence in linked_memory_ids.
+    Returns {memory_id: boost_score} for memories reachable within max_depth hops.
+    Each hop decays the boost score by `decay`.
+    """
+    if not seed_entity_ids:
+        return {}
+
+    visited: set[UUID] = set(seed_entity_ids)
+    frontier = list(seed_entity_ids)
+    boosts: dict[str, float] = {}
+    current_decay = decay
+
+    for _ in range(max_depth):
+        if not frontier:
+            break
+        async with tenant_transaction(get_main_pool(), tenant_id, agent_id) as conn:
+            next_entities = await conn.fetch(
+                """
+                SELECT e2.id, e2.linked_memory_ids,
+                       1 - (e2.embedding <=> $1::vector) AS similarity
+                FROM qortia_entities e1
+                JOIN qortia_entities e2
+                  ON e2.linked_memory_ids && e1.linked_memory_ids
+                 AND e2.id != ALL($2::uuid[])
+                WHERE e1.id = ANY($2::uuid[])
+                  AND e1.tenant_id = $3
+                  AND e2.tenant_id = $3
+                  AND e2.embedding IS NOT NULL
+                  AND 1 - (e2.embedding <=> $1::vector) >= 0.3
+                LIMIT 10
+                """,
+                str(query_embedding),
+                list(visited),
+                tenant_id,
+            )
+        next_frontier: list[UUID] = []
+        for row in next_entities:
+            eid = row["id"]
+            if eid not in visited:
+                visited.add(eid)
+                next_frontier.append(eid)
+                sim = float(row["similarity"])
+                n = len(row["linked_memory_ids"])
+                hop_boost = sim * 0.5 / (1 + 0.001 * (n - 1) ** 2) * current_decay
+                for mid in row["linked_memory_ids"]:
+                    mid_str = str(mid)
+                    boosts[mid_str] = max(boosts.get(mid_str, 0.0), hop_boost)
+        frontier = next_frontier
+        current_decay *= decay
+
+    return boosts
+
+
 # ── Access tracking ──────────────────────────────────────────
 
 
@@ -644,12 +709,11 @@ async def recall(
         from app.qortia.knowledge import extract_entities
 
         query_entities = extract_entities(body.query)
-        entity_links = set()
+        entity_links: set[str] = set()
         if query_entities:
             async with tenant_transaction(
                 get_main_pool(), agent.tenant_id, agent.agent_id
             ) as conn:
-                # Query both org and agent entities
                 linked_rows = await conn.fetch(
                     """
                     SELECT unnest(linked_memory_ids) as mem_id
@@ -665,6 +729,31 @@ async def recall(
                 entity_links = {str(r["mem_id"]) for r in linked_rows}
 
         fused_memory = _rrf_fuse(memory_results, entity_links=entity_links)
+
+        # 2-hop BFS traversal — surfaces memories reachable via entity co-occurrence
+        if entity_links and query_embedding:
+            async with tenant_transaction(
+                get_main_pool(), agent.tenant_id, agent.agent_id
+            ) as conn:
+                seed_rows = await conn.fetch(
+                    """
+                    SELECT id FROM qortia_entities
+                    WHERE tenant_id = $1
+                      AND (agent_id IS NULL OR agent_id = $2)
+                      AND entity_text = ANY($3::text[])
+                    """,
+                    agent.tenant_id,
+                    agent.agent_id,
+                    query_entities,
+                )
+            seed_ids = [r["id"] for r in seed_rows]
+            bfs_boosts = await _bfs_entity_traversal(
+                query_embedding, seed_ids, agent.tenant_id, agent.agent_id
+            )
+            if bfs_boosts:
+                # Merge BFS boosts into entity_links for a second RRF pass
+                combined_links = entity_links | set(bfs_boosts.keys())
+                fused_memory = _rrf_fuse(memory_results, entity_links=combined_links)
 
         if query_embedding and knowledge_candidates:
             knowledge_results = _mmr(

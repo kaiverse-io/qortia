@@ -46,13 +46,27 @@ def get_nlp() -> object:  # spaCy Language — avoid hard dep on spacy type stub
 
 def extract_entities(text: str) -> list[str]:
     """
-    Extract NER entities. Best-effort — caller wraps in try/except and falls back to [].
-    Reuses the already-loaded get_nlp() instance.
+    Extract NER entity texts. Best-effort — caller wraps in try/except.
+    Returns text only (label stripped) for backward-compatible callers.
     """
     doc = get_nlp()(text)  # type: ignore[operator]
     return list(
         dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS)
     )[:20]
+
+
+def extract_entities_with_types(text: str) -> list[tuple[str, str]]:
+    """
+    Extract NER entities with their spaCy label.
+    Returns list of (entity_text, label) — e.g. ("OpenAI", "ORG").
+    Best-effort — caller wraps in try/except and falls back to [].
+    """
+    doc = get_nlp()(text)  # type: ignore[operator]
+    seen: dict[str, str] = {}
+    for ent in doc.ents:
+        if ent.label_ in ENTITY_LABELS and ent.text not in seen:
+            seen[ent.text] = ent.label_
+    return list(seen.items())[:20]
 
 
 # ── Section splitting ────────────────────────────────────────

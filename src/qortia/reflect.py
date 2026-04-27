@@ -255,9 +255,9 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
 
             # Insert new version (for CREATE or UPDATE)
             try:
-                from app.qortia.knowledge import extract_entities
+                from app.qortia.knowledge import extract_entities_with_types
 
-                entities = extract_entities(r["content"])
+                entities = extract_entities_with_types(r["content"])
             except Exception:
                 entities = []
 
@@ -604,23 +604,27 @@ async def _populate_graph_batch() -> None:
             for row in rows:
                 async with conn.transaction():
                     try:
-                        entities = json.loads(row["entities"])
+                        entity_pairs: list[tuple[str, str]] = [
+                            (e[0], e[1]) for e in json.loads(row["entities"])
+                        ]
                     except Exception:
-                        entities = []
-                    for ent in entities:
+                        entity_pairs = []
+                    for ent_text, ent_type in entity_pairs:
                         await conn.execute(
                             """
                             INSERT INTO qortia_entities (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
-                            VALUES ($1, $2, $3, 'CONCEPT', ARRAY[$4::uuid])
+                            VALUES ($1, $2, $3, $4, ARRAY[$5::uuid])
                             ON CONFLICT (tenant_id, agent_id, entity_text) WHERE agent_id IS NOT NULL
                             DO UPDATE SET
-                                linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $4),
+                                entity_type = EXCLUDED.entity_type,
+                                linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $5),
                                 updated_at = now()
-                            WHERE NOT ($4 = ANY(qortia_entities.linked_memory_ids))
+                            WHERE NOT ($5 = ANY(qortia_entities.linked_memory_ids))
                         """,
                             row["tenant_id"],
                             row["agent_id"],
-                            ent,
+                            ent_text,
+                            ent_type,
                             row["id"],
                         )
                     await conn.execute(
@@ -641,22 +645,26 @@ async def _populate_graph_batch() -> None:
             for row in rows:
                 async with conn.transaction():
                     try:
-                        entities = json.loads(row["entities"])
+                        entity_pairs = [
+                            (e[0], e[1]) for e in json.loads(row["entities"])
+                        ]
                     except Exception:
-                        entities = []
-                    for ent in entities:
+                        entity_pairs = []
+                    for ent_text, ent_type in entity_pairs:
                         await conn.execute(
                             """
                             INSERT INTO qortia_entities (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
-                            VALUES ($1, NULL, $2, 'CONCEPT', ARRAY[$3::uuid])
+                            VALUES ($1, NULL, $2, $3, ARRAY[$4::uuid])
                             ON CONFLICT (tenant_id, entity_text) WHERE agent_id IS NULL
                             DO UPDATE SET
-                                linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $3),
+                                entity_type = EXCLUDED.entity_type,
+                                linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $4),
                                 updated_at = now()
-                            WHERE NOT ($3 = ANY(qortia_entities.linked_memory_ids))
+                            WHERE NOT ($4 = ANY(qortia_entities.linked_memory_ids))
                         """,
                             row["tenant_id"],
-                            ent,
+                            ent_text,
+                            ent_type,
                             row["id"],
                         )
                     await conn.execute(
