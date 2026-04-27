@@ -46,9 +46,9 @@ RECALL_AT_10_TARGET = 0.95
 MRR_TARGET = 0.75
 SEMANTIC_DRIFT_TARGET = 0.15
 
-# Regression floors — update after baseline run in ADR-073
-RECALL_AT_5_FLOOR = 0.80
-MRR_FLOOR = 0.65
+# Regression floors — set 5% below full 55-case baseline (ADR-073)
+RECALL_AT_5_FLOOR = 0.95
+MRR_FLOOR = 0.86
 
 
 async def run_reh(dataset_path: Path) -> int:

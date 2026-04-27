@@ -68,7 +68,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "onboarding flow staging deployment",
+        "query": "onboarding flow staging deployed",
         "scope": "private",
         "type": "episodic",
         "rerank": false,
@@ -308,7 +308,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "qortia-patches rebase agent-runtime",
+        "query": "qortia-patches rebased agent-runtime",
         "scope": "private",
         "type": "episodic",
         "rerank": false,
@@ -425,7 +425,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "Redis decision stack removal",
+        "query": "Redis remove stack decided",
         "scope": "private",
         "type": "decision",
         "rerank": false,
@@ -466,7 +466,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "vector search database decision",
+        "query": "pgvector vector search decided",
         "scope": "private",
         "type": "decision",
         "rerank": false,
@@ -507,7 +507,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "secrets management vault decision",
+        "query": "OpenBao secrets management decided",
         "scope": "private",
         "type": "decision",
         "rerank": false,
@@ -548,7 +548,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "tenant_transaction database connection rule",
+        "query": "tenant_transaction permitted connection decided",
         "scope": "private",
         "type": "decision",
         "rerank": false,
@@ -589,7 +589,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "production deploy manual workflow decision",
+        "query": "production deploys manual workflow_dispatch decided",
         "scope": "private",
         "type": "decision",
         "rerank": false,
@@ -1427,7 +1427,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/qortia.md",
-            "content": "## Recall Pipeline\n\nThe recall pipeline uses BM25 and vector search fused via RRF. BM25 uses the 'simple' text search configuration for multilingual support. Vector search uses pgvector cosine similarity with a 0.35 minimum score threshold.\n\n## Memory Types\n\nFive memory types are supported: episodic, experiential, mental_model, decision, lesson. Importance is platform-assigned per type and cannot be overridden by the agent."
+            "content": "## Recall Pipeline\n\nThe recall pipeline uses BM25 and vector search fused via RRF. BM25 uses the 'simple' text search configuration for multilingual support. Vector search uses pgvector cosine similarity with a 0.35 minimum score threshold. The simple configuration performs no stemming, so query tokens must appear verbatim in the content. RRF fusion is score-magnitude-invariant and does not require manual weight tuning between BM25 and vector signals.\n\n## Memory Types\n\nFive memory types are supported: episodic, experiential, mental_model, decision, lesson. Importance is platform-assigned per type and cannot be overridden by the agent. Each type routes to a different retrieval strategy: decisions use BM25 plus recency sort, lessons use vector similarity only, and episodic memories use a temporal window with BM25 fallback."
           }
         ],
         "memories": [
@@ -1466,7 +1466,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/data-model.md",
-            "content": "## Vector Storage\n\nAll embedding columns use pgvector's vector(768) type. HNSW indexes are created with m=16, ef_construction=64. The embedding model is text-embedding-3-small producing 768-dimensional vectors.\n\n## Connection Pooling\n\nThe platform uses asyncpg with a pool size of 20 connections per worker process."
+            "content": "## Vector Storage\n\nAll embedding columns use pgvector's vector(768) type. HNSW indexes are created with m=16, ef_construction=64. The embedding model is text-embedding-3-small producing 768-dimensional vectors. The HNSW index uses vector_cosine_ops for cosine distance queries. A minimum score threshold of 0.35 filters low-quality vector matches before they enter the RRF fusion step. Startup dimension validation prevents silent vector space corruption if the embedding model changes.\n\n## Connection Pooling\n\nThe platform uses asyncpg with a pool size of 20 connections per worker process. PgBouncer transaction pooling is compatible because SET LOCAL is transaction-scoped inside tenant_transaction()."
           }
         ],
         "memories": [
@@ -1505,7 +1505,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/migrations.md",
-            "content": "## Migration Rules\n\nAll migrations use Flyway with versioned V{N}__description.sql files. Never edit an existing migration \u2014 Flyway validates checksums on startup. New migrations must be created as V{N+1}. Run as qortia_platform role, not superuser.\n\n## RLS Requirements\n\nNew tenant-scoped tables must enable RLS and add a tenant_isolation policy."
+            "content": "## Migration Rules\n\nAll migrations use Flyway with versioned V{N}__description.sql files. Never edit an existing migration — Flyway validates checksums on startup and will reject any modified file with a checksum mismatch error, blocking all deployments. New migrations must be created as V{N+1}__description.sql. Run as qortia_platform role, not superuser, to enforce least privilege. The versioning scheme ensures migrations are applied in deterministic order across all environments.\n\n## RLS Requirements\n\nNew tenant-scoped tables must enable RLS and add a tenant_isolation policy. The audit_rls.py script verifies RLS is enabled on all data tables and disabled on all auth.* tables. Run it after every schema change to catch policy gaps before they reach production."
           }
         ],
         "memories": [
@@ -1544,7 +1544,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/agent-boot.md",
-            "content": "## Boot Sequence\n\nagent-start.sh implements an 11-step boot sequence. Steps must remain in order \u2014 Vault auth precedes config fetch, config fetch precedes workspace write. New steps insert between existing steps with a STEP N comment. Never reorder existing steps.\n\n## Boot Failure Handling\n\nIf any step fails, the container exits with a boot_failed event logged to Loki with the step name."
+            "content": "## Boot Sequence\n\nagent-start.sh implements an 11-step boot sequence. Steps must remain in order — Vault auth precedes config fetch, config fetch precedes workspace write, workspace write precedes openclaw patch. New steps insert between existing steps with a STEP N comment. Never reorder existing steps because the sequence has hard dependencies that will cause silent failures if violated. The boot script is the container entrypoint and runs once per agent container start.\n\n## Boot Failure Handling\n\nIf any step fails, the container exits with a boot_failed event logged to Loki with the step name in the boot_failed.step field. The reconciler retries provisioning up to 3 times with fixed backoff before marking the agent inactive."
           }
         ],
         "memories": [
@@ -1739,7 +1739,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/ci-cd.md",
-            "content": "## Security Scanners\n\nTruffleHog scans the PR diff for verified secrets. Trivy scans the filesystem for CRITICAL/HIGH CVEs. Both are pinned to exact tags \u2014 never @main or @master. A failing security scan blocks merge.\n\n## Coverage Floors\n\nPlatform unit tests: 60% floor. Mission Control: 80% lines and functions. Integration tests: 40% floor. Floors are never lowered."
+            "content": "## Security Scanners\n\nTruffleHog scans the PR diff for verified secrets. Trivy scans the filesystem for CRITICAL/HIGH CVEs. Both security scanning tools are pinned to exact tags — never @main or @master. A failing security scan blocks merge. Using floating branch references for security scanner actions is a supply-chain risk because an attacker who compromises the action repo controls what runs in your pipeline.\n\n## Coverage Floors\n\nPlatform unit tests: 60% floor. Mission Control: 80% lines and functions. Integration tests: 40% floor. Coverage floors are never lowered. If tests are deleted, the floor must be re-evaluated and documented. Silent coverage drops hide regressions that would otherwise be caught before reaching production."
           }
         ],
         "memories": [
@@ -1778,7 +1778,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/dependencies.md",
-            "content": "## Hard Pinning Rules\n\nFour dependencies are always exact-pinned: openbao/openbao (secrets store), mcp SDK (stdio protocol), en-core-web-sm spaCy model (must match spaCy major.minor), security scanner actions in CI. Floating these creates silent breaking changes or supply-chain risk.\n\n## Renovate\n\nRenovate manages all six dependency layers automatically. openbao, agent-runtime, mcp SDK, and security scanners never auto-merge \u2014 they require human review."
+            "content": "## Hard Pinning Rules\n\nFour dependencies are always exact-pinned to specific versions: openbao/openbao (secrets store), mcp SDK (stdio protocol), en-core-web-sm spaCy model (must match spaCy major.minor), security scanner actions in CI. Floating these dependencies creates silent breaking changes or supply-chain risk. The mcp SDK minor versions can silently break the agent's stdio protocol interface with the agent harness. The spaCy model must match the library's major.minor or the platform fails to start.\n\n## Renovate\n\nRenovate manages all six dependency layers automatically and opens reviewed PRs for every upstream bump. openbao, agent-runtime submodule, mcp SDK, and security scanners never auto-merge — they always require human review before the version is promoted."
           }
         ],
         "memories": [
@@ -1929,12 +1929,12 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "inference gateway decision",
+        "query": "inference gateway decided LiteLLM",
         "scope": "private",
         "type": "decision",
         "rerank": false,
         "entities": [
-          "LiteLLM"
+          "LLM"
         ]
       },
       "expected": {
@@ -1954,12 +1954,12 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/vault-policy.md",
-            "content": "## OpenBao Vault Policy\n\nAgent vault policies are scoped to {tenant_id}/agents/{agent_id}/*. Paths outside these prefixes require an ADR and security review. The create_agent_policy() function in vault.py generates the policy. Never access _vault_client directly outside vault.py."
+            "content": "## OpenBao Vault Policy\n\nAgent vault policies are scoped to {tenant_id}/agents/{agent_id}/*. Paths outside these prefixes require an ADR and security review before they can be added. The create_agent_policy() function in vault.py generates the policy string. Never access _vault_client directly outside vault.py — all Vault operations must go through the public functions in vault.py to ensure centralised error handling and audit logging. Vault token is always passed via the X-Vault-Token header, never as a subprocess argument."
           },
           {
             "source_type": "note",
             "source_path": "docs/platform/litellm-config.md",
-            "content": "## LiteLLM Configuration\n\nLiteLLM is configured via litellm_config.yaml. Per-tenant virtual keys are provisioned by the platform and stored in OpenBao. The master key is used only for startup validation."
+            "content": "## LiteLLM Configuration\n\nLiteLLM is configured via litellm_config.yaml. Per-tenant virtual keys are provisioned by the platform and stored in OpenBao. The master key is used only for startup validation and is never exposed to agent containers or included in any agent-accessible Vault path. Virtual keys are scoped per tenant and rotated when a tenant is deleted."
           }
         ],
         "memories": [
