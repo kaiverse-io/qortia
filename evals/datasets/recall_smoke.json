@@ -106,7 +106,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "Redis decision stack removal",
+        "query": "remove Redis from stack",
         "scope": "private",
         "type": "decision",
         "rerank": false,
@@ -292,7 +292,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/qortia.md",
-            "content": "## Recall Pipeline\n\nThe recall pipeline uses BM25 and vector search fused via RRF. BM25 uses the 'simple' text search configuration for multilingual support. Vector search uses pgvector cosine similarity with a 0.35 minimum score threshold.\n\n## Memory Types\n\nFive memory types are supported: episodic, experiential, mental_model, decision, lesson. Importance is platform-assigned per type and cannot be overridden by the agent."
+            "content": "## Recall Pipeline\n\nThe recall pipeline uses BM25 and vector search fused via RRF. BM25 uses the simple text search configuration for multilingual support. Vector search uses pgvector cosine similarity with a minimum score threshold of 0.35. Results from both paths are fused using Reciprocal Rank Fusion with k=60. The pipeline runs all search paths concurrently via asyncio.gather and merges the ranked lists before applying dynamic importance scoring.\n\n## Memory Types\n\nFive memory types are supported: episodic, experiential, mental_model, decision, lesson. Importance is platform-assigned per type and cannot be overridden by the agent. Episodic memories capture events. Mental models capture synthesised patterns. Lessons capture durable learnings from past failures or successes."
           }
         ],
         "memories": [
@@ -331,7 +331,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/security.md",
-            "content": "## Tenant Isolation\n\nTenant isolation is enforced at three layers: RLS policies on all data tables, tenant_transaction() context manager that sets app.tenant_id, and the tenant isolation lint gate in CI that rejects any SQL query on a tenant-scoped table without a WHERE tenant_id clause.\n\n## Secret Management\n\nAll secrets are stored in OpenBao. Agents access secrets via the MCP bridge using per-tenant virtual keys. The master key is never exposed to agent containers."
+            "content": "## Tenant Isolation\n\nTenant isolation is enforced at three layers: RLS policies on all data tables, the tenant_transaction() context manager that sets app.tenant_id for every query, and the tenant isolation lint gate in CI that rejects any SQL query on a tenant-scoped table without a WHERE tenant_id clause. These three layers together ensure that no agent or user can read or write data belonging to a different tenant, even in the event of a bug in application-level filtering logic.\n\n## Secret Management\n\nAll secrets are stored in OpenBao. Agents access secrets via the MCP bridge using per-tenant virtual keys. The master key is never exposed to agent containers. Each tenant has an isolated Vault namespace and policy that restricts access to their own secret paths only."
           }
         ],
         "memories": [

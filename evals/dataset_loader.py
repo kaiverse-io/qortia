@@ -51,10 +51,27 @@ async def seed_case(
     Returns {index_in_setup_memories: seeded_memory_id}.
     """
     setup = case["setup"]
-    all_memories = setup["memories"] + setup.get("hard_negatives", [])
+    memories = setup["memories"]
+    hard_negatives = setup.get("hard_negatives", [])
+
+    # Seed hard negatives first so they get an earlier created_at.
+    # _recall_episodic and _recall_decisions use ORDER BY created_at DESC —
+    # ground truth must be newer to rank above hard negatives on recency.
+    for neg in hard_negatives:
+        resp = await client.post(
+            "/v1/internal/eval/seed-memory",
+            json={
+                "agent_id": agent_id,
+                "tenant_id": tenant_id,
+                "content": neg["content"],
+                "mem_type": neg.get("type", "episodic"),
+                "scope": neg.get("scope", "private"),
+            },
+        )
+        resp.raise_for_status()
 
     id_map: dict[int, str] = {}
-    for i, mem in enumerate(all_memories):
+    for i, mem in enumerate(memories):
         resp = await client.post(
             "/v1/internal/eval/seed-memory",
             json={
@@ -66,9 +83,7 @@ async def seed_case(
             },
         )
         resp.raise_for_status()
-        mem_id = resp.json()["memory_id"]
-        if i < len(setup["memories"]):
-            id_map[i] = mem_id
+        id_map[i] = resp.json()["memory_id"]
 
     return id_map
 

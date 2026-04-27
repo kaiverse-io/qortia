@@ -142,7 +142,7 @@ async def _recall_decisions(
               AND type = 'decision'
               AND content_tsv @@ plainto_tsquery('simple', $1)
               {entity_clause}
-            ORDER BY created_at DESC, rank DESC
+            ORDER BY rank DESC, created_at DESC
             LIMIT 10
         """,
             body.query,
@@ -207,7 +207,10 @@ async def _recall_episodic(
                 OR created_at > now() - interval '7 days'
               )
               {entity_clause}
-            ORDER BY created_at DESC, rank DESC
+            ORDER BY
+                CASE WHEN content_tsv @@ plainto_tsquery('simple', $1) THEN 0 ELSE 1 END,
+                rank DESC,
+                created_at DESC
             LIMIT 10
         """,
             body.query,

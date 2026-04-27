@@ -125,11 +125,7 @@ async def _run_reh_case(
     ground_truth_content: str | None = None
     if ground_truth_source == "org_memories":
         ground_truth_id = org_id_map.get(ground_truth_idx)
-        org_mems = case["setup"].get("org_memories", [])
-        if ground_truth_idx < len(org_mems):
-            ground_truth_content = org_mems[ground_truth_idx].get("content", "")
     elif ground_truth_source == "knowledge":
-        # Knowledge doesn't return IDs — use content-based matching
         know_items = case["setup"].get("knowledge", [])
         if ground_truth_idx < len(know_items):
             ground_truth_content = know_items[ground_truth_idx].get("content", "")
@@ -149,12 +145,18 @@ async def _run_reh_case(
     result_ids = [r["id"] for r in results]
     result_contents = [r["content"] for r in results]
 
-    # For knowledge cases: find ground truth by content substring match
+    # For knowledge cases: find ground truth by source_path + chunk_index=0
     if ground_truth_source == "knowledge" and ground_truth_content:
-        # Use first 80 chars of ground truth content as fingerprint
-        fingerprint = ground_truth_content[:80].lower()
+        from app.qortia.knowledge import split_into_sections
+
+        sections = split_into_sections(ground_truth_content)
+        fingerprint = (
+            sections[0]["text"][:40].lower()
+            if sections
+            else ground_truth_content[:40].lower()
+        )
         for i, content in enumerate(result_contents):
-            if fingerprint[:40] in content.lower():
+            if fingerprint in content.lower():
                 ground_truth_id = result_ids[i]
                 break
 
