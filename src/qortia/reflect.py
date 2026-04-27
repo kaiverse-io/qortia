@@ -23,8 +23,41 @@ router = APIRouter()
 REFLECTION_THRESHOLD = 10
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_BATCH_SIZE = 50
+STABILITY_THRESHOLD = 0.95
 
 _litellm_client: httpx.AsyncClient | None = None
+
+
+def _compute_stability_scores(
+    new_memories: list[dict],  # type: ignore[type-arg]
+    existing_embeddings: dict[str, list[float] | None],
+) -> list[float | None]:
+    """
+    For each new memory (CREATE or UPDATE), compute cosine similarity between
+    its embedding and the embedding of the existing row it supersedes.
+
+    Returns a list of stability scores (one per new memory).
+    - UPDATE with both embeddings present: cosine similarity in [0, 1]
+    - CREATE or missing embeddings: None
+
+    new_memories: list of dicts with keys: action, content, id (optional),
+                  embedding (list[float] | None)
+    existing_embeddings: {str(id): embedding | None} for existing consolidated rows
+    """
+    from app.qortia.recall import _cosine
+
+    scores: list[float | None] = []
+    for mem in new_memories:
+        if mem["action"] != "UPDATE" or not mem.get("id"):
+            scores.append(None)
+            continue
+        new_emb = mem.get("embedding")
+        old_emb = existing_embeddings.get(mem["id"])
+        if new_emb and old_emb:
+            scores.append(_cosine(new_emb, old_emb))
+        else:
+            scores.append(None)
+    return scores
 
 
 def init_litellm_client() -> None:
@@ -102,7 +135,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
 
         existing = await conn.fetch(
             """
-            SELECT id, type, content FROM hindsight_memories
+            SELECT id, type, content, embedding FROM hindsight_memories
             WHERE agent_id = $1
               AND type IN ('mental_model', 'lesson')
               AND is_consolidated = true
@@ -133,6 +166,24 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
         tenant_id=agent.tenant_id,
     )
 
+    # Build existing embedding index keyed by id for stability computation
+    existing_embeddings: dict[str, list[float] | None] = {
+        str(r["id"]): list(r["embedding"]) if r.get("embedding") else None
+        for r in existing
+    }
+
+    # Embed CREATE and UPDATE content before the write transaction.
+    # Needed for: (a) stability score computation, (b) populating the embedding column
+    # so the embedding worker doesn't need a separate pass for reflected memories.
+    new_embeddings: dict[int, list[float] | None] = {}
+    for i, r in enumerate(reflections):
+        if r["action"] in ("CREATE", "UPDATE"):
+            try:
+                new_embeddings[i] = await _get_embedding(r["content"], litellm_key)
+            except Exception as exc:
+                logger.warning({"event": "reflect_embed_failed", "error": str(exc)})
+                new_embeddings[i] = None
+
     # Write transaction
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -159,7 +210,9 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
 
         new_ids = []
         seen_hashes: set[str] = set()
-        for r in reflections:
+        stable_count = 0
+        unstable_count = 0
+        for i, r in enumerate(reflections):
             if r["action"] == "RETAIN":
                 continue
 
@@ -172,7 +225,23 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 continue
             seen_hashes.add(content_hash)
 
-            # For UPDATE, we first deactivate the old one
+            # Compute stability score
+            new_emb = new_embeddings.get(i)
+            stability: float | None = None
+            if r["action"] == "UPDATE" and r.get("id"):
+                old_emb = existing_embeddings.get(r["id"])
+                if new_emb and old_emb:
+                    from app.qortia.recall import _cosine
+
+                    stability = _cosine(new_emb, old_emb)
+                    if stability >= STABILITY_THRESHOLD:
+                        stable_count += 1
+                    else:
+                        unstable_count += 1
+            elif r["action"] == "CREATE":
+                unstable_count += 1
+
+            # For UPDATE, deactivate the old row first
             if r["action"] == "UPDATE":
                 await conn.execute(
                     """
@@ -195,8 +264,9 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             row_id = await conn.fetchval(
                 """
                 INSERT INTO hindsight_memories
-                    (tenant_id, agent_id, type, content, importance, is_consolidated, entities)
-                VALUES ($1, $2, $3, $4, $5, true, $6)
+                    (tenant_id, agent_id, type, content, importance,
+                     is_consolidated, entities, embedding, stability_score)
+                VALUES ($1, $2, $3, $4, $5, true, $6, $7::vector, $8)
                 RETURNING id
             """,
                 agent.tenant_id,
@@ -205,6 +275,8 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 r["content"],
                 float(r["importance"]),
                 json.dumps(entities),
+                str(new_emb) if new_emb else None,
+                stability,
             )
             new_ids.append((row_id, r.get("id")))
 
@@ -237,6 +309,16 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 row_id,
                 json.dumps(metadata),
             )
+
+    logger.info(
+        {
+            "event": "reflect_incremental",
+            "agent_id": str(agent.agent_id),
+            "memories_written": len(new_ids),
+            "stable_updates": stable_count,
+            "unstable_updates": unstable_count,
+        }
+    )
 
     return ReflectResponse(
         memories_written=len(new_ids), reflection_counter=new_counter
