@@ -58,7 +58,15 @@ def _entity_filter_clause(
 ) -> tuple[str, list]:  # type: ignore[type-arg]
     if not entities:
         return "", []
-    return f"AND entities ?| ${base_param}::text[]", [entities]
+    # Use a subquery to check for entity text match in nested [text, type] pairs.
+    # This correctly handles the the platform entity structure.
+    clause = f"""
+        AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(entities) AS e
+            WHERE e->>0 = ANY(${base_param}::text[])
+        )
+    """
+    return clause, [entities]
 
 
 # ── Type filter helper (parameterised — never interpolated) ──

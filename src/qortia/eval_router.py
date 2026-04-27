@@ -8,7 +8,7 @@ from typing import Literal, Any
 from fastapi import APIRouter, HTTPException
 
 from app.auth.models import AgentIdentity
-from app.qortia.knowledge import extract_entities
+from app.qortia.knowledge import extract_entities_with_types
 from app.db import get_main_pool
 from app.vault import provision_eval_litellm_key
 from pydantic import BaseModel
@@ -64,7 +64,7 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
         raise HTTPException(404, "Not found")
 
     try:
-        entities = extract_entities(req.content)
+        entities = extract_entities_with_types(req.content)
     except Exception:
         entities = []
 
