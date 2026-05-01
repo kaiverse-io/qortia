@@ -483,6 +483,25 @@ def _rrf_fuse(
     return [by_id[rid] for rid in sorted(scores.keys(), key=final_score, reverse=True)]
 
 
+# ── Keyword boost (16k) ─────────────────────────────────────
+
+
+def _keyword_boost(query: str, content: str) -> float:
+    """Normalised token overlap between query and content (case-insensitive).
+
+    Returns a value in [0, 1] representing the fraction of unique query tokens
+    that appear in the content. Used to re-score knowledge candidates before MMR
+    so that paraphrased queries that share key terms with the ground truth chunk
+    are not buried by episodic memories with higher raw vector scores.
+    """
+    query_tokens = {t.lower() for t in query.split() if len(t) > 2}
+    if not query_tokens:
+        return 0.0
+    content_lower = content.lower()
+    matched = sum(1 for t in query_tokens if t in content_lower)
+    return matched / len(query_tokens)
+
+
 # ── MMR ──────────────────────────────────────────────────────
 
 
@@ -827,9 +846,13 @@ async def recall(
                 fused_memory = _rrf_fuse(memory_results, entity_links=combined_links)
 
         if query_embedding and knowledge_candidates:
+            for kc in knowledge_candidates:
+                boost = _keyword_boost(body.query, kc.content)
+                kc._score = kc._score * (1.0 + boost)
             knowledge_results = _mmr(
                 query_embedding=query_embedding,
                 candidates=knowledge_candidates,
+                min_score=0.30,
             )
         else:
             knowledge_results = knowledge_candidates[:4]
