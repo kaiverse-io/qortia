@@ -400,3 +400,130 @@ def test_reflect_supersede_first(
         "SELECT is_consolidated FROM hindsight_memories WHERE id = $1", old_id
     )
     assert is_consolidated is False
+
+
+# ── memory_links (16i) ────────────────────────────────────────────────────────
+
+
+def test_forget_cleans_up_memory_links(
+    app_client, _session_loop, committed_conn, tenant_id
+) -> None:
+    """Forgetting a memory removes its memory_links rows."""
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
+    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+
+    r = _call(
+        _session_loop,
+        app_client.post(
+            "/v1/remember",
+            json={"memories": [{"type": "episodic", "content": "to be forgotten"}]},
+            headers=headers,
+        ),
+    )
+    mem_id = r.json()["ids"][0]
+
+    # Manually insert a link row so we can verify cleanup without running the worker
+    committed_conn.execute(
+        """
+        INSERT INTO memory_links (tenant_id, source_id, target_id, similarity)
+        VALUES ($1, $2, $3, 0.80)
+        """,
+        tenant_id,
+        mem_id,
+        mem_id,  # self-link is nonsensical but sufficient to test cleanup
+    )
+
+    r = _call(
+        _session_loop,
+        app_client.post("/v1/forget", json={"id": mem_id}, headers=headers),
+    )
+    assert r.status_code == 200
+
+    count = committed_conn.fetchval(
+        "SELECT COUNT(*) FROM memory_links WHERE source_id = $1 OR target_id = $1",
+        mem_id,
+    )
+    assert count == 0
+
+
+def test_recall_linked_via_field_present(
+    app_client, _session_loop, committed_conn, tenant_id
+) -> None:
+    """RecallResult schema includes linked_via field (null when not a linked result)."""
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
+    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+
+    _call(
+        _session_loop,
+        app_client.post(
+            "/v1/remember",
+            json={"memories": [{"type": "decision", "content": "chose PostgreSQL"}]},
+            headers=headers,
+        ),
+    )
+
+    r = _call(
+        _session_loop,
+        app_client.post(
+            "/v1/recall",
+            json={"query": "database", "scope": "private"},
+            headers=headers,
+        ),
+    )
+    assert r.status_code == 200
+    results = r.json()["results"]
+    # Every result must have the linked_via key (null for non-linked results)
+    for result in results:
+        assert "linked_via" in result
+
+
+def test_memory_links_rls_tenant_isolation(
+    app_client, _session_loop, committed_conn, tenant_id
+) -> None:
+    """Agent from tenant A cannot see memory_links belonging to tenant B."""
+    # Tenant A
+    aid_a = _active_agent(_session_loop, committed_conn, tenant_id)
+
+    # Tenant B — separate tenant
+    tid_b = str(__import__("uuid").uuid4())
+    committed_conn.execute(
+        "INSERT INTO auth.tenants (id, name, tier) VALUES ($1, $2, $3)",
+        tid_b,
+        f"tenant-b-{tid_b[:8]}",
+        "free",
+    )
+    committed_conn.track("auth.tenants", tid_b)
+    aid_b = _active_agent(_session_loop, committed_conn, tid_b)
+
+    # Write a memory for tenant B and manually insert a link
+    r = _call(
+        _session_loop,
+        app_client.post(
+            "/v1/remember",
+            json={"memories": [{"type": "episodic", "content": "tenant B secret"}]},
+            headers={"X-Agent-ID": aid_b, "X-Tenant-ID": tid_b},
+        ),
+    )
+    mem_b_id = r.json()["ids"][0]
+    committed_conn.execute(
+        """
+        INSERT INTO memory_links (tenant_id, source_id, target_id, similarity)
+        VALUES ($1, $2, $3, 0.90)
+        """,
+        tid_b,
+        mem_b_id,
+        mem_b_id,
+    )
+
+    # Tenant A recall must not surface tenant B's link
+    r = _call(
+        _session_loop,
+        app_client.post(
+            "/v1/recall",
+            json={"query": "tenant B secret", "scope": "private"},
+            headers={"X-Agent-ID": aid_a, "X-Tenant-ID": tenant_id},
+        ),
+    )
+    assert r.status_code == 200
+    result_ids = {res["id"] for res in r.json()["results"]}
+    assert mem_b_id not in result_ids

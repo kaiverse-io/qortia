@@ -180,6 +180,9 @@ class RecallResult(BaseModel):
     importance: float | None = None
     created_at: str
     entity_summary: str | None = None
+    linked_via: str | None = (
+        None  # ID of the result that surfaced this via cross-link (16i)
+    )
 
     # Internal ranking signals — never serialised (Q95)
     _recall_count: int = PrivateAttr(default=0)

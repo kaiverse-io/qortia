@@ -862,6 +862,14 @@ async def recall(
         else:
             knowledge_results = knowledge_candidates[:4]
 
+        # Cross-memory link expansion (16i) — expand top-5 fused results with linked memories
+        if fused_memory and query_embedding:
+            from app.qortia.links import _expand_with_links
+
+            fused_memory = await _expand_with_links(
+                fused_memory, agent.tenant_id, agent.agent_id
+            )
+
         results = fused_memory + knowledge_results
 
         # Attach entity summary to the top result if available

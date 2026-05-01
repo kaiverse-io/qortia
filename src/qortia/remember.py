@@ -252,6 +252,16 @@ async def forget(
             row["id"],
             agent.tenant_id,
         )
+        # Cross-memory link cleanup (16i)
+        await conn.execute(
+            """
+            DELETE FROM memory_links
+            WHERE (source_id = $1 OR target_id = $1)
+              AND tenant_id = $2
+            """,
+            row["id"],
+            agent.tenant_id,
+        )
         await conn.execute(
             """
             INSERT INTO memory_history

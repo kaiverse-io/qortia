@@ -641,6 +641,17 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
                 str(embedding),
                 row["id"],
             )
+        # Cross-memory linking (16i) — only for hindsight_memories
+        if row["tbl"] == "hindsight_memories":
+            from app.qortia.links import _find_similar_memories, _upsert_memory_links
+
+            similar = await _find_similar_memories(
+                memory_id=row["id"],
+                embedding=embedding,
+                tenant_id=row["tenant_id"],
+                agent_id=row["agent_id"],
+            )
+            await _upsert_memory_links(row["id"], similar, row["tenant_id"])
     except Exception as exc:
         async with get_main_pool().acquire() as conn:
             await conn.execute(
