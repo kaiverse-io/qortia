@@ -447,6 +447,48 @@ NEVER include:
 - Abstract concepts without grounding ("things went well", "it was difficult")"""
 
 
+# ── Incremental entity summary (16f Part B) ────────────────
+
+
+async def _update_entity_summary(
+    existing_summary: str | None,
+    new_memory_content: str,
+    litellm_key: str,
+) -> str | None:
+    """
+    Maintain a running summary for an entity node.
+    First call (no existing summary): return truncated memory content — no LLM.
+    Subsequent calls: LLM merges existing summary with new memory content.
+    Failure is non-fatal — returns existing_summary with a warning log.
+    """
+    if not existing_summary:
+        return new_memory_content[:500]
+    try:
+        prompt = (
+            f"Existing summary: {existing_summary}\n\n"
+            f"New information: {new_memory_content[:300]}\n\n"
+            "Update the summary to incorporate the new information. "
+            "Be concise (2-3 sentences). Preserve named entities and temporal qualifiers."
+        )
+        async with asyncio.timeout(20.0):
+            resp = await get_litellm_client().post(
+                "/chat/completions",
+                headers={"Authorization": f"Bearer {litellm_key}"},
+                json={
+                    "model": "anthropic/claude-3-haiku-20240307",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 200,
+                },
+                timeout=15.0,
+            )
+        resp.raise_for_status()
+        content: str = resp.json()["choices"][0]["message"]["content"]
+        return content.strip()
+    except Exception as exc:
+        logger.warning({"event": "entity_summary_update_failed", "error": str(exc)})
+        return existing_summary
+
+
 # ── Archival background task ─────────────────────────────────
 
 
@@ -646,6 +688,89 @@ async def validate_embedding_dimensions() -> None:
         )
 
 
+async def _maybe_update_entity_summary(
+    conn: Any,
+    tenant_id: object,
+    agent_id: object,
+    entity_text: str,
+    memory_content: str,
+    is_org: bool,
+) -> None:
+    """
+    Read the current link count and summary for the entity, then decide:
+    - count == 1: bootstrap summary from memory content (no LLM)
+    - count >= 3 and count % 3 == 0: call LLM to update summary
+    - otherwise: no-op
+    Failure is non-fatal.
+    """
+    try:
+        if is_org:
+            row = await conn.fetchrow(
+                """
+                SELECT array_length(linked_memory_ids, 1) AS link_count, summary
+                FROM qortia_entities
+                WHERE tenant_id = $1 AND entity_text = $2 AND agent_id IS NULL
+                """,
+                tenant_id,
+                entity_text,
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                SELECT array_length(linked_memory_ids, 1) AS link_count, summary
+                FROM qortia_entities
+                WHERE tenant_id = $1 AND agent_id = $2 AND entity_text = $3
+                """,
+                tenant_id,
+                agent_id,
+                entity_text,
+            )
+        if row is None:
+            return
+        link_count: int = row["link_count"] or 0
+        existing_summary: str | None = row["summary"]
+
+        if link_count == 1:
+            new_summary: str | None = memory_content[:500]
+        elif link_count >= 3 and link_count % 3 == 0:
+            try:
+                litellm_key = await get_litellm_key(str(tenant_id))
+            except Exception as exc:
+                logger.warning(
+                    {"event": "entity_summary_key_fetch_failed", "error": str(exc)}
+                )
+                return
+            new_summary = await _update_entity_summary(
+                existing_summary, memory_content, litellm_key
+            )
+        else:
+            return
+
+        if is_org:
+            await conn.execute(
+                """
+                UPDATE qortia_entities SET summary = $1, updated_at = now()
+                WHERE tenant_id = $2 AND entity_text = $3 AND agent_id IS NULL
+                """,
+                new_summary,
+                tenant_id,
+                entity_text,
+            )
+        else:
+            await conn.execute(
+                """
+                UPDATE qortia_entities SET summary = $1, updated_at = now()
+                WHERE tenant_id = $2 AND agent_id = $3 AND entity_text = $4
+                """,
+                new_summary,
+                tenant_id,
+                agent_id,
+                entity_text,
+            )
+    except Exception as exc:
+        logger.warning({"event": "entity_summary_write_failed", "error": str(exc)})
+
+
 async def _populate_graph_batch() -> None:
     """
     Asynchronously links memories to the entity graph.
@@ -656,7 +781,7 @@ async def _populate_graph_batch() -> None:
             # 1. Hindsight Memories (Private)
             rows = await conn.fetch(
                 """
-                SELECT id, tenant_id, agent_id, entities
+                SELECT id, tenant_id, agent_id, entities, content
                 FROM hindsight_memories
                 WHERE is_graphed = false AND entities != '[]'
                 LIMIT 50
@@ -689,6 +814,14 @@ async def _populate_graph_batch() -> None:
                             ent_type,
                             row["id"],
                         )
+                        await _maybe_update_entity_summary(
+                            conn=conn,
+                            tenant_id=row["tenant_id"],
+                            agent_id=row["agent_id"],
+                            entity_text=ent_text,
+                            memory_content=row.get("content", ""),
+                            is_org=False,
+                        )
                     await conn.execute(
                         "UPDATE hindsight_memories SET is_graphed = true WHERE id = $1",
                         row["id"],
@@ -697,7 +830,7 @@ async def _populate_graph_batch() -> None:
             # 2. Org Memories (Shared)
             rows = await conn.fetch(
                 """
-                SELECT id, tenant_id, entities
+                SELECT id, tenant_id, entities, content
                 FROM org_memory
                 WHERE is_graphed = false AND entities != '[]'
                 LIMIT 50
@@ -728,6 +861,14 @@ async def _populate_graph_batch() -> None:
                             ent_text,
                             ent_type,
                             row["id"],
+                        )
+                        await _maybe_update_entity_summary(
+                            conn=conn,
+                            tenant_id=row["tenant_id"],
+                            agent_id=None,
+                            entity_text=ent_text,
+                            memory_content=row.get("content", ""),
+                            is_org=True,
                         )
                     await conn.execute(
                         "UPDATE org_memory SET is_graphed = true WHERE id = $1",

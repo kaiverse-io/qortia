@@ -800,13 +800,14 @@ async def recall(
         except Exception:
             query_entities = []
         entity_links: set[str] = set()
+        top_entity_summary: str | None = None
         if query_entities:
             async with tenant_transaction(
                 get_main_pool(), agent.tenant_id, agent.agent_id
             ) as conn:
                 linked_rows = await conn.fetch(
                     """
-                    SELECT unnest(linked_memory_ids) as mem_id
+                    SELECT unnest(linked_memory_ids) as mem_id, summary
                     FROM qortia_entities
                     WHERE tenant_id = $1
                       AND (agent_id IS NULL OR agent_id = $2)
@@ -817,6 +818,10 @@ async def recall(
                     query_entities,
                 )
                 entity_links = {str(r["mem_id"]) for r in linked_rows}
+                # Pick the first non-null summary from matched entities
+                top_entity_summary = next(
+                    (r["summary"] for r in linked_rows if r["summary"]), None
+                )
 
         fused_memory = _rrf_fuse(memory_results, entity_links=entity_links)
 
@@ -858,6 +863,10 @@ async def recall(
             knowledge_results = knowledge_candidates[:4]
 
         results = fused_memory + knowledge_results
+
+        # Attach entity summary to the top result if available
+        if top_entity_summary and results:
+            results[0].entity_summary = top_entity_summary
 
     if body.rerank and len(results) >= 2:
         results = await _llm_rerank(body.query, results, agent)

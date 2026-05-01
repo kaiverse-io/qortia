@@ -179,6 +179,7 @@ class RecallResult(BaseModel):
     content: str
     importance: float | None = None
     created_at: str
+    entity_summary: str | None = None
 
     # Internal ranking signals — never serialised (Q95)
     _recall_count: int = PrivateAttr(default=0)
