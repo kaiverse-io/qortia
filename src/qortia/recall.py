@@ -776,7 +776,10 @@ async def recall(
         # ── Entity Graph Boost (The Obsidian Layer) ──
         from app.qortia.knowledge import extract_entities
 
-        query_entities = extract_entities(body.query)
+        try:
+            query_entities = extract_entities(body.query)
+        except Exception:
+            query_entities = []
         entity_links: set[str] = set()
         if query_entities:
             async with tenant_transaction(

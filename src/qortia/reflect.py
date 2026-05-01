@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -117,6 +118,9 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
     from app.qortia.common import assert_agent_active
 
     # Fetch data outside the write transaction — no DB lock held during LLM call
+    domain_md_raw: str | None = None
+    recent: list[dict[str, Any]] = []
+    existing: list[dict[str, Any]] = []
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
@@ -152,8 +156,12 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             agent.tenant_id,
         )
 
-    domain = yaml.safe_load(domain_md_raw)
-    model = domain.get("model", "anthropic/claude-3-haiku-20240307")
+    domain = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
+    model = (
+        domain.get("model", "anthropic/claude-3-haiku-20240307")
+        if domain
+        else "anthropic/claude-3-haiku-20240307"
+    )
 
     litellm_key = await get_litellm_key(str(agent.tenant_id))
     reflections = await _call_litellm_reflect(
@@ -187,6 +195,10 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 new_embeddings[i] = None
 
     # Write transaction
+    new_ids: list[tuple[object, object]] = []
+    new_counter: int = 0
+    stable_count = 0
+    unstable_count = 0
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
@@ -494,6 +506,7 @@ async def run_embedding_worker() -> None:
 
 async def _process_embedding_batch() -> None:
     # Step 1: claim rows outside a long-held transaction
+    rows: list[dict] = []  # type: ignore[type-arg]
     async with get_main_pool().acquire() as conn:
         async with conn.transaction():
             hindsight = await conn.fetch(
