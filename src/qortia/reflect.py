@@ -674,9 +674,11 @@ async def _get_embedding(text: str, litellm_key: str) -> list[float]:
 
 
 async def validate_embedding_dimensions() -> None:
+    from app.vault import get_platform_embed_key
+
     resp = await get_litellm_client().post(
         "/embeddings",
-        headers={"Authorization": f"Bearer {settings.litellm_master_key}"},
+        headers={"Authorization": f"Bearer {get_platform_embed_key()}"},
         json={"model": EMBEDDING_MODEL, "input": "dimension check"},
         timeout=10.0,
     )
