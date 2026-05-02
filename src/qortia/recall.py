@@ -645,22 +645,6 @@ async def _llm_rerank(
         reranked = [results[i - 1] for i in order if 1 <= i <= len(results)]
         seen = {r.id for r in reranked}
         reranked += [r for r in results if r.id not in seen]
-
-        # Record cost — fire-and-forget
-        usage = resp.json().get("usage", {})
-        if usage:
-            from app.qortia.reflect import _record_llm_cost
-
-            asyncio.create_task(
-                _record_llm_cost(
-                    agent_id=agent.agent_id,
-                    tenant_id=agent.tenant_id,
-                    model=model,
-                    tokens_in=usage.get("prompt_tokens", 0),
-                    tokens_out=usage.get("completion_tokens", 0),
-                )
-            )
-
         return reranked
     except Exception as exc:
         logger.warning({"event": "rerank_failed", "error": str(exc)})

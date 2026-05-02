@@ -77,39 +77,6 @@ def get_litellm_client() -> httpx.AsyncClient:
     return _litellm_client
 
 
-# ── Cost ledger ─────────────────────────────────────────────
-
-
-async def _record_llm_cost(
-    agent_id: UUID,
-    tenant_id: UUID,
-    model: str,
-    tokens_in: int,
-    tokens_out: int,
-) -> None:
-    """Fire-and-forget — failure is non-fatal."""
-    # Approximate cost using OpenAI pricing tiers as a proxy.
-    # LiteLLM returns cost in usage.cost when available; fall back to estimate.
-    cost_usd = (tokens_in * 3.0 + tokens_out * 15.0) / 1_000_000
-    try:
-        async with get_main_pool().acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO agent_cost_ledger
-                    (tenant_id, agent_id, model, tokens_in, tokens_out, cost_usd)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                """,
-                tenant_id,
-                agent_id,
-                model,
-                tokens_in,
-                tokens_out,
-                cost_usd,
-            )
-    except Exception as exc:
-        logger.warning({"event": "cost_ledger_write_failed", "error": str(exc)})
-
-
 # ── POST /v1/reflect ─────────────────────────────────────────
 
 
@@ -388,19 +355,6 @@ async def _call_litellm_reflect(
     except (KeyError, ValueError, json.JSONDecodeError) as exc:
         logger.error({"event": "reflection_llm_malformed", "error": str(exc)})
         raise HTTPException(500, "Reflection failed: malformed LLM response")
-
-    # Record cost — fire-and-forget, non-fatal
-    usage = resp.json().get("usage", {})
-    if usage:
-        asyncio.create_task(
-            _record_llm_cost(
-                agent_id=agent_id,
-                tenant_id=tenant_id,
-                model=model,
-                tokens_in=usage.get("prompt_tokens", 0),
-                tokens_out=usage.get("completion_tokens", 0),
-            )
-        )
 
     return reflections  # type: ignore[no-any-return]
 
