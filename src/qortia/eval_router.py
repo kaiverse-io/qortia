@@ -56,6 +56,7 @@ class SeedMemoryRequest(BaseModel):
     content: str
     mem_type: str = "episodic"
     scope: str = "private"
+    lang: str = "en"
 
 
 @router.post("/seed-memory")
@@ -64,15 +65,15 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
         raise HTTPException(404, "Not found")
 
     try:
-        entities = extract_entities_with_types(req.content)
+        entities = extract_entities_with_types(req.content, lang=req.lang)
     except Exception:
         entities = []
 
     async with get_main_pool().acquire() as conn:
         row_id = await conn.fetchval(
             """
-            INSERT INTO hindsight_memories (tenant_id, agent_id, type, content, importance, entities)
-            VALUES ($1, $2, $3, $4, 0.5, $5)
+            INSERT INTO hindsight_memories (tenant_id, agent_id, type, content, importance, entities, lang)
+            VALUES ($1, $2, $3, $4, 0.5, $5, $6)
             RETURNING id
         """,
             req.tenant_id,
@@ -80,6 +81,7 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
             req.mem_type,
             req.content,
             json.dumps(entities),
+            req.lang,
         )
 
     return {"status": "seeded", "memory_id": str(row_id)}

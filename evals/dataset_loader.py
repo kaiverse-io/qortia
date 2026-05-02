@@ -66,6 +66,7 @@ async def seed_case(
                 "content": neg["content"],
                 "mem_type": neg.get("type", "episodic"),
                 "scope": neg.get("scope", "private"),
+                "lang": neg.get("lang", "en"),
             },
         )
         resp.raise_for_status()
@@ -80,6 +81,7 @@ async def seed_case(
                 "content": mem["content"],
                 "mem_type": mem.get("type", "episodic"),
                 "scope": mem.get("scope", "private"),
+                "lang": mem.get("lang", "en"),
             },
         )
         resp.raise_for_status()

@@ -1,0 +1,853 @@
+{
+  "version": "2",
+  "description": "Multilingual recall evaluation dataset. Covers Indic language paths (Hindi, Tamil, Bengali) added in E1/E2/E3 (ADR-079). Extends recall_v1.json — all v1 cases remain valid. Run with: EVAL_MODE=true python3 evals/run_reh.py evals/datasets/recall_v2.json",
+  "cases": [
+    {
+      "id": "reh-v2-001",
+      "description": "Hindi episodic BM25 — named entity, lang=hi stored and queried",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "AuthService ke liye rate limiting ka design pura kiya. Token bucket algorithm aur Redis backend ka upyog kiya.",
+            "scope": "private",
+            "lang": "hi"
+          },
+          {
+            "type": "episodic",
+            "content": "PaymentService ke liye database schema ki samiksha ki. Koi samasya nahi mili.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "PaymentService ke liye rate limiting ka design pura kiya. Leaky bucket algorithm ka upyog kiya.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null,
+        "lang": "hi"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["AuthService"],
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-002",
+      "description": "Hindi episodic vector — semantic paraphrase query, IndicSBERT path",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Vault authentication error ke karan agent boot vifal ho gaya. Token rotate karne ke baad samasya hal hui.",
+            "scope": "private",
+            "lang": "hi"
+          },
+          {
+            "type": "episodic",
+            "content": "Database connection pool ki seema badhai. Performance mein sudhar hua.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Network timeout ke karan API call vifal ho gayi. Retry logic joda gaya.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "agent shuru nahi ho raha authentication ki vajah se",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null,
+        "lang": "hi"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-003",
+      "description": "Hindi decision BM25 — unique token, superseded decision hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Nirnay liya ki Redis ko stack se puri tarah hataya jayega. Sabhi session state Postgres mein jayegi. Karan: operational simplicity.",
+            "scope": "private",
+            "lang": "hi"
+          },
+          {
+            "type": "episodic",
+            "content": "Redis aur Postgres ka session storage ke liye benchmark kiya.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Nirnay liya ki Redis ko session storage ke liye upyog kiya jayega. Latency kam karne ke liye.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "Redis stack se hatane ka nirnay",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null,
+        "lang": "hi"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-004",
+      "description": "Hindi lesson vector — semantic paraphrase, IndicSBERT dominant",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "Flyway migration ko edit karne se checksum mismatch error aati hai. Hamesha nayi V{N+1} file banayein, purani file kabhi na badlein.",
+            "scope": "private",
+            "lang": "hi"
+          },
+          {
+            "type": "lesson",
+            "content": "Security scanner actions ko exact tag par pin karna zaroori hai. Floating @main supply-chain risk hai.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "Liquibase changeset ko edit karne se checksum error aati hai. Naya changeset banayein.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "migration file badlane par kya hota hai",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null,
+        "lang": "hi"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-005",
+      "description": "Hindi org memory BM25 — named entity, lang=hi on org_memory",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "AuthService rate limiting purn",
+            "content": "AuthService ke liye rate limiting implementation puri hui. Token bucket algorithm, Redis backend, 10k req/s sustained. Owner: @alice.",
+            "lang": "hi"
+          },
+          {
+            "type": "handoff",
+            "title": "PaymentService audit purn",
+            "content": "PaymentService ka security audit pura hua. 2 medium-severity issues mile. Owner: @bob.",
+            "lang": "hi"
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder private memory.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting handoff",
+        "scope": "org",
+        "rerank": false,
+        "entities": null,
+        "lang": "hi"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "org_memories"
+    },
+    {
+      "id": "reh-v2-006",
+      "description": "Tamil episodic BM25 — named entity, lang=ta stored and queried",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "AuthService-ku rate limiting vadivamaippu mudinthadu. Token bucket algorithm matrum Redis backend payanduthinam.",
+            "scope": "private",
+            "lang": "ta"
+          },
+          {
+            "type": "episodic",
+            "content": "PaymentService-ku database schema matipaay seythom. Ethuvum piratchanai illai.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "PaymentService-ku rate limiting vadivamaippu mudinthadu. Leaky bucket algorithm payanduthinam.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null,
+        "lang": "ta"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["AuthService"],
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-007",
+      "description": "Tamil lesson vector — semantic paraphrase, IndicSBERT path for ta",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "Vault token-ai subprocess argument-aaga anupinal /proc/<pid>/cmdline-il velippadum. Eppozhudum urllib-ai X-Vault-Token header-udan payandungal.",
+            "scope": "private",
+            "lang": "ta"
+          },
+          {
+            "type": "lesson",
+            "content": "Docker image tags-ai production-il float seyyakoodadu. Kurippita version tag payandungal.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "Database password-ai config file-il hardcode seyyakoodadu. Environment variables payandungal.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "secret token process arguments-il eppadi leak aagum",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null,
+        "lang": "ta"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-008",
+      "description": "Tamil org memory vector — semantic paraphrase for handoff content, lang=ta",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "embedding worker multi-tenant sarisey",
+            "content": "Embedding worker-ai tenant_id-aal group seydu per-tenant LiteLLM virtual keys payanduppa sarisey seythom. Master key ippozu startup dimension validation-ku mattume payandugiradu.",
+            "lang": "ta"
+          },
+          {
+            "type": "handoff",
+            "title": "LiteLLM gateway mempaduthal",
+            "content": "LiteLLM gateway-ai v1.82.0-ilirundhu v1.83.7-stable-ku mempaduthinom. Breaking changes illai.",
+            "lang": "ta"
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "embedding worker pala tenants-ai eppadi kaiyalugiradu",
+        "scope": "org",
+        "rerank": false,
+        "entities": null,
+        "lang": "ta"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "org_memories"
+    },
+    {
+      "id": "reh-v2-009",
+      "description": "Tamil knowledge BM25 — Tamil content in knowledge doc, unique token dominant",
+      "setup": {
+        "knowledge": [
+          {
+            "source_type": "note",
+            "source_path": "docs/platform/qortia-ta.md",
+            "content": "## Recall Pipeline\n\nRecall pipeline BM25 matrum vector search-ai RRF moolam inaikkitradu. BM25 simple text search configuration payandugiradu — idu multilingual support-ku erpattadu, stemming illai. Vector search pgvector cosine similarity payandugiradu, minimum score threshold 0.35. AuthService matrum PaymentService irandume inda pipeline moolam recall seyyappadugindrana.\n\n## Memory Types\n\nAindhu memory types ulladana: episodic, experiential, mental_model, decision, lesson.",
+            "lang": "ta"
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "BM25 recall pipeline simple configuration",
+        "scope": "knowledge",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "knowledge"
+    },
+    {
+      "id": "reh-v2-010",
+      "description": "Cross-language isolation — lang=hi filter must NOT return lang=ta memory with same content",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "AuthService ke liye rate limiting puri hui. Redis backend upyog kiya.",
+            "scope": "private",
+            "lang": "hi"
+          },
+          {
+            "type": "episodic",
+            "content": "AuthService-ku rate limiting mudinthadu. Redis backend payanduthinam.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting Redis",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null,
+        "lang": "hi"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["Redis"],
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-011",
+      "description": "Bengali episodic BM25 — named entity, lang=bn stored and queried",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "AuthService-er jonno rate limiting design shesh hoyeche. Token bucket algorithm ebong Redis backend byabohar kora hoyeche.",
+            "scope": "private",
+            "lang": "bn"
+          },
+          {
+            "type": "episodic",
+            "content": "PaymentService-er database schema review kora hoyeche. Kono somosya paoa jay ni.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "PaymentService-er jonno rate limiting design shesh hoyeche. Leaky bucket algorithm byabohar kora hoyeche.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null,
+        "lang": "bn"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["AuthService"],
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-012",
+      "description": "Bengali decision BM25 — unique token, superseded decision hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Siddhanto neoa hoyeche je Redis-ke stack theke poripurno sorie deoa hobe. Sob session state Postgres-e jabe. Karon: operational simplicity.",
+            "scope": "private",
+            "lang": "bn"
+          },
+          {
+            "type": "episodic",
+            "content": "Redis ebong Postgres-er session storage-er jonno benchmark kora hoyeche.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Siddhanto neoa hoyeche je Redis-ke session storage-er jonno byabohar kora hobe. Latency komanor jonno.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "Redis stack theke sorie deoa-r siddhanto",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null,
+        "lang": "bn"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-013",
+      "description": "Bengali lesson vector — semantic paraphrase, IndicSBERT path for bn",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "Flyway migration edit korle checksum mismatch error ashe. Sorboda notun V{N+1} file toiri korun, purano file kabho poriborton korben na.",
+            "scope": "private",
+            "lang": "bn"
+          },
+          {
+            "type": "lesson",
+            "content": "Security scanner actions-ke exact tag-e pin kora dorkar. Floating @main supply-chain risk.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "Liquibase changeset edit korle checksum error ashe. Notun changeset toiri korun.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "migration file poriborton korle ki hoy",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null,
+        "lang": "bn"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-014",
+      "description": "Bengali org memory BM25 — named entity, lang=bn on org_memory",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "AuthService rate limiting sampanna",
+            "content": "AuthService-er jonno rate limiting implementation shesh hoyeche. Token bucket algorithm, Redis backend, 10k req/s sustained. Owner: @alice.",
+            "lang": "bn"
+          },
+          {
+            "type": "handoff",
+            "title": "PaymentService audit sampanna",
+            "content": "PaymentService-er security audit shesh hoyeche. 2 medium-severity issue paoa giyeche. Owner: @bob.",
+            "lang": "bn"
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Placeholder private memory.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Placeholder hard negative.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting handoff",
+        "scope": "org",
+        "rerank": false,
+        "entities": null,
+        "lang": "bn"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "org_memories"
+    },
+    {
+      "id": "reh-v2-015",
+      "description": "Cross-language isolation — lang=bn filter must NOT return lang=hi memory with same content",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "AuthService-er jonno rate limiting shesh hoyeche. Redis backend byabohar kora hoyeche.",
+            "scope": "private",
+            "lang": "bn"
+          },
+          {
+            "type": "episodic",
+            "content": "AuthService ke liye rate limiting puri hui. Redis backend upyog kiya.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting Redis",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null,
+        "lang": "bn"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["Redis"],
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-016",
+      "description": "No lang filter — omitting lang returns memories across all languages",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "AuthService ke liye rate limiting puri hui. Redis backend upyog kiya.",
+            "scope": "private",
+            "lang": "hi"
+          },
+          {
+            "type": "episodic",
+            "content": "AuthService-ku rate limiting mudinthadu. Redis backend payanduthinam.",
+            "scope": "private",
+            "lang": "ta"
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "AuthService rate limiting Redis",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["Redis"],
+        "min_results": 2
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-017",
+      "description": "Hindi episodic recency window — 7-day branch in _recall_episodic, Indic content",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Staging par naya onboarding flow deploy kiya. Sabhi smoke tests pass ho gaye.",
+            "scope": "private",
+            "lang": "hi"
+          },
+          {
+            "type": "episodic",
+            "content": "Worker process mein memory leak ki jaanch ki. Root cause unclosed asyncpg connections tha.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Chhe mahine pehle production par purana onboarding flow deploy kiya tha. Tests pehle fail hue the.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "onboarding flow staging deploy",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null,
+        "lang": "hi"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["onboarding"],
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-018",
+      "description": "Bengali mental model hybrid — full pipeline, related-but-wrong hard negative",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "Je agent-ra 30-er beshi episodic memory joma kore reflection cycle chara, tader tool call precision kome jay. LLM context raw event-e bhorti thake, synthesised pattern thake na.",
+            "scope": "private",
+            "lang": "bn"
+          },
+          {
+            "type": "episodic",
+            "content": "35ti episodic memory-r pore reflection cycle trigger kora hoyeche. Porer session-e tool call precision bere giyeche.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "Je agent-ra 30-er beshi org memory joma kore weekly summary chara, tader knowledge fragmentation hoy. Recall kom coherent hoy.",
+            "scope": "private",
+            "lang": "bn"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "agent-ra onek din reflection na korle ki hoy",
+        "scope": "private",
+        "rerank": false,
+        "entities": null,
+        "lang": "bn"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-019",
+      "description": "Hindi scope=all — ground truth in private Hindi memory, noise in org English memory",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Nirnay liya ki BM25 queries ke liye simple text search configuration upyog ki jayegi. Multilingual agent content support ke liye. ADR-076.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ],
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "BM25 config review",
+            "content": "Reviewed BM25 configuration options. Team discussed english vs simple vs unicode61. Decision deferred.",
+            "lang": "en"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "BM25 configuration ki jaanch ki. English-only content ke liye english configuration upyog kiya.",
+            "scope": "private",
+            "lang": "hi"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "BM25 simple configuration nirnay",
+        "scope": "all",
+        "rerank": false,
+        "entities": null,
+        "lang": "hi"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "memories"
+    },
+    {
+      "id": "reh-v2-020",
+      "description": "Tamil scope=all — ground truth in org Tamil memory, noise in private English memory",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "production rollback niyam",
+            "content": "Production rollback niyam: kubectl rollout undo deployment/platform -n platform. Pinnar 24 manikku ullaga post-mortem issue tirakka vendum. ADLC Gate 5 protocol koovum.",
+            "lang": "ta"
+          }
+        ],
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Practiced the rollback procedure on staging. Took 45 seconds end-to-end.",
+            "scope": "private",
+            "lang": "en"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Reviewed the staging rollback procedure. Used helm rollback instead of kubectl.",
+            "scope": "private",
+            "lang": "en"
+          }
+        ]
+      },
+      "ground_truth_index": 0,
+      "query": {
+        "query": "production rollback post-mortem tevai",
+        "scope": "all",
+        "rerank": false,
+        "entities": null,
+        "lang": "ta"
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "min_results": 1
+      },
+      "ground_truth_source": "org_memories"
+    }
+  ]
+}
