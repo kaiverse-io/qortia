@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
 from app.qortia.models import RecallRequest, RecallResponse, RecallResult
-from app.qortia.reflect import EMBEDDING_MODEL, get_litellm_client
+from app.qortia.reflect import _embedding_model_for, get_litellm_client
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 
@@ -144,13 +144,15 @@ def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
 # ── Embed query ──────────────────────────────────────────────
 
 
-async def _embed_query(query: str, tenant_id: UUID) -> list[float] | None:
+async def _embed_query(
+    query: str, tenant_id: UUID, lang: str = "en"
+) -> list[float] | None:
     try:
         litellm_key = await get_litellm_key(str(tenant_id))
         resp = await get_litellm_client().post(
             "/embeddings",
             headers={"Authorization": f"Bearer {litellm_key}"},
-            json={"model": EMBEDDING_MODEL, "input": query},
+            json={"model": _embedding_model_for(lang), "input": query},
             timeout=10.0,
         )
         resp.raise_for_status()
@@ -205,7 +207,9 @@ async def _recall_lessons(
     tier_clause = (
         "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
     )
-    query_embedding = await _embed_query(body.query, agent.tenant_id)
+    query_embedding = await _embed_query(
+        body.query, agent.tenant_id, lang=body.lang or "en"
+    )
     if query_embedding is None:
         return []
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
@@ -809,7 +813,9 @@ async def recall(
         results = await _recall_short_term(body, agent)
     else:
         # Full hybrid pipeline
-        query_embedding = await _embed_query(body.query, agent.tenant_id)
+        query_embedding = await _embed_query(
+            body.query, agent.tenant_id, lang=body.lang or "en"
+        )
         tasks = []
 
         if body.scope in ("private", "all", "archive"):

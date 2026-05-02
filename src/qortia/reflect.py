@@ -22,9 +22,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 REFLECTION_THRESHOLD = 10
-EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_MODEL_EN = "text-embedding-3-small"
+EMBEDDING_MODEL_INDIC = "indic-embedding"
 EMBEDDING_BATCH_SIZE = 50
 STABILITY_THRESHOLD = 0.95
+
+# Languages routed to IndicSBERT (ai4bharat/IndicSBERT, 768-dim). ADR-079.
+INDIC_LANGS: frozenset[str] = frozenset(
+    {"hi", "ta", "te", "bn", "kn", "ml", "mr", "gu", "pa", "or", "as"}
+)
+
+
+def _embedding_model_for(lang: str) -> str:
+    return EMBEDDING_MODEL_INDIC if lang in INDIC_LANGS else EMBEDDING_MODEL_EN
+
 
 _litellm_client: httpx.AsyncClient | None = None
 
@@ -511,7 +522,7 @@ async def _process_embedding_batch() -> None:
         async with conn.transaction():
             hindsight = await conn.fetch(
                 """
-                SELECT id, tenant_id, content AS text_to_embed, 'hindsight_memories' AS tbl
+                SELECT id, tenant_id, content AS text_to_embed, lang, 'hindsight_memories' AS tbl
                 FROM hindsight_memories
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
@@ -523,7 +534,7 @@ async def _process_embedding_batch() -> None:
 
             org_mem = await conn.fetch(
                 """
-                SELECT id, tenant_id, content AS text_to_embed, 'org_memory' AS tbl
+                SELECT id, tenant_id, content AS text_to_embed, lang, 'org_memory' AS tbl
                 FROM org_memory
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
@@ -535,7 +546,7 @@ async def _process_embedding_batch() -> None:
 
             org_know = await conn.fetch(
                 """
-                SELECT id, tenant_id, index_summary AS text_to_embed, 'org_knowledge' AS tbl
+                SELECT id, tenant_id, index_summary AS text_to_embed, lang, 'org_knowledge' AS tbl
                 FROM org_knowledge
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
@@ -591,8 +602,10 @@ async def _process_embedding_batch() -> None:
 async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignore[type-arg]
     if not row.get("text_to_embed"):
         return
+    # qortia_entities has no lang column — always use English model (ADR-079)
+    lang = row.get("lang", "en") if row.get("tbl") != "qortia_entities" else "en"
     try:
-        embedding = await _get_embedding(row["text_to_embed"], litellm_key)
+        embedding = await _get_embedding(row["text_to_embed"], litellm_key, lang=lang)
         async with get_main_pool().acquire() as conn:
             await conn.execute(
                 f"UPDATE {row['tbl']} SET embedding = $1::vector WHERE id = $2",
@@ -631,11 +644,12 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
             )
 
 
-async def _get_embedding(text: str, litellm_key: str) -> list[float]:
+async def _get_embedding(text: str, litellm_key: str, lang: str = "en") -> list[float]:
+    model = _embedding_model_for(lang)
     resp = await get_litellm_client().post(
         "/embeddings",
         headers={"Authorization": f"Bearer {litellm_key}"},
-        json={"model": EMBEDDING_MODEL, "input": text},
+        json={"model": model, "input": text},
         timeout=30.0,
     )
     resp.raise_for_status()
@@ -643,20 +657,41 @@ async def _get_embedding(text: str, litellm_key: str) -> list[float]:
 
 
 async def validate_embedding_dimensions() -> None:
+    import os
+
     from app.vault import get_platform_embed_key
 
-    resp = await get_litellm_client().post(
-        "/embeddings",
-        headers={"Authorization": f"Bearer {get_platform_embed_key()}"},
-        json={"model": EMBEDDING_MODEL, "input": "dimension check"},
-        timeout=10.0,
-    )
-    resp.raise_for_status()
-    actual = len(resp.json()["data"][0]["embedding"])
-    if actual != 768:
-        raise RuntimeError(
-            f"Embedding dimension mismatch: schema expects 768, got {actual}."
-        )
+    indic_required = os.environ.get("INDIC_EMBED_REQUIRED", "").lower() == "true"
+    embed_key = get_platform_embed_key()
+
+    for model in (EMBEDDING_MODEL_EN, EMBEDDING_MODEL_INDIC):
+        try:
+            resp = await get_litellm_client().post(
+                "/embeddings",
+                headers={"Authorization": f"Bearer {embed_key}"},
+                json={"model": model, "input": "dimension check"},
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            actual = len(resp.json()["data"][0]["embedding"])
+            if actual != 768:
+                raise RuntimeError(
+                    f"Embedding dimension mismatch for {model}: "
+                    f"schema expects 768, got {actual}."
+                )
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            if model == EMBEDDING_MODEL_INDIC and not indic_required:
+                logger.warning(
+                    {
+                        "event": "indic_embed_unavailable",
+                        "model": model,
+                        "error": str(exc),
+                    }
+                )
+            else:
+                raise
 
 
 async def _maybe_update_entity_summary(
