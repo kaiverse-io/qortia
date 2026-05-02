@@ -28,6 +28,26 @@ ENTITY_LABELS = frozenset(
 )
 HEADING_PATTERN = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
 
+# ── Stanza NER routing ────────────────────────────────────────
+
+# Languages with Stanza NER models. Others fall back to [] (no regression).
+STANZA_NER_LANGS = frozenset({"hi", "bn", "ta", "te", "mr"})
+
+_stanza_pipelines: dict[str, object] = {}  # lang -> stanza.Pipeline
+
+
+def _get_stanza_pipeline(lang: str) -> Any:
+    if lang not in _stanza_pipelines:
+        import stanza  # lazy — not installed in all environments
+
+        _stanza_pipelines[lang] = stanza.Pipeline(
+            lang,
+            processors="tokenize,ner",
+            download_method=None,  # models pre-downloaded at image build time
+            verbose=False,
+        )
+    return _stanza_pipelines[lang]
+
 
 def load_spacy_model() -> None:
     global _nlp
@@ -44,29 +64,48 @@ def get_nlp() -> object:  # spaCy Language — avoid hard dep on spacy type stub
     return _nlp
 
 
-def extract_entities(text: str) -> list[str]:
+def extract_entities(text: str, lang: str = "en") -> list[str]:
     """
-    Extract NER entity texts. Best-effort — caller wraps in try/except.
+    Extract NER entity texts. Routes to Stanza (Indic) or spaCy (English/default).
+    Best-effort — caller wraps in try/except and falls back to [].
     Returns text only (label stripped) for backward-compatible callers.
     """
+    if lang in STANZA_NER_LANGS:
+        nlp = _get_stanza_pipeline(lang)
+        doc = nlp(text)
+        entities = [
+            ent.text
+            for sent in doc.sentences
+            for ent in sent.ents
+            if ent.type in {"PER", "ORG", "LOC", "MISC"}
+        ]
+        return list(dict.fromkeys(entities))[:20]
     doc = get_nlp()(text)  # type: ignore[operator]
     return list(
         dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS)
     )[:20]
 
 
-def extract_entities_with_types(text: str) -> list[tuple[str, str]]:
+def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, str]]:
     """
-    Extract NER entities with their spaCy label.
-    Returns list of (entity_text, label) — e.g. ("OpenAI", "ORG").
-    Best-effort — caller wraps in try/except and falls back to [].
+    Extract NER entities with their label. Routes to Stanza (Indic) or spaCy (English/default).
+    Returns list of (entity_text, label). Best-effort — caller wraps in try/except.
     """
+    if lang in STANZA_NER_LANGS:
+        nlp = _get_stanza_pipeline(lang)
+        doc = nlp(text)
+        seen: dict[str, str] = {}
+        for sent in doc.sentences:
+            for ent in sent.ents:
+                if ent.type in {"PER", "ORG", "LOC", "MISC"} and ent.text not in seen:
+                    seen[ent.text] = ent.type
+        return list(seen.items())[:20]
     doc = get_nlp()(text)  # type: ignore[operator]
-    seen: dict[str, str] = {}
+    seen_en: dict[str, str] = {}
     for ent in doc.ents:
-        if ent.label_ in ENTITY_LABELS and ent.text not in seen:
-            seen[ent.text] = ent.label_
-    return list(seen.items())[:20]
+        if ent.label_ in ENTITY_LABELS and ent.text not in seen_en:
+            seen_en[ent.text] = ent.label_
+    return list(seen_en.items())[:20]
 
 
 # ── Section splitting ────────────────────────────────────────

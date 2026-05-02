@@ -240,7 +240,9 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             try:
                 from app.qortia.knowledge import extract_entities_with_types
 
-                entities = extract_entities_with_types(r["content"])
+                entities = extract_entities_with_types(
+                    r["content"], lang=r.get("lang", "en")
+                )
             except Exception:
                 entities = []
 

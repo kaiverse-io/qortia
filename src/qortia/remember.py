@@ -44,7 +44,7 @@ async def remember(
 
         for mem in body.memories:
             try:
-                entities = extract_entities_with_types(mem.content)
+                entities = extract_entities_with_types(mem.content, lang=mem.lang)
             except Exception as exc:
                 logger.warning({"event": "ner_extraction_failed", "error": str(exc)})
                 entities = []
@@ -129,7 +129,7 @@ async def remember_org(
                 )
 
         try:
-            entities = extract_entities_with_types(body.content)
+            entities = extract_entities_with_types(body.content, lang=body.lang)
         except Exception as exc:
             logger.warning({"event": "ner_extraction_failed", "error": str(exc)})
             entities = []
