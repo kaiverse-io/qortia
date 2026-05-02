@@ -316,10 +316,10 @@ def test_extract_entities_english_uses_spacy_path(
     mock_nlp.assert_called_once()
 
 
-def test_extract_entities_hindi_uses_stanza_path(
+def test_extract_entities_hindi_uses_indic_spacy_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Hindi lang routes to Stanza pipeline."""
+    """Hindi lang routes to Indic spaCy pipeline."""
     from unittest.mock import MagicMock
     import app.qortia.knowledge as kmod
 
@@ -327,13 +327,11 @@ def test_extract_entities_hindi_uses_stanza_path(
     mock_ent.text = (
         "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940"
     )
-    mock_ent.type = "PER"
-    mock_sent = MagicMock()
-    mock_sent.ents = [mock_ent]
+    mock_ent.label_ = "PER"
     mock_doc = MagicMock()
-    mock_doc.sentences = [mock_sent]
+    mock_doc.ents = [mock_ent]
     mock_pipeline = MagicMock(return_value=mock_doc)
-    monkeypatch.setitem(kmod._stanza_pipelines, "hi", mock_pipeline)
+    monkeypatch.setitem(kmod._indic_pipelines, "hi_core_news_sm", mock_pipeline)
 
     result = kmod.extract_entities(
         "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940 \u092e\u0941\u0902\u092c\u0908 \u0917\u090f",
@@ -352,7 +350,7 @@ def test_extract_entities_unsupported_lang_returns_empty(
     from unittest.mock import MagicMock
     import app.qortia.knowledge as kmod
 
-    # kn is not in STANZA_NER_LANGS, falls through to spaCy
+    # kn is not in INDIC_NER_LANGS, falls through to spaCy
     mock_doc = MagicMock()
     mock_doc.ents = []  # spaCy finds nothing for Kannada text
     mock_nlp = MagicMock(return_value=mock_doc)

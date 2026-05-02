@@ -28,25 +28,29 @@ ENTITY_LABELS = frozenset(
 )
 HEADING_PATTERN = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
 
-# ── Stanza NER routing ────────────────────────────────────────
+# ── Indic NER routing (spaCy) ────────────────────────────────
 
-# Languages with Stanza NER models. Others fall back to [] (no regression).
-STANZA_NER_LANGS = frozenset({"hi", "bn", "ta", "te", "mr"})
+# hi -> hi_core_news_sm, bn/ta/te/mr -> xx_ent_wiki_sm (multilingual)
+_INDIC_MODEL: dict[str, str] = {
+    "hi": "hi_core_news_sm",
+    "bn": "xx_ent_wiki_sm",
+    "ta": "xx_ent_wiki_sm",
+    "te": "xx_ent_wiki_sm",
+    "mr": "xx_ent_wiki_sm",
+}
+INDIC_NER_LANGS = frozenset(_INDIC_MODEL)
+_INDIC_ENTITY_LABELS = frozenset({"PER", "ORG", "LOC", "MISC"})
 
-_stanza_pipelines: dict[str, object] = {}  # lang -> stanza.Pipeline
+_indic_pipelines: dict[str, Any] = {}  # model_name -> spaCy Language
 
 
-def _get_stanza_pipeline(lang: str) -> Any:
-    if lang not in _stanza_pipelines:
-        import stanza  # lazy — not installed in all environments
+def _get_indic_pipeline(lang: str) -> Any:
+    model = _INDIC_MODEL[lang]
+    if model not in _indic_pipelines:
+        import spacy
 
-        _stanza_pipelines[lang] = stanza.Pipeline(
-            lang,
-            processors="tokenize,ner",
-            download_method=None,  # models pre-downloaded at image build time
-            verbose=False,
-        )
-    return _stanza_pipelines[lang]
+        _indic_pipelines[model] = spacy.load(model)
+    return _indic_pipelines[model]
 
 
 def load_spacy_model() -> None:
@@ -66,20 +70,17 @@ def get_nlp() -> object:  # spaCy Language — avoid hard dep on spacy type stub
 
 def extract_entities(text: str, lang: str = "en") -> list[str]:
     """
-    Extract NER entity texts. Routes to Stanza (Indic) or spaCy (English/default).
+    Extract NER entity texts. Routes to Indic spaCy models or en_core_web_sm.
     Best-effort — caller wraps in try/except and falls back to [].
     Returns text only (label stripped) for backward-compatible callers.
     """
-    if lang in STANZA_NER_LANGS:
-        nlp = _get_stanza_pipeline(lang)
-        doc = nlp(text)
-        entities = [
-            ent.text
-            for sent in doc.sentences
-            for ent in sent.ents
-            if ent.type in {"PER", "ORG", "LOC", "MISC"}
-        ]
-        return list(dict.fromkeys(entities))[:20]
+    if lang in INDIC_NER_LANGS:
+        doc = _get_indic_pipeline(lang)(text)
+        return list(
+            dict.fromkeys(
+                ent.text for ent in doc.ents if ent.label_ in _INDIC_ENTITY_LABELS
+            )
+        )[:20]
     doc = get_nlp()(text)  # type: ignore[operator]
     return list(
         dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS)
@@ -88,17 +89,15 @@ def extract_entities(text: str, lang: str = "en") -> list[str]:
 
 def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, str]]:
     """
-    Extract NER entities with their label. Routes to Stanza (Indic) or spaCy (English/default).
+    Extract NER entities with their label. Routes to Indic spaCy models or en_core_web_sm.
     Returns list of (entity_text, label). Best-effort — caller wraps in try/except.
     """
-    if lang in STANZA_NER_LANGS:
-        nlp = _get_stanza_pipeline(lang)
-        doc = nlp(text)
+    if lang in INDIC_NER_LANGS:
+        doc = _get_indic_pipeline(lang)(text)
         seen: dict[str, str] = {}
-        for sent in doc.sentences:
-            for ent in sent.ents:
-                if ent.type in {"PER", "ORG", "LOC", "MISC"} and ent.text not in seen:
-                    seen[ent.text] = ent.type
+        for ent in doc.ents:
+            if ent.label_ in _INDIC_ENTITY_LABELS and ent.text not in seen:
+                seen[ent.text] = ent.label_
         return list(seen.items())[:20]
     doc = get_nlp()(text)  # type: ignore[operator]
     seen_en: dict[str, str] = {}
