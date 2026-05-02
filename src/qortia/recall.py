@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
 from app.qortia.models import RecallRequest, RecallResponse, RecallResult
-from app.qortia.reflect import _embedding_model_for, get_litellm_client
+from app.qortia.reflect import EMBEDDING_MODEL, get_litellm_client
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 from app.qortia.remember import _fetch_agent_clearance
@@ -153,7 +153,7 @@ async def _embed_query(
         resp = await get_litellm_client().post(
             "/embeddings",
             headers={"Authorization": f"Bearer {litellm_key}"},
-            json={"model": _embedding_model_for(lang), "input": query},
+            json={"model": EMBEDDING_MODEL, "input": query},
             timeout=10.0,
         )
         resp.raise_for_status()

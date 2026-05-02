@@ -30,9 +30,9 @@ HEADING_PATTERN = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
 
 # ── Indic NER routing (spaCy) ────────────────────────────────
 
-# hi -> hi_core_news_sm, bn/ta/te/mr -> xx_ent_wiki_sm (multilingual)
+# hi/bn/ta/te/mr -> xx_ent_wiki_sm (multilingual)
 _INDIC_MODEL: dict[str, str] = {
-    "hi": "hi_core_news_sm",
+    "hi": "xx_ent_wiki_sm",
     "bn": "xx_ent_wiki_sm",
     "ta": "xx_ent_wiki_sm",
     "te": "xx_ent_wiki_sm",

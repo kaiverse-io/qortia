@@ -331,7 +331,7 @@ def test_extract_entities_hindi_uses_indic_spacy_path(
     mock_doc = MagicMock()
     mock_doc.ents = [mock_ent]
     mock_pipeline = MagicMock(return_value=mock_doc)
-    monkeypatch.setitem(kmod._indic_pipelines, "hi_core_news_sm", mock_pipeline)
+    monkeypatch.setitem(kmod._indic_pipelines, "xx_ent_wiki_sm", mock_pipeline)
 
     result = kmod.extract_entities(
         "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940 \u092e\u0941\u0902\u092c\u0908 \u0917\u090f",
