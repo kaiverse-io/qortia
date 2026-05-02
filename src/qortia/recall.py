@@ -69,7 +69,7 @@ def _entity_filter_clause(
     return clause, [entities]
 
 
-# ── Type filter helper (parameterised — never interpolated) ──
+# ── Type filter helper (parameterised — never interpolated) ——
 
 _VALID_MEMORY_TYPES: frozenset[str] = frozenset(
     {"episodic", "experiential", "mental_model", "decision", "lesson", "short_term"}
@@ -91,6 +91,26 @@ def _type_filter_clause(
     return f"AND type = ${param}", [memory_type]
 
 
+# ── Temporal filter helper (16j) ───────────────────────────────────────────
+
+
+def _temporal_filter_clause(
+    as_of: object,
+    param: int,
+) -> tuple[str, list]:  # type: ignore[type-arg]
+    """Return a parameterised temporal filter clause.
+
+    No as_of: exclude superseded rows (valid_until IS NULL = currently valid).
+    With as_of: point-in-time range — fact was valid at that timestamp.
+    """
+    if as_of is None:
+        return "AND valid_until IS NULL", []
+    return (
+        f"AND valid_from <= ${param} AND (valid_until IS NULL OR valid_until > ${param})",
+        [as_of],
+    )
+
+
 # ── Result builder ───────────────────────────────────────────
 
 
@@ -102,6 +122,8 @@ def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
         content=row["content"],
         importance=row.get("importance"),
         created_at=row["created_at"].isoformat(),
+        valid_from=row["valid_from"].isoformat() if row.get("valid_from") else None,
+        valid_until=row["valid_until"].isoformat() if row.get("valid_until") else None,
     )
     r._recall_count = row.get("recall_count", 0) or 0
     r._last_recalled_at = row.get("last_recalled_at")
@@ -288,6 +310,9 @@ async def _bm25_private(
     entity_clause, entity_params = _entity_filter_clause(
         body.entities, base_param=3 + len(type_params)
     )
+    temporal_clause, temporal_params = _temporal_filter_clause(
+        body.as_of, param=3 + len(type_params) + len(entity_params)
+    )
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
@@ -295,6 +320,7 @@ async def _bm25_private(
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
+                   valid_from, valid_until,
                    ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM hindsight_memories
             WHERE agent_id = $2
@@ -304,12 +330,14 @@ async def _bm25_private(
               AND (expires_at IS NULL OR expires_at > now())
               {type_clause}
               {entity_clause}
+              {temporal_clause}
             ORDER BY rank DESC LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
             agent.agent_id,
             *type_params,
             *entity_params,
+            *temporal_params,
         )
     return [_to_result(dict(r), "private") for r in rows]
 
@@ -325,12 +353,16 @@ async def _vector_private(
     entity_clause, entity_params = _entity_filter_clause(
         body.entities, base_param=3 + len(type_params)
     )
+    temporal_clause, temporal_params = _temporal_filter_clause(
+        body.as_of, param=3 + len(type_params) + len(entity_params)
+    )
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
+                   valid_from, valid_until,
                    1 - (embedding <=> $1::vector) AS score
             FROM hindsight_memories
             WHERE agent_id = $2
@@ -340,12 +372,14 @@ async def _vector_private(
               AND (expires_at IS NULL OR expires_at > now())
               {type_clause}
               {entity_clause}
+              {temporal_clause}
             ORDER BY embedding <=> $1::vector LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             str(qe),
             agent.agent_id,
             *type_params,
             *entity_params,
+            *temporal_params,
         )
     return [_to_result(dict(r), "private") for r in rows]
 

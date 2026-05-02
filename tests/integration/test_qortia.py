@@ -527,3 +527,194 @@ def test_memory_links_rls_tenant_isolation(
     assert r.status_code == 200
     result_ids = {res["id"] for res in r.json()["results"]}
     assert mem_b_id not in result_ids
+
+
+# ── temporal fact bounds (16j) ────────────────────────────────────────────────
+
+
+def test_valid_until_set_on_supersede(
+    app_client, _session_loop, committed_conn, tenant_id, _vault_addr
+) -> None:
+    """After reflect(), superseded consolidated memories have valid_until set."""
+    import hvac
+
+    vault = hvac.Client(url=_vault_addr, token=VAULT_TOKEN)
+    vault.secrets.kv.v2.create_or_update_secret(
+        path=f"{tenant_id}/litellm_key", secret={"key": "sk-test-master"}
+    )
+
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
+    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+
+    old_id = str(uuid4())
+    committed_conn.execute(
+        """
+        INSERT INTO hindsight_memories
+            (id, tenant_id, agent_id, type, content, importance, is_consolidated)
+        VALUES ($1, $2, $3, $4, $5, $6, true)
+        """,
+        old_id,
+        tenant_id,
+        aid,
+        "mental_model",
+        "old model to supersede",
+        0.8,
+    )
+    committed_conn.track("hindsight_memories", old_id)
+
+    _call(
+        _session_loop,
+        app_client.post(
+            "/v1/remember",
+            json={
+                "memories": [
+                    {"type": "episodic", "content": f"event {i}"} for i in range(3)
+                ]
+            },
+            headers=headers,
+        ),
+    )
+
+    r = _call(_session_loop, app_client.post("/v1/reflect", json={}, headers=headers))
+    assert r.status_code == 200
+
+    valid_until = committed_conn.fetchval(
+        "SELECT valid_until FROM hindsight_memories WHERE id = $1", old_id
+    )
+    assert valid_until is not None, "Superseded memory must have valid_until set"
+
+
+def test_superseded_memory_excluded_from_default_recall(
+    app_client, _session_loop, committed_conn, tenant_id
+) -> None:
+    """A memory with valid_until set must not appear in default recall."""
+    from datetime import datetime, timezone, timedelta
+
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
+    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+
+    mem_id = str(uuid4())
+    committed_conn.execute(
+        """
+        INSERT INTO hindsight_memories
+            (id, tenant_id, agent_id, type, content, importance,
+             valid_from, valid_until)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        """,
+        mem_id,
+        tenant_id,
+        aid,
+        "mental_model",
+        "superseded unique content xq9z",
+        0.8,
+        datetime.now(timezone.utc) - timedelta(days=10),
+        datetime.now(timezone.utc) - timedelta(days=1),  # superseded yesterday
+    )
+    committed_conn.track("hindsight_memories", mem_id)
+
+    r = _call(
+        _session_loop,
+        app_client.post(
+            "/v1/recall",
+            json={"query": "superseded unique content xq9z", "scope": "private"},
+            headers=headers,
+        ),
+    )
+    assert r.status_code == 200
+    result_ids = {res["id"] for res in r.json()["results"]}
+    assert mem_id not in result_ids
+
+
+def test_as_of_returns_superseded_memory(
+    app_client, _session_loop, committed_conn, tenant_id
+) -> None:
+    """as_of set to when the memory was valid must return it."""
+    from datetime import datetime, timezone, timedelta
+
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
+    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+
+    valid_start = datetime.now(timezone.utc) - timedelta(days=30)
+    valid_end = datetime.now(timezone.utc) - timedelta(days=1)
+    as_of = datetime.now(timezone.utc) - timedelta(days=15)  # within the valid window
+
+    mem_id = str(uuid4())
+    committed_conn.execute(
+        """
+        INSERT INTO hindsight_memories
+            (id, tenant_id, agent_id, type, content, importance,
+             valid_from, valid_until)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        """,
+        mem_id,
+        tenant_id,
+        aid,
+        "mental_model",
+        "historical fact aof7k",
+        0.8,
+        valid_start,
+        valid_end,
+    )
+    committed_conn.track("hindsight_memories", mem_id)
+
+    r = _call(
+        _session_loop,
+        app_client.post(
+            "/v1/recall",
+            json={
+                "query": "historical fact aof7k",
+                "scope": "private",
+                "as_of": as_of.isoformat(),
+            },
+            headers=headers,
+        ),
+    )
+    assert r.status_code == 200
+    result_ids = {res["id"] for res in r.json()["results"]}
+    assert mem_id in result_ids
+
+
+def test_as_of_excludes_memory_not_yet_written(
+    app_client, _session_loop, committed_conn, tenant_id
+) -> None:
+    """as_of set before valid_from must not return the memory."""
+    from datetime import datetime, timezone, timedelta
+
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
+    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+
+    valid_start = datetime.now(timezone.utc) - timedelta(days=1)
+    as_of = datetime.now(timezone.utc) - timedelta(days=10)  # before valid_from
+
+    mem_id = str(uuid4())
+    committed_conn.execute(
+        """
+        INSERT INTO hindsight_memories
+            (id, tenant_id, agent_id, type, content, importance, valid_from)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        """,
+        mem_id,
+        tenant_id,
+        aid,
+        "mental_model",
+        "future fact bz3m",
+        0.8,
+        valid_start,
+    )
+    committed_conn.track("hindsight_memories", mem_id)
+
+    r = _call(
+        _session_loop,
+        app_client.post(
+            "/v1/recall",
+            json={
+                "query": "future fact bz3m",
+                "scope": "private",
+                "as_of": as_of.isoformat(),
+            },
+            headers=headers,
+        ),
+    )
+    assert r.status_code == 200
+    result_ids = {res["id"] for res in r.json()["results"]}
+    assert mem_id not in result_ids

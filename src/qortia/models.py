@@ -150,6 +150,7 @@ class RecallRequest(BaseModel):
     ) = None
     rerank: bool = False
     entities: list[str] | None = None
+    as_of: datetime | None = None  # point-in-time recall (16j)
 
     @field_validator("query")
     @classmethod
@@ -182,6 +183,10 @@ class RecallResult(BaseModel):
     entity_summary: str | None = None
     linked_via: str | None = (
         None  # ID of the result that surfaced this via cross-link (16i)
+    )
+    valid_from: str | None = None  # when this fact became true (16j)
+    valid_until: str | None = (
+        None  # when this fact was superseded; None = currently valid (16j)
     )
 
     # Internal ranking signals — never serialised (Q95)

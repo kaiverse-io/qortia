@@ -208,11 +208,13 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 active_ids.append(UUID(r["id"]))
 
         # 6a. PRUNE — anything not returned by LLM is marked non-consolidated
+        # and valid_until stamped to record when it was superseded (ADR-027, 16j)
         if existing:
             await conn.execute(
                 """
                 UPDATE hindsight_memories
-                SET is_consolidated = false
+                SET is_consolidated = false,
+                    valid_until = now()
                 WHERE agent_id = $1
                   AND type IN ('mental_model', 'lesson')
                   AND is_consolidated = true
