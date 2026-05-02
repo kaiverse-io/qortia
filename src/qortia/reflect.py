@@ -94,13 +94,22 @@ def get_litellm_client() -> httpx.AsyncClient:
 @router.post("/v1/reflect", response_model=ReflectResponse)
 async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectResponse:
     from app.qortia.common import assert_agent_active
+    from app.qortia.remember import _fetch_agent_clearance
+
+    clearance_order, agent_division = await _fetch_agent_clearance(
+        agent.agent_id, agent.tenant_id
+    )
 
     # Fetch data outside the write transaction — no DB lock held during LLM call
     domain_md_raw: str | None = None
     recent: list[dict[str, Any]] = []
     existing: list[dict[str, Any]] = []
     async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=clearance_order,
+        agent_division=agent_division,
     ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
@@ -178,7 +187,11 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
     stable_count = 0
     unstable_count = 0
     async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=clearance_order,
+        agent_division=agent_division,
     ) as conn:
         active_ids = []
         for r in reflections:

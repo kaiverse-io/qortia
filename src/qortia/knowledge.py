@@ -273,8 +273,8 @@ async def ingest_knowledge(
                     tenant_id, source_type, source_path, chunk_index,
                     content, content_hash,
                     index_summary, index_questions, index_entities,
-                    embedding, author_id, metadata, lang
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    embedding, author_id, metadata, lang, min_clearance, audience
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             """,
                 agent.tenant_id,
                 body.source_type,
@@ -289,6 +289,8 @@ async def ingest_knowledge(
                 agent.agent_id,
                 json.dumps(body.metadata or {}),
                 body.lang,
+                body.min_clearance,
+                body.audience,
             )
 
             if existing_embedding is not None:

@@ -29,6 +29,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _fetch_agent_clearance(
+    agent_id: object, tenant_id: object
+) -> tuple[int, str]:
+    """Fetch clearance_order and division for an agent. Returns (2, 'all') on failure."""
+    async with get_main_pool().acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT a.clearance_level, a.division, tcl.level_order
+            FROM auth.agents a
+            JOIN tenant_clearance_levels tcl
+              ON tcl.tenant_id = a.tenant_id AND tcl.level_name = a.clearance_level
+            WHERE a.id = $1 AND a.tenant_id = $2
+            """,
+            agent_id,
+            tenant_id,
+        )
+    if row is None:
+        return 2, "all"
+    return int(row["level_order"]), str(row["division"])
+
+
 @router.post("/v1/remember", response_model=RememberResponse)
 async def remember(
     body: RememberRequest,
@@ -137,8 +158,8 @@ async def remember_org(
         if body.type == "handoff":
             row_id = await conn.fetchval(
                 """
-                INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities, lang)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities, lang, min_clearance, audience)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
             """,
                 agent.tenant_id,
@@ -148,21 +169,25 @@ async def remember_org(
                 agent.agent_id,
                 json.dumps(entities),
                 body.lang,
+                body.min_clearance,
+                body.audience,
             )
         else:
             row_id = await conn.fetchval(
                 """
                 INSERT INTO org_memory
-                    (tenant_id, type, title, content, author_id, entities, lang, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+                    (tenant_id, type, title, content, author_id, entities, lang, min_clearance, audience, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
                 ON CONFLICT (tenant_id, type, title)
                 WHERE type IN ('process', 'decision_log')
                 DO UPDATE SET
-                    content    = EXCLUDED.content,
-                    author_id  = EXCLUDED.author_id,
-                    entities   = EXCLUDED.entities,
-                    lang       = EXCLUDED.lang,
-                    updated_at = now()
+                    content      = EXCLUDED.content,
+                    author_id    = EXCLUDED.author_id,
+                    entities     = EXCLUDED.entities,
+                    lang         = EXCLUDED.lang,
+                    min_clearance = EXCLUDED.min_clearance,
+                    audience     = EXCLUDED.audience,
+                    updated_at   = now()
                 RETURNING id
             """,
                 agent.tenant_id,
@@ -172,6 +197,8 @@ async def remember_org(
                 agent.agent_id,
                 json.dumps(entities),
                 body.lang,
+                body.min_clearance,
+                body.audience,
             )
 
         await conn.execute(
@@ -285,8 +312,15 @@ async def forget(
 
 @router.get("/v1/context", response_model=ContextResponse)
 async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextResponse:
+    clearance_order, agent_division = await _fetch_agent_clearance(
+        agent.agent_id, agent.tenant_id
+    )
     async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=clearance_order,
+        agent_division=agent_division,
     ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 

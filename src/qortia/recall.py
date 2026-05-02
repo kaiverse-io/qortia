@@ -17,6 +17,7 @@ from app.qortia.models import RecallRequest, RecallResponse, RecallResult
 from app.qortia.reflect import _embedding_model_for, get_litellm_client
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
+from app.qortia.remember import _fetch_agent_clearance
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -759,6 +760,8 @@ async def _record_recall_access(
     results: list[RecallResult],
     tenant_id: UUID,
     agent_id: UUID,
+    memory_clearance_order: int = 2,
+    agent_division: str = "all",
 ) -> None:
     by_table: dict[str, list[str]] = defaultdict(list)
     for r in results:
@@ -771,7 +774,13 @@ async def _record_recall_access(
         )
         by_table[table].append(r.id)
     try:
-        async with tenant_transaction(get_main_pool(), tenant_id, agent_id) as conn:
+        async with tenant_transaction(
+            get_main_pool(),
+            tenant_id,
+            agent_id,
+            memory_clearance_order=memory_clearance_order,
+            agent_division=agent_division,
+        ) as conn:
             for table, ids in by_table.items():
                 await conn.execute(
                     f"""
@@ -796,8 +805,16 @@ async def recall(
 ) -> RecallResponse:
     from app.qortia.common import assert_agent_active
 
+    clearance_order, agent_division = await _fetch_agent_clearance(
+        agent.agent_id, agent.tenant_id
+    )
+
     async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=clearance_order,
+        agent_division=agent_division,
     ) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
@@ -859,7 +876,11 @@ async def recall(
         top_entity_summary: str | None = None
         if query_entities:
             async with tenant_transaction(
-                get_main_pool(), agent.tenant_id, agent.agent_id
+                get_main_pool(),
+                agent.tenant_id,
+                agent.agent_id,
+                memory_clearance_order=clearance_order,
+                agent_division=agent_division,
             ) as conn:
                 linked_rows = await conn.fetch(
                     """
@@ -868,13 +889,14 @@ async def recall(
                     WHERE tenant_id = $1
                       AND (agent_id IS NULL OR agent_id = $2)
                       AND entity_text = ANY($3::text[])
+                      AND max_clearance_order <= $4
                 """,
                     agent.tenant_id,
                     agent.agent_id,
                     query_entities,
+                    clearance_order,
                 )
                 entity_links = {str(r["mem_id"]) for r in linked_rows}
-                # Pick the first non-null summary from matched entities
                 top_entity_summary = next(
                     (r["summary"] for r in linked_rows if r["summary"]), None
                 )
@@ -892,10 +914,12 @@ async def recall(
                     WHERE tenant_id = $1
                       AND (agent_id IS NULL OR agent_id = $2)
                       AND entity_text = ANY($3::text[])
+                      AND max_clearance_order <= $4
                     """,
                     agent.tenant_id,
                     agent.agent_id,
                     query_entities,
+                    clearance_order,
                 )
             seed_ids = [r["id"] for r in seed_rows]
             bfs_boosts = await _bfs_entity_traversal(
@@ -935,6 +959,14 @@ async def recall(
     if body.rerank and len(results) >= 2:
         results = await _llm_rerank(body.query, results, agent)
 
-    asyncio.create_task(_record_recall_access(results, agent.tenant_id, agent.agent_id))
+    asyncio.create_task(
+        _record_recall_access(
+            results,
+            agent.tenant_id,
+            agent.agent_id,
+            memory_clearance_order=clearance_order,
+            agent_division=agent_division,
+        )
+    )
 
     return RecallResponse(results=results)

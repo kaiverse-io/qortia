@@ -85,6 +85,10 @@ class RememberOrgRequest(BaseModel):
     title: str
     content: str
     lang: str = "en"  # BCP-47 language tag
+    min_clearance: str = (
+        "internal"  # validated against tenant_clearance_levels at write time
+    )
+    audience: list[str] = ["all"]  # validated against tenant_divisions at write time
 
 
 class RememberOrgResponse(BaseModel):
@@ -212,3 +216,7 @@ class KnowledgeIngestRequest(BaseModel):
     content: str
     metadata: dict | None = None  # type: ignore[type-arg]
     lang: str = "en"  # BCP-47 language tag
+    min_clearance: str = (
+        "internal"  # validated against tenant_clearance_levels at write time
+    )
+    audience: list[str] = ["all"]  # validated against tenant_divisions at write time
