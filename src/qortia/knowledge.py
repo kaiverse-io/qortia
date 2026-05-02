@@ -234,8 +234,8 @@ async def ingest_knowledge(
                     tenant_id, source_type, source_path, chunk_index,
                     content, content_hash,
                     index_summary, index_questions, index_entities,
-                    embedding, author_id, metadata
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    embedding, author_id, metadata, lang
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             """,
                 agent.tenant_id,
                 body.source_type,
@@ -249,6 +249,7 @@ async def ingest_knowledge(
                 existing_embedding,
                 agent.agent_id,
                 json.dumps(body.metadata or {}),
+                body.lang,
             )
 
             if existing_embedding is not None:
@@ -374,7 +375,7 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
 
             handoffs = await conn.fetch(
                 """
-                SELECT om.title, om.content, om.created_at, a.name AS agent_name
+                SELECT om.title, om.content, om.created_at, om.lang, a.name AS agent_name
                 FROM org_memory om
                 LEFT JOIN auth.agents a ON a.id = om.author_id
                 WHERE om.tenant_id = $1
@@ -390,14 +391,22 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
 
             summary_content = build_weekly_summary(list(handoffs))
 
+            from collections import Counter
+
+            lang_counts: Counter[str] = Counter(
+                h["lang"] for h in handoffs if h.get("lang")
+            )
+            dominant_lang = lang_counts.most_common(1)[0][0] if lang_counts else "en"
+
             await conn.execute(
                 """
-                INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities)
-                VALUES ($1, 'weekly_summary', $2, $3, NULL, '[]')
+                INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities, lang)
+                VALUES ($1, 'weekly_summary', $2, $3, NULL, '[]', $4)
             """,
                 tenant_id,
                 f"Weekly Summary — {datetime.date.today().isoformat()}",
                 summary_content,
+                dominant_lang,
             )
 
             await conn.execute(

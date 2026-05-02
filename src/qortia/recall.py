@@ -111,6 +111,16 @@ def _temporal_filter_clause(
     )
 
 
+def _lang_filter_clause(
+    lang: str | None,
+    param: int,
+) -> tuple[str, list]:  # type: ignore[type-arg]
+    """Return a parameterised lang filter clause. None = search all languages."""
+    if not lang:
+        return "", []
+    return f"AND lang = ${param}", [lang]
+
+
 # ── Result builder ───────────────────────────────────────────
 
 
@@ -313,6 +323,10 @@ async def _bm25_private(
     temporal_clause, temporal_params = _temporal_filter_clause(
         body.as_of, param=3 + len(type_params) + len(entity_params)
     )
+    lang_clause, lang_params = _lang_filter_clause(
+        body.lang,
+        param=3 + len(type_params) + len(entity_params) + len(temporal_params),
+    )
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
@@ -331,6 +345,7 @@ async def _bm25_private(
               {type_clause}
               {entity_clause}
               {temporal_clause}
+              {lang_clause}
             ORDER BY rank DESC LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
@@ -338,6 +353,7 @@ async def _bm25_private(
             *type_params,
             *entity_params,
             *temporal_params,
+            *lang_params,
         )
     return [_to_result(dict(r), "private") for r in rows]
 
@@ -356,6 +372,10 @@ async def _vector_private(
     temporal_clause, temporal_params = _temporal_filter_clause(
         body.as_of, param=3 + len(type_params) + len(entity_params)
     )
+    lang_clause, lang_params = _lang_filter_clause(
+        body.lang,
+        param=3 + len(type_params) + len(entity_params) + len(temporal_params),
+    )
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
@@ -373,6 +393,7 @@ async def _vector_private(
               {type_clause}
               {entity_clause}
               {temporal_clause}
+              {lang_clause}
             ORDER BY embedding <=> $1::vector LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             str(qe),
@@ -380,12 +401,16 @@ async def _vector_private(
             *type_params,
             *entity_params,
             *temporal_params,
+            *lang_params,
         )
     return [_to_result(dict(r), "private") for r in rows]
 
 
 async def _bm25_org(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
+    lang_clause, lang_params = _lang_filter_clause(
+        body.lang, param=3 + len(entity_params)
+    )
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
@@ -399,11 +424,13 @@ async def _bm25_org(body: RecallRequest, agent: AgentIdentity) -> list[RecallRes
             WHERE tenant_id = $2
               AND content_tsv @@ plainto_tsquery('simple', $1)
               {entity_clause}
+              {lang_clause}
             ORDER BY rank DESC LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
             agent.tenant_id,
             *entity_params,
+            *lang_params,
         )
     return [_to_result(dict(r), "org") for r in rows]
 
@@ -412,6 +439,9 @@ async def _vector_org(
     body: RecallRequest, agent: AgentIdentity, qe: list[float]
 ) -> list[RecallResult]:
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
+    lang_clause, lang_params = _lang_filter_clause(
+        body.lang, param=3 + len(entity_params)
+    )
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
     ) as conn:
@@ -424,11 +454,13 @@ async def _vector_org(
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
               {entity_clause}
+              {lang_clause}
             ORDER BY embedding <=> $1::vector LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             str(qe),
             agent.tenant_id,
             *entity_params,
+            *lang_params,
         )
     return [_to_result(dict(r), "org") for r in rows]
 

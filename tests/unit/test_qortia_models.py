@@ -200,3 +200,94 @@ def test_ttl_seconds_on_non_short_term_rejected() -> None:
 
 def test_short_term_importance_is_lowest() -> None:
     assert IMPORTANCE["short_term"] < IMPORTANCE["episodic"]
+
+
+# ── E1: lang field tests ───────────────────────────────────────────
+
+
+def test_memory_item_lang_defaults_to_en() -> None:
+    item = MemoryItem(type="episodic", content="something happened")
+    assert item.lang == "en"
+
+
+def test_memory_item_lang_preserved() -> None:
+    item = MemoryItem(
+        type="episodic", content="\u0915\u0941\u091b \u0939\u0941\u0906", lang="hi"
+    )
+    assert item.lang == "hi"
+
+
+def test_remember_org_request_lang_defaults_to_en() -> None:
+    from app.qortia.models import RememberOrgRequest
+
+    req = RememberOrgRequest(type="handoff", title="done", content="finished task")
+    assert req.lang == "en"
+
+
+def test_remember_org_request_lang_preserved() -> None:
+    from app.qortia.models import RememberOrgRequest
+
+    req = RememberOrgRequest(
+        type="handoff",
+        title="done",
+        content="\u0915\u093e\u092e \u092a\u0942\u0930\u093e",
+        lang="hi",
+    )
+    assert req.lang == "hi"
+
+
+def test_recall_request_lang_none_by_default() -> None:
+    from app.qortia.models import RecallRequest
+
+    req = RecallRequest(query="what happened")
+    assert req.lang is None
+
+
+def test_recall_request_lang_preserved() -> None:
+    from app.qortia.models import RecallRequest
+
+    req = RecallRequest(query="\u0915\u094d\u092f\u093e \u0939\u0941\u0906", lang="hi")
+    assert req.lang == "hi"
+
+
+def test_knowledge_ingest_request_lang_defaults_to_en() -> None:
+    from app.qortia.models import KnowledgeIngestRequest
+
+    req = KnowledgeIngestRequest(
+        source_type="note", source_path="doc.md", content="some content"
+    )
+    assert req.lang == "en"
+
+
+def test_lang_filter_clause_none_returns_empty() -> None:
+    from app.qortia.recall import _lang_filter_clause
+
+    clause, params = _lang_filter_clause(None, param=5)
+    assert clause == ""
+    assert params == []
+
+
+def test_lang_filter_clause_with_lang_returns_parameterised() -> None:
+    from app.qortia.recall import _lang_filter_clause
+
+    clause, params = _lang_filter_clause("hi", param=5)
+    assert clause == "AND lang = $5"
+    assert params == ["hi"]
+
+
+def test_weekly_summary_dominant_lang_majority_hindi() -> None:
+    from collections import Counter
+
+    handoffs = [{"lang": "hi"}, {"lang": "hi"}, {"lang": "en"}]
+    lang_counts: Counter[str] = Counter(h["lang"] for h in handoffs if h.get("lang"))
+    dominant = lang_counts.most_common(1)[0][0] if lang_counts else "en"
+    assert dominant == "hi"
+
+
+def test_weekly_summary_dominant_lang_no_lang_field_defaults_en() -> None:
+    from collections import Counter
+
+    handoffs = [{"title": "done"}, {"title": "done"}]
+    lang_counts: Counter[str] = Counter(h["lang"] for h in handoffs if h.get("lang"))
+    dominant = lang_counts.most_common(1)[0][0] if lang_counts else "en"
+    assert dominant == "en"

@@ -35,6 +35,7 @@ class MemoryItem(BaseModel):
     source_task_id: UUID | None = None
     metadata: dict | None = None  # type: ignore[type-arg]
     ttl_seconds: int | None = None
+    lang: str = "en"  # BCP-47 language tag
 
     @field_validator("content")
     @classmethod
@@ -83,6 +84,7 @@ class RememberOrgRequest(BaseModel):
     type: Literal["handoff", "process", "decision_log"]
     title: str
     content: str
+    lang: str = "en"  # BCP-47 language tag
 
 
 class RememberOrgResponse(BaseModel):
@@ -151,6 +153,7 @@ class RecallRequest(BaseModel):
     rerank: bool = False
     entities: list[str] | None = None
     as_of: datetime | None = None  # point-in-time recall (16j)
+    lang: str | None = None  # BCP-47 filter; None = search all languages
 
     @field_validator("query")
     @classmethod
@@ -208,3 +211,4 @@ class KnowledgeIngestRequest(BaseModel):
     source_path: str
     content: str
     metadata: dict | None = None  # type: ignore[type-arg]
+    lang: str = "en"  # BCP-47 language tag

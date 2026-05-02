@@ -59,8 +59,8 @@ async def remember(
                 """
                 INSERT INTO hindsight_memories
                     (tenant_id, agent_id, type, content, importance,
-                     source_task_id, metadata, entities, expires_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                     source_task_id, metadata, entities, expires_at, lang)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING id
             """,
                 agent.tenant_id,
@@ -72,6 +72,7 @@ async def remember(
                 json.dumps(mem.metadata) if mem.metadata else "{}",
                 json.dumps(entities),
                 expires_at,
+                mem.lang,
             )
             ids.append(str(row_id))
 
@@ -136,8 +137,8 @@ async def remember_org(
         if body.type == "handoff":
             row_id = await conn.fetchval(
                 """
-                INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities, lang)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id
             """,
                 agent.tenant_id,
@@ -146,19 +147,21 @@ async def remember_org(
                 body.content,
                 agent.agent_id,
                 json.dumps(entities),
+                body.lang,
             )
         else:
             row_id = await conn.fetchval(
                 """
                 INSERT INTO org_memory
-                    (tenant_id, type, title, content, author_id, entities, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, now())
+                    (tenant_id, type, title, content, author_id, entities, lang, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, now())
                 ON CONFLICT (tenant_id, type, title)
                 WHERE type IN ('process', 'decision_log')
                 DO UPDATE SET
                     content    = EXCLUDED.content,
                     author_id  = EXCLUDED.author_id,
                     entities   = EXCLUDED.entities,
+                    lang       = EXCLUDED.lang,
                     updated_at = now()
                 RETURNING id
             """,
@@ -168,6 +171,7 @@ async def remember_org(
                 body.content,
                 agent.agent_id,
                 json.dumps(entities),
+                body.lang,
             )
 
         await conn.execute(
