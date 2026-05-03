@@ -40,6 +40,9 @@ _INDIC_MODEL: dict[str, str] = {
 }
 INDIC_NER_LANGS = frozenset(_INDIC_MODEL)
 _INDIC_ENTITY_LABELS = frozenset({"PER", "ORG", "LOC", "MISC"})
+# Maps xx_ent_wiki_sm labels → qortia_entities_entity_type_check allowed values.
+# MISC has no meaningful equivalent — drop it rather than pollute the graph.
+_INDIC_LABEL_MAP: dict[str, str] = {"PER": "PERSON", "ORG": "ORG", "LOC": "GPE"}
 
 _indic_pipelines: dict[str, Any] = {}  # model_name -> spaCy Language
 
@@ -96,8 +99,9 @@ def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, 
         doc = _get_indic_pipeline(lang)(text)
         seen: dict[str, str] = {}
         for ent in doc.ents:
-            if ent.label_ in _INDIC_ENTITY_LABELS and ent.text not in seen:
-                seen[ent.text] = ent.label_
+            mapped = _INDIC_LABEL_MAP.get(ent.label_)
+            if mapped and ent.text not in seen:
+                seen[ent.text] = mapped
         return list(seen.items())[:20]
     doc = get_nlp()(text)  # type: ignore[operator]
     seen_en: dict[str, str] = {}
