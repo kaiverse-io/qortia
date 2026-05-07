@@ -525,7 +525,7 @@ async def _process_embedding_batch() -> None:
         async with conn.transaction():
             hindsight = await conn.fetch(
                 """
-                SELECT id, tenant_id, content AS text_to_embed, lang, 'hindsight_memories' AS tbl
+                SELECT id, tenant_id, agent_id, content AS text_to_embed, lang, 'hindsight_memories' AS tbl
                 FROM hindsight_memories
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
