@@ -331,7 +331,7 @@ def test_extract_entities_hindi_uses_indic_spacy_path(
     mock_doc = MagicMock()
     mock_doc.ents = [mock_ent]
     mock_pipeline = MagicMock(return_value=mock_doc)
-    monkeypatch.setitem(kmod._indic_pipelines, "xx_ent_wiki_sm", mock_pipeline)
+    monkeypatch.setitem(kmod._indic_pipelines, "hi", mock_pipeline)
 
     result = kmod.extract_entities(
         "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940 \u092e\u0941\u0902\u092c\u0908 \u0917\u090f",
@@ -358,3 +358,76 @@ def test_extract_entities_unsupported_lang_returns_empty(
 
     result = kmod.extract_entities("some kannada text", lang="kn")
     assert result == []
+
+
+# ── Lang normalisation (Gap 3) ────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("EN", "en"),
+        ("en-US", "en"),
+        ("en_GB", "en"),
+        ("HI", "hi"),
+        ("  hi  ", "hi"),
+        ("", "en"),
+        (None, "en"),
+    ],
+)
+def test_memory_item_lang_normalised(raw: str | None, expected: str) -> None:
+    item = MemoryItem(type="episodic", content="test", lang=raw)  # type: ignore[arg-type]
+    assert item.lang == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("EN", "en"),
+        ("en-US", "en"),
+        ("HI", "hi"),
+        ("", "en"),
+        (None, "en"),
+    ],
+)
+def test_remember_org_request_lang_normalised(raw: str | None, expected: str) -> None:
+    from app.qortia.models import RememberOrgRequest
+
+    req = RememberOrgRequest(type="handoff", title="t", content="c", lang=raw)  # type: ignore[arg-type]
+    assert req.lang == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("EN", "en"),
+        ("en-US", "en"),
+        ("HI", "hi"),
+        ("", "en"),
+        (None, None),  # RecallRequest lang=None means search all languages
+    ],
+)
+def test_recall_request_lang_normalised(raw: str | None, expected: str | None) -> None:
+    req = RecallRequest(query="test", lang=raw)  # type: ignore[arg-type]
+    assert req.lang == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("EN", "en"),
+        ("en-US", "en"),
+        ("HI", "hi"),
+        ("", "en"),
+        (None, "en"),
+    ],
+)
+def test_knowledge_ingest_request_lang_normalised(
+    raw: str | None, expected: str
+) -> None:
+    from app.qortia.models import KnowledgeIngestRequest
+
+    req = KnowledgeIngestRequest(
+        source_type="note", source_path="doc.md", content="c", lang=raw  # type: ignore[arg-type]
+    )
+    assert req.lang == expected

@@ -25,6 +25,13 @@ IMPORTANCE: dict[str, float] = {
 }
 
 
+def _normalise_lang(v: str | None) -> str:
+    """Normalise BCP-47 lang tags: 'EN', 'en-US', '', None -> 'en'."""
+    if not v or not v.strip():
+        return "en"
+    return v.split("-")[0].split("_")[0].lower().strip()
+
+
 class MemoryItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -36,6 +43,11 @@ class MemoryItem(BaseModel):
     metadata: dict | None = None  # type: ignore[type-arg]
     ttl_seconds: int | None = None
     lang: str = "en"  # BCP-47 language tag
+
+    @field_validator("lang", mode="before")
+    @classmethod
+    def normalise_lang(cls, v: str | None) -> str:
+        return _normalise_lang(v)
 
     @field_validator("content")
     @classmethod
@@ -89,6 +101,11 @@ class RememberOrgRequest(BaseModel):
         "internal"  # validated against tenant_clearance_levels at write time
     )
     audience: list[str] = ["all"]  # validated against tenant_divisions at write time
+
+    @field_validator("lang", mode="before")
+    @classmethod
+    def normalise_lang(cls, v: str | None) -> str:
+        return _normalise_lang(v)
 
 
 class RememberOrgResponse(BaseModel):
@@ -159,6 +176,13 @@ class RecallRequest(BaseModel):
     as_of: datetime | None = None  # point-in-time recall (16j)
     lang: str | None = None  # BCP-47 filter; None = search all languages
 
+    @field_validator("lang", mode="before")
+    @classmethod
+    def normalise_lang(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _normalise_lang(v)
+
     @field_validator("query")
     @classmethod
     def query_not_empty(cls, v: str) -> str:
@@ -220,3 +244,8 @@ class KnowledgeIngestRequest(BaseModel):
         "internal"  # validated against tenant_clearance_levels at write time
     )
     audience: list[str] = ["all"]  # validated against tenant_divisions at write time
+
+    @field_validator("lang", mode="before")
+    @classmethod
+    def normalise_lang(cls, v: str | None) -> str:
+        return _normalise_lang(v)

@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 _nlp = None
 
-ENTITY_LABELS = frozenset(
+# Single canonical label set for English NER — used by all extraction functions.
+EN_ENTITY_LABELS = frozenset(
     {"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"}
 )
 HEADING_PATTERN = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
@@ -39,21 +40,30 @@ _INDIC_MODEL: dict[str, str] = {
     "mr": "xx_ent_wiki_sm",
 }
 INDIC_NER_LANGS = frozenset(_INDIC_MODEL)
-_INDIC_ENTITY_LABELS = frozenset({"PER", "ORG", "LOC", "MISC"})
 # Maps xx_ent_wiki_sm labels → qortia_entities_entity_type_check allowed values.
 # MISC has no meaningful equivalent — drop it rather than pollute the graph.
 _INDIC_LABEL_MAP: dict[str, str] = {"PER": "PERSON", "ORG": "ORG", "LOC": "GPE"}
 
-_indic_pipelines: dict[str, Any] = {}  # model_name -> spaCy Language
+_SUPPORTED_LANGS = INDIC_NER_LANGS | {"en"}
+
+_indic_pipelines: dict[str, Any] = {}  # lang -> spaCy Language
 
 
 def _get_indic_pipeline(lang: str) -> Any:
-    model = _INDIC_MODEL[lang]
-    if model not in _indic_pipelines:
+    """Load and cache the spaCy pipeline for an Indic language. Fails fast on missing model."""
+    if lang not in _indic_pipelines:
+        model = _INDIC_MODEL[lang]
         import spacy
 
-        _indic_pipelines[model] = spacy.load(model)
-    return _indic_pipelines[model]
+        try:
+            _indic_pipelines[lang] = spacy.load(model)
+            logger.info({"event": "spacy_model_loaded", "model": model, "lang": lang})
+        except OSError as exc:
+            logger.error(
+                {"event": "spacy_model_load_failed", "model": model, "lang": lang, "error": str(exc)}
+            )
+            raise
+    return _indic_pipelines[lang]
 
 
 def load_spacy_model() -> None:
@@ -62,6 +72,8 @@ def load_spacy_model() -> None:
 
     _nlp = spacy.load("en_core_web_sm")
     logger.info({"event": "spacy_model_loaded", "model": "en_core_web_sm"})
+    # Warm up Indic pipeline at startup so first memory write doesn't pay the load cost.
+    _get_indic_pipeline("hi")
 
 
 def get_nlp() -> object:  # spaCy Language — avoid hard dep on spacy type stubs
@@ -77,16 +89,18 @@ def extract_entities(text: str, lang: str = "en") -> list[str]:
     Best-effort — caller wraps in try/except and falls back to [].
     Returns text only (label stripped) for backward-compatible callers.
     """
+    if lang not in _SUPPORTED_LANGS:
+        logger.warning({"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"})
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
         return list(
             dict.fromkeys(
-                ent.text for ent in doc.ents if ent.label_ in _INDIC_ENTITY_LABELS
+                ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP
             )
         )[:20]
     doc = get_nlp()(text)  # type: ignore[operator]
     return list(
-        dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS)
+        dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS)
     )[:20]
 
 
@@ -95,6 +109,8 @@ def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, 
     Extract NER entities with their label. Routes to Indic spaCy models or en_core_web_sm.
     Returns list of (entity_text, label). Best-effort — caller wraps in try/except.
     """
+    if lang not in _SUPPORTED_LANGS:
+        logger.warning({"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"})
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
         seen: dict[str, str] = {}
@@ -106,7 +122,7 @@ def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, 
     doc = get_nlp()(text)  # type: ignore[operator]
     seen_en: dict[str, str] = {}
     for ent in doc.ents:
-        if ent.label_ in ENTITY_LABELS and ent.text not in seen_en:
+        if ent.label_ in EN_ENTITY_LABELS and ent.text not in seen_en:
             seen_en[ent.text] = ent.label_
     return list(seen_en.items())[:20]
 
@@ -166,28 +182,34 @@ def _paragraph_split(text: str, title: str) -> list[dict[str, str]]:
 # ── PageIndex extraction ─────────────────────────────────────
 
 
-def extract_index_fields(heading: str, text: str) -> dict[str, Any]:
-    nlp = get_nlp()
-    doc = nlp(text)  # type: ignore[operator]
-    sentences = list(doc.sents)
+def extract_index_fields(heading: str, text: str, lang: str = "en") -> dict[str, Any]:
+    if lang in INDIC_NER_LANGS:
+        doc = _get_indic_pipeline(lang)(text)
+        entities = list(
+            dict.fromkeys(
+                ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP
+            )
+        )[:10]
+        sentences = list(doc.sents)
+        noun_chunks: list[str] = []
+    else:
+        nlp = get_nlp()
+        doc = nlp(text)  # type: ignore[operator]
+        entities = list(
+            dict.fromkeys(
+                ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS
+            )
+        )[:10]
+        sentences = list(doc.sents)
+        noun_chunks = list(
+            dict.fromkeys(
+                chunk.text.lower()
+                for chunk in doc.noun_chunks  # type: ignore[attr-defined]
+                if len(chunk.text.split()) <= 4
+            )
+        )[:10]
 
     summary = " ".join(s.text.strip() for s in sentences[:2])
-
-    entities = list(
-        dict.fromkeys(
-            ent.text
-            for ent in doc.ents
-            if ent.label_ in ("ORG", "PERSON", "PRODUCT", "GPE", "TECH", "NORP", "FAC")
-        )
-    )[:10]
-
-    noun_chunks = list(
-        dict.fromkeys(
-            chunk.text.lower()
-            for chunk in doc.noun_chunks
-            if len(chunk.text.split()) <= 4
-        )
-    )[:10]
     questions = ([heading] + noun_chunks) if heading else noun_chunks
 
     return {
@@ -258,7 +280,7 @@ async def ingest_knowledge(
         sections_deduped = 0
 
         for idx, (section, content_hash) in enumerate(zip(sections, incoming_hashes)):
-            index_fields = extract_index_fields(section["heading"], section["text"])
+            index_fields = extract_index_fields(section["heading"], section["text"], lang=body.lang)
 
             existing_embedding = await conn.fetchval(
                 """
