@@ -7,13 +7,15 @@ import logging
 from typing import Any
 from uuid import UUID
 
-import httpx
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
-from app.config import settings
+from app.qortia.common import (
+    EMBEDDING_MODEL,
+    get_litellm_client,
+)
 from app.qortia.models import ReflectResponse
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
@@ -22,12 +24,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 REFLECTION_THRESHOLD = 10
-EMBEDDING_MODEL = "bge-m3"
 EMBEDDING_BATCH_SIZE = 50
 STABILITY_THRESHOLD = 0.95
-
-
-_litellm_client: httpx.AsyncClient | None = None
 
 
 def _compute_stability_scores(
@@ -60,22 +58,6 @@ def _compute_stability_scores(
         else:
             scores.append(None)
     return scores
-
-
-def init_litellm_client() -> None:
-    global _litellm_client
-    _litellm_client = httpx.AsyncClient(base_url=settings.litellm_url, timeout=None)
-    logger.info({"event": "litellm_client_initialized"})
-
-
-async def close_litellm_client() -> None:
-    if _litellm_client is not None:
-        await _litellm_client.aclose()
-
-
-def get_litellm_client() -> httpx.AsyncClient:
-    assert _litellm_client is not None, "LiteLLM client not initialised"
-    return _litellm_client
 
 
 # ── POST /v1/reflect ─────────────────────────────────────────

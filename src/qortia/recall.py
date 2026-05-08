@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
 from app.qortia.models import RecallRequest, RecallResponse, RecallResult
-from app.qortia.reflect import EMBEDDING_MODEL, get_litellm_client
+from app.qortia.common import EMBEDDING_MODEL, get_litellm_client
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 from app.qortia.remember import _fetch_agent_clearance
