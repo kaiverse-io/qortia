@@ -572,7 +572,7 @@ async def _process_embedding_batch() -> None:
         try:
             litellm_key = await get_litellm_key(tenant_id_str)
         except Exception as exc:
-            logger.warning(
+            logger.error(
                 {
                     "event": "embedding_key_fetch_failed",
                     "tenant_id": tenant_id_str,
