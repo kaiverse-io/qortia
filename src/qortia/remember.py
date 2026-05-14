@@ -76,12 +76,32 @@ async def remember(
                 else None
             )
 
+            content_hash = hashlib.sha256(mem.content.encode()).hexdigest()
+
+            # G4: exact content hash dedup for episodic/experiential within 24h
+            if mem.type in ("episodic", "experiential"):
+                existing = await conn.fetchval(
+                    """
+                    SELECT id FROM hindsight_memories
+                    WHERE agent_id = $1
+                      AND content_hash = $2
+                      AND tier = 'active'
+                      AND created_at > now() - interval '24 hours'
+                    LIMIT 1
+                    """,
+                    agent.agent_id,
+                    content_hash,
+                )
+                if existing:
+                    ids.append(str(existing))
+                    continue
+
             row_id = await conn.fetchval(
                 """
                 INSERT INTO hindsight_memories
                     (tenant_id, agent_id, type, content, importance,
-                     source_task_id, metadata, entities, expires_at, lang)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                     source_task_id, metadata, entities, expires_at, lang, content_hash)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING id
             """,
                 agent.tenant_id,
@@ -94,6 +114,7 @@ async def remember(
                 json.dumps(entities),
                 expires_at,
                 mem.lang,
+                content_hash,
             )
             ids.append(str(row_id))
 

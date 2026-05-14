@@ -45,7 +45,7 @@ def test_importance_ordering() -> None:
 
 
 def test_memory_item_valid() -> None:
-    item = MemoryItem(type="episodic", content="something happened")
+    item = MemoryItem(type="episodic", content="something happened today in the system")
     assert item.type == "episodic"
 
 
@@ -76,7 +76,7 @@ def test_memory_item_metadata_scalar_rejected() -> None:
 
 
 def test_memory_item_metadata_dict_accepted() -> None:
-    item = MemoryItem(type="decision", content="chose X", metadata={"reason": "cost"})
+    item = MemoryItem(type="decision", content="chose X over Y for cost reasons", metadata={"reason": "cost"})
     assert item.metadata == {"reason": "cost"}
 
 
@@ -96,8 +96,8 @@ def test_remember_request_empty_array_rejected() -> None:
 def test_remember_request_valid_batch() -> None:
     req = RememberRequest(
         memories=[
-            MemoryItem(type="episodic", content="a"),
-            MemoryItem(type="lesson", content="b"),
+            MemoryItem(type="episodic", content="something happened today in the system"),
+            MemoryItem(type="lesson", content="learned that this approach works better"),
         ]
     )
     assert len(req.memories) == 2
@@ -178,12 +178,12 @@ def test_short_term_memory_requires_ttl_seconds() -> None:
 
 def test_short_term_memory_zero_ttl_rejected() -> None:
     with pytest.raises(ValidationError):
-        MemoryItem(type="short_term", content="context", ttl_seconds=0)
+        MemoryItem(type="short_term", content="context for short term memory here", ttl_seconds=0)
 
 
 def test_short_term_memory_negative_ttl_rejected() -> None:
     with pytest.raises(ValidationError):
-        MemoryItem(type="short_term", content="context", ttl_seconds=-60)
+        MemoryItem(type="short_term", content="context for short term memory here", ttl_seconds=-60)
 
 
 def test_short_term_memory_valid() -> None:
@@ -195,7 +195,7 @@ def test_short_term_memory_valid() -> None:
 
 def test_ttl_seconds_on_non_short_term_rejected() -> None:
     with pytest.raises(ValidationError, match="ttl_seconds"):
-        MemoryItem(type="episodic", content="something happened", ttl_seconds=60)
+        MemoryItem(type="episodic", content="something happened today in the system", ttl_seconds=60)
 
 
 def test_short_term_importance_is_lowest() -> None:
@@ -206,13 +206,13 @@ def test_short_term_importance_is_lowest() -> None:
 
 
 def test_memory_item_lang_defaults_to_en() -> None:
-    item = MemoryItem(type="episodic", content="something happened")
+    item = MemoryItem(type="episodic", content="something happened today in the system")
     assert item.lang == "en"
 
 
 def test_memory_item_lang_preserved() -> None:
     item = MemoryItem(
-        type="episodic", content="\u0915\u0941\u091b \u0939\u0941\u0906", lang="hi"
+        type="episodic", content="\u0906\u091c \u0915\u0941\u091b \u0939\u0941\u0906 \u0925\u093e \u0935\u0939\u093e\u0902", lang="hi"
     )
     assert item.lang == "hi"
 
@@ -220,7 +220,7 @@ def test_memory_item_lang_preserved() -> None:
 def test_remember_org_request_lang_defaults_to_en() -> None:
     from app.qortia.models import RememberOrgRequest
 
-    req = RememberOrgRequest(type="handoff", title="done", content="finished task")
+    req = RememberOrgRequest(type="handoff", title="done", content="finished the task successfully today for the entire team now")
     assert req.lang == "en"
 
 
@@ -230,7 +230,7 @@ def test_remember_org_request_lang_preserved() -> None:
     req = RememberOrgRequest(
         type="handoff",
         title="done",
-        content="\u0915\u093e\u092e \u092a\u0942\u0930\u093e",
+        content="\u0915\u093e\u092e \u092a\u0942\u0930\u093e \u0939\u094b \u0917\u092f\u093e \u0906\u091c \u0938\u092b\u0932\u0924\u093e\u092a\u0942\u0930\u094d\u0935\u0915 \u0938\u092d\u0940 \u0915\u093e\u092e \u0939\u094b \u0917\u090f",
         lang="hi",
     )
     assert req.lang == "hi"
@@ -254,7 +254,7 @@ def test_knowledge_ingest_request_lang_defaults_to_en() -> None:
     from app.qortia.models import KnowledgeIngestRequest
 
     req = KnowledgeIngestRequest(
-        source_type="note", source_path="doc.md", content="some content"
+        source_type="note", source_path="doc.md", content="some content for the document here"
     )
     assert req.lang == "en"
 
@@ -376,7 +376,7 @@ def test_extract_entities_unsupported_lang_returns_empty(
     ],
 )
 def test_memory_item_lang_normalised(raw: str | None, expected: str) -> None:
-    item = MemoryItem(type="episodic", content="test", lang=raw)  # type: ignore[arg-type]
+    item = MemoryItem(type="episodic", content="something happened today in the system", lang=raw)  # type: ignore[arg-type]
     assert item.lang == expected
 
 
@@ -393,7 +393,7 @@ def test_memory_item_lang_normalised(raw: str | None, expected: str) -> None:
 def test_remember_org_request_lang_normalised(raw: str | None, expected: str) -> None:
     from app.qortia.models import RememberOrgRequest
 
-    req = RememberOrgRequest(type="handoff", title="t", content="c", lang=raw)  # type: ignore[arg-type]
+    req = RememberOrgRequest(type="handoff", title="t", content="finished the task successfully today for the entire team now", lang=raw)  # type: ignore[arg-type]
     assert req.lang == expected
 
 
@@ -428,6 +428,6 @@ def test_knowledge_ingest_request_lang_normalised(
     from app.qortia.models import KnowledgeIngestRequest
 
     req = KnowledgeIngestRequest(
-        source_type="note", source_path="doc.md", content="c", lang=raw  # type: ignore[arg-type]
+        source_type="note", source_path="doc.md", content="finished the task successfully today for the entire team now", lang=raw  # type: ignore[arg-type]
     )
     assert req.lang == expected

@@ -26,6 +26,8 @@ router = APIRouter()
 REFLECTION_THRESHOLD = 10
 EMBEDDING_BATCH_SIZE = 50
 STABILITY_THRESHOLD = 0.95
+DEDUP_SIMILARITY_THRESHOLD = 0.95   # calibrated for BGE-M3 1024-dim; ADR-105 documents this
+DEDUP_LOOKBACK_DAYS = 7
 
 
 def _compute_stability_scores(
@@ -584,8 +586,60 @@ async def _process_embedding_batch() -> None:
             await _embed_single_row(row, litellm_key)
 
 
+async def _maybe_dedup_memory(
+    memory_id: object,
+    embedding: list[float],
+    tenant_id: object,
+    agent_id: object,
+    memory_type: str,
+) -> None:
+    """Archive a memory if a near-duplicate (cosine >= DEDUP_SIMILARITY_THRESHOLD)
+    exists within the last DEDUP_LOOKBACK_DAYS days for the same agent and type.
+    Only called for episodic and experiential memories (ADR-105).
+    """
+    import json as _json
+
+    async with get_main_pool().acquire() as conn:
+        neighbour = await conn.fetchrow(
+            """
+            SELECT id, 1 - (embedding <=> $1::vector) AS similarity
+            FROM hindsight_memories
+            WHERE agent_id = $2
+              AND type = $3
+              AND tier = 'active'
+              AND id != $4
+              AND created_at > now() - interval '7 days'
+              AND embedding IS NOT NULL
+            ORDER BY embedding <=> $1::vector
+            LIMIT 1
+            """,
+            str(embedding), agent_id, memory_type, memory_id,
+        )
+        if neighbour and float(neighbour["similarity"]) >= DEDUP_SIMILARITY_THRESHOLD:
+            await conn.execute(
+                """
+                UPDATE hindsight_memories
+                SET tier = 'archive', metadata = metadata || $1
+                WHERE id = $2
+                """,
+                _json.dumps({"dedup_of": str(neighbour["id"])}),
+                memory_id,
+            )
+            logger.info({
+                "event": "memory_dedup_archived",
+                "memory_id": str(memory_id),
+                "dedup_of": str(neighbour["id"]),
+                "similarity": float(neighbour["similarity"]),
+                "agent_id": str(agent_id),
+            })
+
+
 async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignore[type-arg]
     if not row.get("text_to_embed"):
+        return
+    # G5: skip embedding for short_term — BM25-only; embedding wastes storage (ADR-105)
+    if row.get("tbl") == "hindsight_memories" and row.get("type") == "short_term":
+        logger.info({"event": "embedding_skipped", "reason": "short_term_mrl", "memory_id": str(row["id"])})
         return
     try:
         embedding = await _get_embedding(row["text_to_embed"], litellm_key)
@@ -606,6 +660,11 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
                 agent_id=row["agent_id"],
             )
             await _upsert_memory_links(row["id"], similar, row["tenant_id"])
+            # G3: post-embed dedup for episodic/experiential only (ADR-105)
+            if row.get("type") in ("episodic", "experiential"):
+                await _maybe_dedup_memory(
+                    row["id"], embedding, row["tenant_id"], row["agent_id"], row["type"]
+                )
     except Exception as exc:
         async with get_main_pool().acquire() as conn:
             await conn.execute(

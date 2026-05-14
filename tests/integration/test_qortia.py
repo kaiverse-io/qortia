@@ -25,7 +25,7 @@ def test_remember_requires_auth(app_client, _session_loop) -> None:
     r = _call(
         _session_loop,
         app_client.post(
-            "/v1/remember", json={"memories": [{"type": "episodic", "content": "test"}]}
+            "/v1/remember", json={"memories": [{"type": "episodic", "content": "something happened today in the system"}]}
         ),
     )
     assert r.status_code == 401
@@ -36,7 +36,7 @@ def test_remember_inactive_agent_403(app_client, _session_loop) -> None:
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "episodic", "content": "test"}]},
+            json={"memories": [{"type": "episodic", "content": "something happened today in the system"}]},
             headers=fresh_agent_headers(),
         ),
     )
@@ -58,7 +58,7 @@ def test_remember_invalid_type_422(app_client, _session_loop) -> None:
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "org_chart", "content": "test"}]},
+            json={"memories": [{"type": "org_chart", "content": "something happened today in the system"}]},
             headers=fresh_agent_headers(),
         ),
     )
@@ -78,9 +78,9 @@ def test_remember_batch_atomicity(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "episodic", "content": "event one"},
-                    {"type": "episodic", "content": "event two"},
-                    {"type": "lesson", "content": "learned something"},
+                    {"type": "episodic", "content": "event one happened today in the system"},
+                    {"type": "episodic", "content": "event two happened today in the system"},
+                    {"type": "lesson", "content": "learned something important about the system today"},
                 ]
             },
             headers=headers,
@@ -110,7 +110,7 @@ def test_remember_entities_extracted(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "decision", "content": "chose PostgreSQL for the database"}
+                    {"type": "decision", "content": "chose PostgreSQL for the database storage layer"}
                 ]
             },
             headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id},
@@ -139,7 +139,7 @@ def test_remember_org_handoff(
             json={
                 "type": "handoff",
                 "title": "Completed auth",
-                "content": "Done",
+                "content": "Done with the task successfully today for the entire team",
             },
             headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id},
         ),
@@ -159,7 +159,7 @@ def test_remember_org_process_requires_chief(
             json={
                 "type": "process",
                 "title": "Deploy",
-                "content": "How we deploy",
+                "content": "How we deploy the application to production servers every time",
             },
             headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id},
         ),
@@ -175,7 +175,7 @@ def test_remember_org_invalid_type_422(app_client, _session_loop) -> None:
             json={
                 "type": "org_chart",
                 "title": "t",
-                "content": "c",
+                "content": "content for the org memory handoff here now",
             },
             headers=fresh_agent_headers(),
         ),
@@ -225,7 +225,7 @@ def test_recall_returns_results(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "decision", "content": "chose PostgreSQL for the database"}
+                    {"type": "decision", "content": "chose PostgreSQL for the database storage layer"}
                 ]
             },
             headers=headers,
@@ -259,7 +259,7 @@ def test_recall_entities_filter(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "decision", "content": "chose PostgreSQL"},
+                    {"type": "decision", "content": "chose PostgreSQL for the database storage layer"},
                 ]
             },
             headers=headers,
@@ -325,7 +325,7 @@ def test_forget_own_memory(
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "episodic", "content": "to be forgotten"}]},
+            json={"memories": [{"type": "episodic", "content": "to be forgotten after this test runs today"}]},
             headers=headers,
         ),
     )
@@ -384,7 +384,7 @@ def test_reflect_supersede_first(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "episodic", "content": f"event {i}"} for i in range(3)
+                    {"type": "episodic", "content": f"event {i} happened today in the system"} for i in range(3)
                 ]
             },
             headers=headers,
@@ -416,7 +416,7 @@ def test_forget_cleans_up_memory_links(
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "episodic", "content": "to be forgotten"}]},
+            json={"memories": [{"type": "episodic", "content": "to be forgotten after this test runs today"}]},
             headers=headers,
         ),
     )
@@ -457,7 +457,7 @@ def test_recall_linked_via_field_present(
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "decision", "content": "chose PostgreSQL"}]},
+            json={"memories": [{"type": "decision", "content": "chose PostgreSQL for the database storage layer"}]},
             headers=headers,
         ),
     )
@@ -500,7 +500,7 @@ def test_memory_links_rls_tenant_isolation(
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "episodic", "content": "tenant B secret"}]},
+            json={"memories": [{"type": "episodic", "content": "tenant B secret data should not be visible"}]},
             headers={"X-Agent-ID": aid_b, "X-Tenant-ID": tid_b},
         ),
     )
@@ -568,7 +568,7 @@ def test_valid_until_set_on_supersede(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "episodic", "content": f"event {i}"} for i in range(3)
+                    {"type": "episodic", "content": f"event {i} happened today in the system"} for i in range(3)
                 ]
             },
             headers=headers,

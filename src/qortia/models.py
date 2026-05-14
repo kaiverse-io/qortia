@@ -54,6 +54,8 @@ class MemoryItem(BaseModel):
     def content_not_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("content must not be empty")
+        if len(v.split()) < 5:
+            raise ValueError("content must be at least 5 words")
         return v
 
     @field_validator("metadata")
@@ -106,6 +108,15 @@ class RememberOrgRequest(BaseModel):
     @classmethod
     def normalise_lang(cls, v: str | None) -> str:
         return _normalise_lang(v)
+
+    @field_validator("content")
+    @classmethod
+    def content_floor(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("content must not be empty")
+        if len(v.split()) < 10:
+            raise ValueError("content must be at least 10 words")
+        return v
 
 
 class RememberOrgResponse(BaseModel):
