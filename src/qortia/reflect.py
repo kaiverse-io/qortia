@@ -26,7 +26,9 @@ router = APIRouter()
 REFLECTION_THRESHOLD = 10
 EMBEDDING_BATCH_SIZE = 50
 STABILITY_THRESHOLD = 0.95
-DEDUP_SIMILARITY_THRESHOLD = 0.95   # calibrated for BGE-M3 1024-dim; ADR-105 documents this
+DEDUP_SIMILARITY_THRESHOLD = (
+    0.95  # calibrated for BGE-M3 1024-dim; ADR-105 documents this
+)
 DEDUP_LOOKBACK_DAYS = 7
 
 
@@ -613,7 +615,10 @@ async def _maybe_dedup_memory(
             ORDER BY embedding <=> $1::vector
             LIMIT 1
             """,
-            str(embedding), agent_id, memory_type, memory_id,
+            str(embedding),
+            agent_id,
+            memory_type,
+            memory_id,
         )
         if neighbour and float(neighbour["similarity"]) >= DEDUP_SIMILARITY_THRESHOLD:
             await conn.execute(
@@ -625,13 +630,15 @@ async def _maybe_dedup_memory(
                 _json.dumps({"dedup_of": str(neighbour["id"])}),
                 memory_id,
             )
-            logger.info({
-                "event": "memory_dedup_archived",
-                "memory_id": str(memory_id),
-                "dedup_of": str(neighbour["id"]),
-                "similarity": float(neighbour["similarity"]),
-                "agent_id": str(agent_id),
-            })
+            logger.info(
+                {
+                    "event": "memory_dedup_archived",
+                    "memory_id": str(memory_id),
+                    "dedup_of": str(neighbour["id"]),
+                    "similarity": float(neighbour["similarity"]),
+                    "agent_id": str(agent_id),
+                }
+            )
 
 
 async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignore[type-arg]
@@ -639,7 +646,13 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
         return
     # G5: skip embedding for short_term — BM25-only; embedding wastes storage (ADR-105)
     if row.get("tbl") == "hindsight_memories" and row.get("type") == "short_term":
-        logger.info({"event": "embedding_skipped", "reason": "short_term_mrl", "memory_id": str(row["id"])})
+        logger.info(
+            {
+                "event": "embedding_skipped",
+                "reason": "short_term_mrl",
+                "memory_id": str(row["id"]),
+            }
+        )
         return
     try:
         embedding = await _get_embedding(row["text_to_embed"], litellm_key)

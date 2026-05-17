@@ -2,6 +2,7 @@
 evals/mlflow_logger.py — Log eval scores to MLflow + OTel span attributes.
 ADR-103 §13.4: per-agent eval quality visibility.
 """
+
 from __future__ import annotations
 
 import logging
@@ -48,9 +49,11 @@ def log_eval_score(
     except Exception:
         pass
 
-    logger.info({
-        "event": "eval_score_logged",
-        "task_id": task_id,
-        "metric": metric,
-        "score": score,
-    })
+    logger.info(
+        {
+            "event": "eval_score_logged",
+            "task_id": task_id,
+            "metric": metric,
+            "score": score,
+        }
+    )

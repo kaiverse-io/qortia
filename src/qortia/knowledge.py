@@ -60,7 +60,12 @@ def _get_indic_pipeline(lang: str) -> Any:
             logger.info({"event": "spacy_model_loaded", "model": model, "lang": lang})
         except OSError as exc:
             logger.error(
-                {"event": "spacy_model_load_failed", "model": model, "lang": lang, "error": str(exc)}
+                {
+                    "event": "spacy_model_load_failed",
+                    "model": model,
+                    "lang": lang,
+                    "error": str(exc),
+                }
             )
             raise
     return _indic_pipelines[lang]
@@ -90,7 +95,9 @@ def extract_entities(text: str, lang: str = "en") -> list[str]:
     Returns text only (label stripped) for backward-compatible callers.
     """
     if lang not in _SUPPORTED_LANGS:
-        logger.warning({"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"})
+        logger.warning(
+            {"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"}
+        )
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
         return list(
@@ -110,7 +117,9 @@ def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, 
     Returns list of (entity_text, label). Best-effort — caller wraps in try/except.
     """
     if lang not in _SUPPORTED_LANGS:
-        logger.warning({"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"})
+        logger.warning(
+            {"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"}
+        )
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
         seen: dict[str, str] = {}
@@ -280,7 +289,9 @@ async def ingest_knowledge(
         sections_deduped = 0
 
         for idx, (section, content_hash) in enumerate(zip(sections, incoming_hashes)):
-            index_fields = extract_index_fields(section["heading"], section["text"], lang=body.lang)
+            index_fields = extract_index_fields(
+                section["heading"], section["text"], lang=body.lang
+            )
 
             existing_embedding = await conn.fetchval(
                 """

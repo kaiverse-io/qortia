@@ -7,6 +7,7 @@ from uuid import uuid4
 
 
 from tests.integration.conftest import (
+    make_agent_headers,
     fresh_agent_headers,
     VAULT_TOKEN,
     create_active_agent,
@@ -25,7 +26,15 @@ def test_remember_requires_auth(app_client, _session_loop) -> None:
     r = _call(
         _session_loop,
         app_client.post(
-            "/v1/remember", json={"memories": [{"type": "episodic", "content": "something happened today in the system"}]}
+            "/v1/remember",
+            json={
+                "memories": [
+                    {
+                        "type": "episodic",
+                        "content": "something happened today in the system",
+                    }
+                ]
+            },
         ),
     )
     assert r.status_code == 401
@@ -36,7 +45,14 @@ def test_remember_inactive_agent_403(app_client, _session_loop) -> None:
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "episodic", "content": "something happened today in the system"}]},
+            json={
+                "memories": [
+                    {
+                        "type": "episodic",
+                        "content": "something happened today in the system",
+                    }
+                ]
+            },
             headers=fresh_agent_headers(),
         ),
     )
@@ -58,7 +74,14 @@ def test_remember_invalid_type_422(app_client, _session_loop) -> None:
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "org_chart", "content": "something happened today in the system"}]},
+            json={
+                "memories": [
+                    {
+                        "type": "org_chart",
+                        "content": "something happened today in the system",
+                    }
+                ]
+            },
             headers=fresh_agent_headers(),
         ),
     )
@@ -70,7 +93,7 @@ def test_remember_batch_atomicity(
 ) -> None:
     """All inserts + counter increment in one transaction."""
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     r = _call(
         _session_loop,
@@ -78,9 +101,18 @@ def test_remember_batch_atomicity(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "episodic", "content": "event one happened today in the system"},
-                    {"type": "episodic", "content": "event two happened today in the system"},
-                    {"type": "lesson", "content": "learned something important about the system today"},
+                    {
+                        "type": "episodic",
+                        "content": "event one happened today in the system",
+                    },
+                    {
+                        "type": "episodic",
+                        "content": "event two happened today in the system",
+                    },
+                    {
+                        "type": "lesson",
+                        "content": "learned something important about the system today",
+                    },
                 ]
             },
             headers=headers,
@@ -110,10 +142,13 @@ def test_remember_entities_extracted(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "decision", "content": "chose PostgreSQL for the database storage layer"}
+                    {
+                        "type": "decision",
+                        "content": "chose PostgreSQL for the database storage layer",
+                    }
                 ]
             },
-            headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id},
+            headers=make_agent_headers(aid, tenant_id),
         ),
     )
     assert r.status_code == 200
@@ -141,7 +176,7 @@ def test_remember_org_handoff(
                 "title": "Completed auth",
                 "content": "Done with the task successfully today for the entire team",
             },
-            headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id},
+            headers=make_agent_headers(aid, tenant_id),
         ),
     )
     assert r.status_code == 200
@@ -161,7 +196,7 @@ def test_remember_org_process_requires_chief(
                 "title": "Deploy",
                 "content": "How we deploy the application to production servers every time",
             },
-            headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id},
+            headers=make_agent_headers(aid, tenant_id),
         ),
     )
     assert r.status_code == 403
@@ -217,7 +252,7 @@ def test_recall_returns_results(
     app_client, _session_loop, committed_conn, tenant_id
 ) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     _call(
         _session_loop,
@@ -225,7 +260,10 @@ def test_recall_returns_results(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "decision", "content": "chose PostgreSQL for the database storage layer"}
+                    {
+                        "type": "decision",
+                        "content": "chose PostgreSQL for the database storage layer",
+                    }
                 ]
             },
             headers=headers,
@@ -251,7 +289,7 @@ def test_recall_entities_filter(
     app_client, _session_loop, committed_conn, tenant_id
 ) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     _call(
         _session_loop,
@@ -259,7 +297,10 @@ def test_recall_entities_filter(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "decision", "content": "chose PostgreSQL for the database storage layer"},
+                    {
+                        "type": "decision",
+                        "content": "chose PostgreSQL for the database storage layer",
+                    },
                 ]
             },
             headers=headers,
@@ -300,9 +341,7 @@ def test_context_structure(
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
-        app_client.get(
-            "/v1/context", headers={"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
-        ),
+        app_client.get("/v1/context", headers=make_agent_headers(aid, tenant_id)),
     )
     assert r.status_code == 200
     data = r.json()
@@ -319,13 +358,20 @@ def test_forget_own_memory(
     app_client, _session_loop, committed_conn, tenant_id
 ) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     r = _call(
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "episodic", "content": "to be forgotten after this test runs today"}]},
+            json={
+                "memories": [
+                    {
+                        "type": "episodic",
+                        "content": "to be forgotten after this test runs today",
+                    }
+                ]
+            },
             headers=headers,
         ),
     )
@@ -358,7 +404,7 @@ def test_reflect_supersede_first(
     )
 
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     # Existing consolidated memory
     old_id = str(uuid4())
@@ -384,7 +430,11 @@ def test_reflect_supersede_first(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "episodic", "content": f"event {i} happened today in the system"} for i in range(3)
+                    {
+                        "type": "episodic",
+                        "content": f"event {i} happened today in the system",
+                    }
+                    for i in range(3)
                 ]
             },
             headers=headers,
@@ -410,13 +460,20 @@ def test_forget_cleans_up_memory_links(
 ) -> None:
     """Forgetting a memory removes its memory_links rows."""
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     r = _call(
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "episodic", "content": "to be forgotten after this test runs today"}]},
+            json={
+                "memories": [
+                    {
+                        "type": "episodic",
+                        "content": "to be forgotten after this test runs today",
+                    }
+                ]
+            },
             headers=headers,
         ),
     )
@@ -451,13 +508,20 @@ def test_recall_linked_via_field_present(
 ) -> None:
     """RecallResult schema includes linked_via field (null when not a linked result)."""
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     _call(
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "decision", "content": "chose PostgreSQL for the database storage layer"}]},
+            json={
+                "memories": [
+                    {
+                        "type": "decision",
+                        "content": "chose PostgreSQL for the database storage layer",
+                    }
+                ]
+            },
             headers=headers,
         ),
     )
@@ -500,8 +564,15 @@ def test_memory_links_rls_tenant_isolation(
         _session_loop,
         app_client.post(
             "/v1/remember",
-            json={"memories": [{"type": "episodic", "content": "tenant B secret data should not be visible"}]},
-            headers={"X-Agent-ID": aid_b, "X-Tenant-ID": tid_b},
+            json={
+                "memories": [
+                    {
+                        "type": "episodic",
+                        "content": "tenant B secret data should not be visible",
+                    }
+                ]
+            },
+            headers=make_agent_headers(aid_b, tid_b),
         ),
     )
     mem_b_id = r.json()["ids"][0]
@@ -521,7 +592,7 @@ def test_memory_links_rls_tenant_isolation(
         app_client.post(
             "/v1/recall",
             json={"query": "tenant B secret", "scope": "private"},
-            headers={"X-Agent-ID": aid_a, "X-Tenant-ID": tenant_id},
+            headers=make_agent_headers(aid_a, tenant_id),
         ),
     )
     assert r.status_code == 200
@@ -544,7 +615,7 @@ def test_valid_until_set_on_supersede(
     )
 
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     old_id = str(uuid4())
     committed_conn.execute(
@@ -568,7 +639,11 @@ def test_valid_until_set_on_supersede(
             "/v1/remember",
             json={
                 "memories": [
-                    {"type": "episodic", "content": f"event {i} happened today in the system"} for i in range(3)
+                    {
+                        "type": "episodic",
+                        "content": f"event {i} happened today in the system",
+                    }
+                    for i in range(3)
                 ]
             },
             headers=headers,
@@ -591,7 +666,7 @@ def test_superseded_memory_excluded_from_default_recall(
     from datetime import datetime, timezone, timedelta
 
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     mem_id = str(uuid4())
     committed_conn.execute(
@@ -632,7 +707,7 @@ def test_as_of_returns_superseded_memory(
     from datetime import datetime, timezone, timedelta
 
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     valid_start = datetime.now(timezone.utc) - timedelta(days=30)
     valid_end = datetime.now(timezone.utc) - timedelta(days=1)
@@ -681,7 +756,7 @@ def test_as_of_excludes_memory_not_yet_written(
     from datetime import datetime, timezone, timedelta
 
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
-    headers = {"X-Agent-ID": aid, "X-Tenant-ID": tenant_id}
+    headers = make_agent_headers(aid, tenant_id)
 
     valid_start = datetime.now(timezone.utc) - timedelta(days=1)
     as_of = datetime.now(timezone.utc) - timedelta(days=10)  # before valid_from
