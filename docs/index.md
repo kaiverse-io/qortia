@@ -22,14 +22,14 @@ Memory service: episodic recall, reflection, org knowledge, RBAC, embedding, ben
 
 | ADR | Decision |
 |-----|---------|
-| ADR-041 | Embedding worker per-row error isolation |
-| ADR-054 | NER entity extraction at write time |
-| ADR-055 | Dynamic importance: recall_count + last_recalled_at |
-| ADR-056 | Thought trace preservation (cognitive persistence) |
-| ADR-071 | HNSW index parameters |
-| ADR-074 | Knowledge candidate keyword boost before MMR |
-| ADR-080 | Org memory RBAC: two-axis access control (clearance + division) |
-| ADR-105 | Memory quality: MRL + dedup strategy |
+| [ADR-041](../decisions/qortia.md) | Embedding worker per-row error isolation |
+| [ADR-054](../decisions/qortia.md) | NER entity extraction at write time |
+| [ADR-055](../decisions/qortia.md) | Dynamic importance: recall_count + last_recalled_at |
+| [ADR-056](../decisions/qortia.md) | Thought trace preservation (cognitive persistence) |
+| [ADR-071](../decisions/platform-api.md) | HNSW index parameters |
+| [ADR-074](../decisions/qortia.md) | Knowledge candidate keyword boost before MMR |
+| [ADR-080](../decisions/qortia.md) | Org memory RBAC: two-axis access control (clearance + division) |
+| [ADR-105](../decisions/qortia.md) | Memory quality: MRL + dedup strategy |
 
 ## Open Enhancements
 
