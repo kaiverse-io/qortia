@@ -16,6 +16,7 @@ Memory service: episodic recall, reflection, org knowledge, RBAC, embedding, ben
 | [01-design.md](01-design.md) | Consolidated design: data model, recall pipeline, reflection, RBAC, API surface |
 | [02-benchmarking.md](02-benchmarking.md) | Memory layer benchmarking guide — latency, quality, throughput targets |
 | [03-eval-strategy.md](03-eval-strategy.md) | Evaluation strategy — why and how we measure memory quality |
+| [04-api-contracts.md](04-api-contracts.md) | Authoritative request/response schemas — recall, remember, reflect, forget, knowledge, HNSW params, NER, dynamic importance, RBAC |
 
 ## Key Decisions (ADRs)
 
