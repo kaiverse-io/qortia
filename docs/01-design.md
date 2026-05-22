@@ -320,7 +320,7 @@ BM25 + vector, RRF fusion, entity boost, MMR dedup, optional LLM re-ranking.
 }
 ```
 
-- `type` filter applies to `hindsight_memories` only — org/knowledge never filtered by type (Q57)
+- `type` filter applies to `hindsight_memories` only — org/knowledge never filtered by type ([recall/remember response schemas](qortia/04-api-contracts.md#post-v1recall--authoritative-schema))
 - `entities` narrows via `entities ?| $N::text[]` on private/org tables; knowledge uses `index_tsv` implicitly
 - `agent_id` and `tenant_id` from JWT — never in request body
 
@@ -356,7 +356,7 @@ Query → embed (LiteLLM, graceful degradation to BM25-only on failure)
 ```
 
 **Graceful degradation:** If `_embed_query` fails (LiteLLM unavailable), fall back to
-BM25-only across all scopes. Never return 500 due to LiteLLM being down (Q10).
+BM25-only across all scopes. Never return 500 due to LiteLLM being down ([two-scope memory](qortia/04-api-contracts.md#two-scope-memory)).
 
 **Re-rank failure is non-fatal:** `_llm_rerank` catches all exceptions and returns
 original order. Uses agent's configured model — never free-worker (confidential content).
@@ -384,7 +384,7 @@ final_score = score × dynamic_importance
 Groups results by ID, sums RRF scores across BM25 and vector lists, re-ranks by
 `final_score`. Principled fusion — score-magnitude-invariant, well-studied.
 
-### 7.6 MMR for Knowledge Corpus (Q51)
+### 7.6 MMR for Knowledge Corpus
 
 Knowledge results use Maximal Marginal Relevance to balance relevance with diversity:
 - `min_score: 0.30` — candidates below this excluded before MMR (lower than memory

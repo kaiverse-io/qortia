@@ -265,7 +265,7 @@ candidate row during search, making entity filtering O(n) per query. Write-time
 extraction is O(1) per write and makes the entity filter a cheap GIN-indexed JSONB
 containment check at recall time.
 
-spaCy `en_core_web_sm` is already loaded at platform startup (step 4, Q66) for
+spaCy `en_core_web_sm` is already loaded at platform startup (step 4 of the [platform startup sequence](../platform/02-api-contracts.md#platform-startup-sequence)) for
 PageIndex extraction in the knowledge ingestion pipeline. The `extract_entities`
 function is added to `qortia/knowledge.py` alongside `extract_index_fields` — same
 model instance, no new dependency, no new startup cost.
@@ -994,7 +994,7 @@ write is not rolled back.
 
 Graphiti review §2 identified point-in-time querying as the most unique capability
 a memory system can offer without requiring a graph database. The question "what did
-the agent believe to be true in Q1 2024?" is unanswerable with the current schema —
+the agent believe to be true in early 2024?" is unanswerable with the current schema —
 superseded memories are marked `is_consolidated = false` but carry no timestamp
 recording when they were superseded.
 
@@ -1008,7 +1008,7 @@ superseded at that timestamp. This is the standard bi-temporal pattern — a sin
 
 **2. `valid_from` defaults to row creation time.**
 No extraction prompt change in this iteration. Temporal markers in episodic content
-("We decided to use Redis in Q1 2024") are not parsed into `valid_from` — that
+("We decided to use Redis in early 2024") are not parsed into `valid_from` — that
 requires prompt engineering and LLM extraction, deferred to a follow-on. The column
 default is correct for all memories written after this migration ships.
 

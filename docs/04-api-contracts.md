@@ -16,7 +16,7 @@ from the design-clarity-monolith. This document supersedes all earlier Qortia de
 
 ## Memory Model
 
-### Two-Scope Memory (Q10)
+### Two-Scope Memory
 
 | Scope | Table | Who writes | Who reads |
 |---|---|---|---|
@@ -29,7 +29,7 @@ from the design-clarity-monolith. This document supersedes all earlier Qortia de
 
 `org_chart` and `weekly_summary` are platform-internal — no agent endpoint writes them.
 
-### All Qortia Endpoints: Active Agent Check (Q87)
+### All Qortia Endpoints: Active Agent Check
 
 All agent-authenticated Qortia endpoints check `agent status = active` before executing.
 
@@ -50,7 +50,7 @@ Without this check, a deleted agent can write org memory during the window (step
 `handoff`/`process`/`decision_log` org memory writes survive agent deletion via `ON DELETE SET NULL`
 on `author_id` — producing orphaned rows never intentionally authored.
 
-### GET /v1/context — Auth Contract (Q76)
+### GET /v1/context — Auth Contract
 
 **Auth:** agent only. User auth returns 403.
 
@@ -62,7 +62,7 @@ Called once per boot by `agent-start.sh`. Never called mid-session.
 
 ## Recall
 
-### POST /v1/recall — Authoritative Schema (Q96)
+### POST /v1/recall — Authoritative Schema
 
 **Auth:** agent only. User auth returns 403.
 
@@ -112,7 +112,7 @@ Flat ranked list — results from all scopes merged and ranked by RRF score × d
 `recall_count` and `last_recalled_at` are internal signals — never returned.
 Empty `results` array is valid.
 
-### org_knowledge Recall: MMR Parameters (Q51)
+### org_knowledge Recall: MMR Parameters
 
 org_knowledge uses MMR (Maximal Marginal Relevance) to reduce redundancy in knowledge results.
 
@@ -128,7 +128,7 @@ mmr_score = lambda_param * similarity - (1 - lambda_param) * max_similarity_to_s
 
 MMR runs on `org_knowledge` only. `hindsight_memories` and `org_memory` use RRF fusion.
 
-### NER Entity Extraction (Q94)
+### NER Entity Extraction
 
 spaCy `en_core_web_sm` extracts named entities at write time for `POST /v1/remember` and
 `POST /v1/remember-org`. Stored in `entities JSONB` column on both tables.
@@ -170,7 +170,7 @@ CREATE INDEX idx_org_memory_entities ON org_memory USING GIN (entities);
 - `org_chart`: entities extracted from formatted org chart string
 - `weekly_summary`: `entities='[]'` — summary is a concatenation; individual handoffs already carry entities
 
-### Dynamic Importance Scoring (Q95)
+### Dynamic Importance Scoring
 
 Static `importance` (assigned at write time by memory type) is augmented with a dynamic signal
 computed from access frequency and recency. Replaces static lookup in RRF fusion.
@@ -221,7 +221,7 @@ def dynamic_importance(base_importance: float, recall_count: int,
 
 ## Remember
 
-### POST /v1/remember — Field Validation (Q75)
+### POST /v1/remember — Field Validation
 
 **Auth:** agent only.
 
@@ -242,7 +242,7 @@ def dynamic_importance(base_importance: float, recall_count: int,
 ```
 One UUID per memory written. `mcp_bridge.py` returns `f"Remembered {len(ids)} memories."` to LLM.
 
-### remember() Batch Atomicity (Q30)
+### remember() Batch Atomicity
 
 One transaction for the entire batch. All inserts + counter increment execute atomically.
 
@@ -260,7 +260,7 @@ WHERE id = $agent_id;
 All succeed or all roll back. No partial batch success.
 In-process `_episodic_counter` incremented by `episodic_count` only after 200 — never optimistically.
 
-### POST /v1/remember-org — Write Semantics (Q78)
+### POST /v1/remember-org — Write Semantics
 
 **Auth:** agent only. Valid types: `handoff | process | decision_log`. `org_chart` and `weekly_summary` are platform-internal — return 422 if submitted.
 
@@ -287,7 +287,7 @@ Multiple rows with the same title would load stale versions alongside current �
 ```
 `mcp_bridge.py` returns `f"Org memory written: {id}"` to LLM.
 
-### POST /v1/remember-org — Validation Order (Q80)
+### POST /v1/remember-org — Validation Order
 
 1. **Enum check first:** if `type` not in `{handoff, process, decision_log}` → 422
 2. **Role check second:** if type requires chief and caller is not chief → 403
@@ -298,7 +298,7 @@ Multiple rows with the same title would load stale versions alongside current �
 
 ## Reflect
 
-### Reflection: Agent-Driven (Q11)
+### Reflection: Agent-Driven
 
 **Trigger:** after every 10 new episodic memories since last reflection.
 **Counter:** `auth.agents.reflection_counter` (Postgres). Tracked in-process in `mcp_bridge.py`.
@@ -325,7 +325,7 @@ If 3 arrived during reflection: Postgres holds 13, reflect returns `reflection_c
 **Result:** consolidated set = fresh synthesis of everything learned. Boot context capped at
 20 mental models + 15 decisions + 20 lessons. Raw memories accumulate unlimited but never bloat boot context.
 
-### reflect() Return Values (Q82)
+### reflect() Return Values
 
 ```
 "Reflection complete."                          — POST /v1/reflect returned 200
@@ -335,7 +335,7 @@ If 3 arrived during reflection: Postgres holds 13, reflect returns `reflection_c
 Auto-trigger path (`asyncio.create_task`) calls `_run_reflect()` directly and discards return.
 The `_reflection_in_progress` guard still protects against race between auto-trigger and manual call.
 
-### _run_reflect() Failure Observability (Q92)
+### _run_reflect() Failure Observability
 
 ```python
 async def _run_reflect() -> None:
@@ -364,7 +364,7 @@ async def _run_reflect() -> None:
 
 ## Forget
 
-### POST /v1/forget (Q68)
+### POST /v1/forget
 
 Permanently deletes a single memory row. Agent-initiated only.
 
@@ -414,7 +414,7 @@ Permanently deletes a single memory row. Agent-initiated only.
 
 ## Knowledge
 
-### org_knowledge Section Splitting Rules (Q64)
+### org_knowledge Section Splitting Rules
 
 Authoritative rules for `POST /v1/knowledge` section splitting pipeline.
 
@@ -437,11 +437,11 @@ Authoritative rules for `POST /v1/knowledge` section splitting pipeline.
 HEADING_PATTERN = re.compile(r'^(#{2,3})\s+(.+)$', re.MULTILINE)
 ```
 
-**Section token counting (Q45):** word-count approximation (`len(content.split()) * 1.3`).
+**Section token counting ([section token counting](qortia/04-api-contracts.md#org_knowledge-section-splitting-rules)):** word-count approximation (`len(content.split()) * 1.3`).
 Rationale: synchronous spaCy call per section is too slow for large documents. Word-count
 approximation is within 10–15% of actual tokens — sufficient for split decisions.
 
-### DELETE /v1/knowledge — Audit Trail (Q81)
+### DELETE /v1/knowledge — Audit Trail
 
 `DELETE /v1/knowledge/{source_path}` appends one row to `memory_history`:
 
@@ -459,7 +459,7 @@ Only defined case where `target_id` is NULL in `memory_history`. Schema comment 
 
 ## memory_history
 
-### Scope: Agent Operations Only (Q31)
+### Scope: Agent Operations Only
 
 `memory_history` logs agent-initiated operations only.
 
@@ -477,7 +477,7 @@ Only defined case where `target_id` is NULL in `memory_history`. Schema comment 
 
 `agent_id NOT NULL` FK makes platform-internal writes structurally unloggable without a sentinel — exempt is correct.
 
-### Retention on Agent Deletion (Q39)
+### Retention on Agent Deletion
 
 `hindsight_memories` → `ON DELETE CASCADE` on `agent_id` FK — deleted with agent.
 `org_memory` → `ON DELETE SET NULL` on `author_id` FK — rows survive, `author_id` becomes NULL.
@@ -491,7 +491,7 @@ remain valid and should be preserved for the tenant.
 
 ## Data Model Decisions
 
-### org_knowledge: content_tsv Removed (Q83)
+### org_knowledge: content_tsv Removed
 
 `content_tsv` and its GIN index removed from `org_knowledge`.
 
@@ -504,7 +504,7 @@ content_tsv  TSVECTOR GENERATED ALWAYS AS (to_tsvector('unicode61', content)) ST
 CREATE INDEX ON org_knowledge USING GIN (content_tsv);
 ```
 
-### org_knowledge Dedup: Embedding Only (Q36)
+### org_knowledge Dedup: Embedding Only
 
 When ingesting knowledge, deduplication uses embedding cosine similarity only.
 `index_fields` (keywords, entities) are recomputed from scratch on each ingest — never deduped.
@@ -512,7 +512,7 @@ When ingesting knowledge, deduplication uses embedding cosine similarity only.
 **Why:** embedding captures semantic meaning; re-indexing keywords/entities ensures they
 reflect the current version of the content, not a cached prior version.
 
-### org_knowledge Re-ingest: Dedup Before Delete (Q38)
+### org_knowledge Re-ingest: Dedup Before Delete
 
 On `POST /v1/knowledge` with an existing `source_path`:
 1. Run dedup check — find semantically identical sections already present
@@ -523,7 +523,7 @@ On `POST /v1/knowledge` with an existing `source_path`:
 embedding compute on sections that haven't changed. Dedup-first preserves unchanged sections
 in-place, only updating sections that actually changed.
 
-### HNSW Index Parameters (Q71)
+### HNSW Index Parameters
 
 Explicit parameters on all three HNSW indexes. Defaults are correct for current scale.
 Documented explicitly so they are intentional, not implicit.
@@ -548,7 +548,7 @@ single agent's row count exceeds 50K. `REINDEX` only — no schema migration.
 
 ---
 
-## Weekly Org Summary (Q12)
+## Weekly Org Summary
 
 Asyncio background task inside FastAPI monolith. No pg_cron. No K8s CronJob.
 
@@ -566,7 +566,7 @@ Tracked via `auth.tenants.weekly_summary_last_run_at`. Multi-replica safe via `S
 
 ---
 
-## Org Memory RBAC (Q97 — ADR-080)
+## Org Memory RBAC (ADR-080)
 
 Two-axis RBAC on `org_memory` and `org_knowledge`, enforced at Postgres RLS layer.
 
