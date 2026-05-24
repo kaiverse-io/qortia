@@ -15,6 +15,7 @@ from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
 from app.qortia.models import RecallRequest, RecallResponse, RecallResult
 from app.qortia.common import EMBEDDING_MODEL, get_litellm_client
+from app.qortia.embedding_cache import get_cached_embedding, put_cached_embedding
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 from app.qortia.remember import _fetch_agent_clearance
@@ -148,8 +149,16 @@ def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
 async def _embed_query(
     query: str, tenant_id: UUID, lang: str = "en"
 ) -> list[float] | None:
+    tid = str(tenant_id)
+    effective_lang = lang or "en"
+
+    # Cache lookup — avoids redundant LiteLLM calls for repeated queries
+    cached = get_cached_embedding(query, tid, effective_lang)
+    if cached is not None:
+        return cached
+
     try:
-        litellm_key = await get_litellm_key(str(tenant_id))
+        litellm_key = await get_litellm_key(tid)
         resp = await get_litellm_client().post(
             "/embeddings",
             headers={"Authorization": f"Bearer {litellm_key}"},
@@ -157,7 +166,9 @@ async def _embed_query(
             timeout=10.0,
         )
         resp.raise_for_status()
-        return resp.json()["data"][0]["embedding"]  # type: ignore[no-any-return]
+        embedding: list[float] = resp.json()["data"][0]["embedding"]
+        put_cached_embedding(query, tid, effective_lang, embedding)
+        return embedding
     except Exception as exc:
         logger.warning({"event": "recall_embed_failed", "error": str(exc)})
         return None
