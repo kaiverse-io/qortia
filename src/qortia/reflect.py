@@ -362,12 +362,17 @@ async def _call_litellm_reflect(
 
 
 def _build_reflect_prompt(recent: list[str], existing: list[dict]) -> str:  # type: ignore[type-arg]
+    from app.qortia.remember import build_temporal_grounding_instruction
+
     recent_block = "\n".join(f"- {m}" for m in recent) or "(none)"
     existing_block = (
         "\n".join(f"- [{m['id']}] [{m['type']}] {m['content']}" for m in existing)
         or "(none)"
     )
+    temporal_instruction = build_temporal_grounding_instruction()
     return f"""You are synthesising an agent's recent experiences into durable mental models and lessons.
+
+{temporal_instruction}
 
 Recent episodic and experiential memories (last 7 days):
 {recent_block}
@@ -395,7 +400,9 @@ Rules:
 - Synthesise patterns, not events
 - Preserve named entities (people, systems, organisations) — they are recall anchors
 - When a memory contains a temporal marker ("last quarter", "in March"), preserve it — do not strip temporal context
+- Preserve specific resolved dates from source memories — do NOT convert them back to relative references
 - Attribute observations to their source when relevant: "user reported X", "agent observed Y", "team decided Z"
+- Preserve [User], [Observed], [Third-party] attribution prefixes from source memories
 
 NEVER include:
 - Specific dates or timestamps unless they define a durable pattern

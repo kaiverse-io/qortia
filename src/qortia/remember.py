@@ -29,6 +29,118 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# ── Extraction Prompt Improvements (#75) ────────────────────────────────────
+# These constants are the canonical extraction guidance for any caller
+# (agent runtime, reflect cycle) that produces memories for Qortia.
+# They are prompt fragments — concatenate into the system/user message
+# before asking an LLM to extract structured memories from conversation.
+
+
+def build_temporal_grounding_instruction(reference_time: datetime | None = None) -> str:
+    """Build temporal grounding instruction with the given reference time.
+
+    If reference_time is None, uses current UTC time.
+    """
+    ts = (reference_time or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M UTC")
+    return f"""Current date and time: {ts}
+
+When extracting memories, resolve all relative temporal references against this
+timestamp. Store resolved dates, not relative references.
+
+Examples:
+- "last Tuesday" → resolve to the actual date (e.g., "on 2026-05-20 (Tuesday)")
+- "last week" → resolve to the actual week (e.g., "during the week of 2026-05-12")
+- "in March" → "in March 2026" (use current year if ambiguous)
+- "yesterday" → resolve to the actual date
+- "recently" → keep as-is if no specific timeframe can be inferred
+
+If the temporal reference is ambiguous or cannot be resolved, store it as-is.
+Do NOT invent dates — only resolve when the reference is unambiguous."""
+
+
+ATTRIBUTION_INSTRUCTION = """When extracting episodic memories from a conversation, prefix each memory with
+the appropriate attribution:
+
+[User] — something the user explicitly stated or expressed
+[Observed] — something you (the agent) observed about the user or situation
+[Third-party] — something mentioned about a person or entity not in the conversation
+
+Examples:
+- "[User] Prefers concise responses over detailed explanations."
+- "[Observed] Struggles with abstract concepts — responds better to concrete examples."
+- "[Third-party] Alice (project lead) approved the architecture change on 2026-05-10."
+
+Use [Observed] when you are inferring from behaviour, not from explicit statements.
+Use [User] only for direct statements or clear expressions of preference."""
+
+
+NEGATIVE_EXTRACTION_INSTRUCTION = """DO NOT extract the following — they produce noise memories with no durable value:
+
+- Pronouns or references without clear antecedents ("he said", "she did", "it worked")
+- Abstract concepts without grounding ("success", "progress", "improvement", "things")
+- Bare relational terms without qualification ("the manager", "the client", "the team")
+  → Use names or specific identifiers instead
+- Generic action nouns ("the meeting", "the task", "the thing", "the issue")
+  → Only extract if the specific meeting/task/issue is named or described
+- Status-only observations with no durable signal:
+  ("done", "ok", "noted", "understood", "will do", "sounds good")
+- Single-turn questions that reveal no durable preference or fact
+  ("what time is it?", "can you help me?", "how do I do X?")
+- Greetings and pleasantries ("hello", "thanks", "goodbye", "have a nice day")
+- Task instructions that do not reveal a durable fact about the user
+  ("please format this as a table", "summarise the above")
+- Observations that are true of every interaction and carry no specific information
+  ("the user asked a question", "I provided an answer")
+- Content that is already captured in a more specific memory type
+  (do not duplicate a decision as an episodic memory)"""
+
+
+def build_extraction_prompt(
+    memory_type: str,
+    reference_time: datetime | None = None,
+) -> str:
+    """Build the full extraction prompt for a given memory type.
+
+    Returns the combined prompt instructions for temporal grounding,
+    attribution (episodic only), and negative examples (episodic/experiential).
+    """
+    parts: list[str] = []
+
+    # Temporal grounding applies to all extraction types
+    parts.append(build_temporal_grounding_instruction(reference_time))
+
+    # Attribution only for episodic memories
+    if memory_type == "episodic":
+        parts.append(ATTRIBUTION_INSTRUCTION)
+
+    # Negative examples for episodic and experiential
+    if memory_type in ("episodic", "experiential"):
+        parts.append(NEGATIVE_EXTRACTION_INSTRUCTION)
+
+    return "\n\n".join(parts)
+
+
+def _extract_valid_from(metadata: dict | None) -> datetime | None:  # type: ignore[type-arg]
+    """Extract valid_from timestamp from memory metadata.
+
+    The caller (agent runtime) may pass valid_from as an ISO-8601 string
+    in metadata["valid_from"] to anchor when a fact became true.
+    Returns None if not present or unparseable — the DB column default (now()) applies.
+    """
+    if not metadata:
+        return None
+    raw = metadata.get("valid_from")
+    if not raw:
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        logger.warning({"event": "invalid_valid_from", "raw_value": str(raw)[:100]})
+        return None
+
+
 async def _fetch_agent_clearance(
     agent_id: object, tenant_id: object
 ) -> tuple[int, str]:
@@ -96,12 +208,22 @@ async def remember(
                     ids.append(str(existing))
                     continue
 
+            # Extract valid_from from metadata (#75 temporal grounding)
+            valid_from = _extract_valid_from(mem.metadata)
+
+            # Build stored metadata — preserve source_message_index for attribution
+            stored_metadata: dict = dict(mem.metadata) if mem.metadata else {}  # type: ignore[type-arg]
+            # Strip valid_from from stored metadata (it lives in its own column)
+            stored_metadata.pop("valid_from", None)
+
             row_id = await conn.fetchval(
                 """
                 INSERT INTO hindsight_memories
                     (tenant_id, agent_id, type, content, importance,
-                     source_task_id, metadata, entities, expires_at, lang, content_hash)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                     source_task_id, metadata, entities, expires_at, lang,
+                     content_hash, valid_from)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                        COALESCE($12, now()))
                 RETURNING id
             """,
                 agent.tenant_id,
@@ -110,11 +232,12 @@ async def remember(
                 mem.content,
                 IMPORTANCE[mem.type],
                 mem.source_task_id,
-                json.dumps(mem.metadata) if mem.metadata else "{}",
+                json.dumps(stored_metadata),
                 json.dumps(entities),
                 expires_at,
                 mem.lang,
                 content_hash,
+                valid_from,
             )
             ids.append(str(row_id))
 
