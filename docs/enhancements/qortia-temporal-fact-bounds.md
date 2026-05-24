@@ -7,7 +7,7 @@ status: post-mvp
 
 # Qortia: Temporal Fact Bounds on Hindsight Memories
 
-**Status:** Open — not yet implemented
+**Status:** Implemented — `valid_from` / `valid_until` landed in V2__temporal_bounds.sql; `_temporal_filter_clause` active in `platform/app/qortia/recall.py`
 **Scope:** `platform/migrations/V7__temporal_bounds.sql`,
 `platform/app/qortia/models.py`, `platform/app/qortia/remember.py`,
 `platform/app/qortia/reflect.py`, `platform/app/qortia/recall.py`,
