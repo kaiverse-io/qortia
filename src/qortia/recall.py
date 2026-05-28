@@ -799,8 +799,10 @@ async def _record_recall_access(
                     SET recall_count = recall_count + 1,
                         last_recalled_at = now()
                     WHERE id = ANY($1::uuid[])
+                      AND tenant_id = $2
                     """,
                     ids,
+                    tenant_id,
                 )
     except Exception as exc:
         logger.warning({"event": "recall_access_tracking_failed", "error": str(exc)})

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
+from app.background.leader import LOCK_KEY_WEEKLY_SUMMARY, try_acquire_leader
 from app.qortia.models import KnowledgeIngestRequest
 from app.db import get_main_pool, tenant_transaction
 from app.qortia.common import assert_agent_active
@@ -213,7 +214,7 @@ def extract_index_fields(heading: str, text: str, lang: str = "en") -> dict[str,
         noun_chunks = list(
             dict.fromkeys(
                 chunk.text.lower()
-                for chunk in doc.noun_chunks  # type: ignore[attr-defined]
+                for chunk in doc.noun_chunks
                 if len(chunk.text.split()) <= 4
             )
         )[:10]
@@ -412,7 +413,11 @@ def build_weekly_summary(handoffs: list[dict]) -> str:  # type: ignore[type-arg]
 async def run_weekly_summary_task() -> None:
     while True:
         await asyncio.sleep(86400)
-        await _run_weekly_summary_cycle()
+        async with try_acquire_leader(
+            get_main_pool(), LOCK_KEY_WEEKLY_SUMMARY
+        ) as is_leader:
+            if is_leader:
+                await _run_weekly_summary_cycle()
 
 
 async def _run_weekly_summary_cycle() -> None:

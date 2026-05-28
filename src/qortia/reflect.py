@@ -176,7 +176,48 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
 
         # 6a. PRUNE — anything not returned by LLM is marked non-consolidated
         # and valid_until stamped to record when it was superseded (ADR-027, 16j)
+        #
+        # Guard: if the LLM returned nothing useful (empty active_ids) or
+        # covers less than 50% of existing consolidated rows, skip the prune
+        # to prevent accidental mass-supersede from malformed LLM output.
+        prune_safe = True
         if existing:
+            existing_consolidated_count = await conn.fetchval(
+                """
+                SELECT count(*) FROM hindsight_memories
+                WHERE agent_id = $1
+                  AND type IN ('mental_model', 'lesson')
+                  AND is_consolidated = true
+                  AND valid_until IS NULL
+                """,
+                agent.agent_id,
+            )
+            if existing_consolidated_count > 0 and len(active_ids) == 0:
+                logger.warning(
+                    {
+                        "event": "reflect_prune_aborted_empty",
+                        "agent_id": str(agent.agent_id),
+                        "existing_consolidated": existing_consolidated_count,
+                        "reason": "LLM returned no active IDs — refusing to wipe all memories",
+                    }
+                )
+                prune_safe = False
+            elif (
+                existing_consolidated_count > 0
+                and len(active_ids) < existing_consolidated_count * 0.5
+            ):
+                logger.warning(
+                    {
+                        "event": "reflect_prune_aborted_low_coverage",
+                        "agent_id": str(agent.agent_id),
+                        "existing_consolidated": existing_consolidated_count,
+                        "active_ids_count": len(active_ids),
+                        "reason": "LLM returned <50% of existing consolidated rows — skipping prune",
+                    }
+                )
+                prune_safe = False
+
+        if existing and prune_safe:
             await conn.execute(
                 """
                 UPDATE hindsight_memories

@@ -153,10 +153,14 @@ async def _expand_with_links(
                        recall_count, last_recalled_at
                 FROM hindsight_memories
                 WHERE id = ANY($1::uuid[])
+                  AND tenant_id = $2
+                  AND agent_id = $3
                   AND tier = 'active'
                   AND (expires_at IS NULL OR expires_at > now())
                 """,
                 new_ids,
+                tenant_id,
+                agent_id,
             )
 
     except Exception as exc:
