@@ -16,7 +16,6 @@ from app.auth.models import AgentIdentity
 from app.qortia.models import RecallRequest, RecallResponse, RecallResult
 from app.qortia.common import EMBEDDING_MODEL, get_litellm_client
 from app.qortia.embedding_cache import get_cached_embedding, put_cached_embedding
-from app.config import settings
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 from app.qortia.remember import _fetch_agent_clearance
@@ -173,6 +172,14 @@ async def _embed_query(
         return embedding
     except Exception as exc:
         logger.warning({"event": "recall_embed_failed", "error": str(exc)})
+        try:
+            from app.telemetry.instruments import qortia_recall_degraded
+
+            qortia_recall_degraded.add(
+                1, {"reason": "embed_failed", "the platform.tenant_id": tid}
+            )
+        except Exception:
+            pass
         return None
 
 
@@ -878,6 +885,14 @@ async def _record_recall_access(
                 )
     except Exception as exc:
         logger.warning({"event": "recall_access_tracking_failed", "error": str(exc)})
+        try:
+            from app.telemetry.instruments import qortia_recall_degraded
+
+            qortia_recall_degraded.add(
+                1, {"reason": "access_failed", "the platform.tenant_id": str(tenant_id)}
+            )
+        except Exception:
+            pass
 
 
 # ── POST /v1/recall ──────────────────────────────────────────
@@ -951,6 +966,20 @@ async def recall(
         for rs in result_sets:
             if isinstance(rs, Exception):
                 logger.warning({"event": "recall_search_error", "error": str(rs)})
+                try:
+                    from app.telemetry.instruments import (
+                        qortia_recall_degraded,
+                    )
+
+                    qortia_recall_degraded.add(
+                        1,
+                        {
+                            "reason": "search_error",
+                            "the platform.tenant_id": str(agent.tenant_id),
+                        },
+                    )
+                except Exception:
+                    pass
                 continue
             for r in list(rs):  # type: ignore[arg-type]
                 if r.scope == "knowledge":

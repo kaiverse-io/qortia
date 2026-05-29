@@ -82,10 +82,7 @@ def load_spacy_model() -> None:
     _get_indic_pipeline("hi")
 
 
-def get_nlp() -> object:  # spaCy Language — avoid hard dep on spacy type stubs
-    assert (
-        _nlp is not None
-    ), "spaCy model not loaded — call load_spacy_model() at startup"
+def get_nlp() -> object | None:  # spaCy Language — avoid hard dep on spacy type stubs
     return _nlp
 
 
@@ -106,7 +103,11 @@ def extract_entities(text: str, lang: str = "en") -> list[str]:
                 ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP
             )
         )[:20]
-    doc = get_nlp()(text)  # type: ignore[operator]
+    nlp = get_nlp()
+    if nlp is None:
+        logger.warning({"event": "ner_model_not_loaded", "lang": lang})
+        return []
+    doc = nlp(text)  # type: ignore[operator]
     return list(
         dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS)
     )[:20]

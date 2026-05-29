@@ -239,8 +239,8 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             if r["action"] == "RETAIN":
                 continue
 
-            # MD5 pre-filter: skip exact/near-exact duplicates within this batch
-            content_hash = hashlib.md5(
+            # sha256 pre-filter: skip exact/near-exact duplicates within this batch
+            content_hash = hashlib.sha256(
                 r["content"].lower().strip().encode()
             ).hexdigest()
             if content_hash in seen_hashes:
@@ -678,7 +678,11 @@ async def _maybe_dedup_memory(
             memory_type,
             memory_id,
         )
-        if neighbour and float(neighbour["similarity"]) >= settings.qortia_dedup_similarity_threshold:
+        if (
+            neighbour
+            and float(neighbour["similarity"])
+            >= settings.qortia_dedup_similarity_threshold
+        ):
             await conn.execute(
                 """
                 UPDATE hindsight_memories
