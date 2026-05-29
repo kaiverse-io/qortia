@@ -16,6 +16,7 @@ from app.auth.models import AgentIdentity
 from app.qortia.models import RecallRequest, RecallResponse, RecallResult
 from app.qortia.common import EMBEDDING_MODEL, get_litellm_client
 from app.qortia.embedding_cache import get_cached_embedding, put_cached_embedding
+from app.config import settings
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 from app.qortia.remember import _fetch_agent_clearance
@@ -25,6 +26,7 @@ router = APIRouter()
 
 RRF_K = 60
 SEARCH_FETCH_MULTIPLIER = 2
+# Default result limits — configurable via Settings (qortia_*_result_limit)
 PRIVATE_RESULT_LIMIT = 20
 ORG_RESULT_LIMIT = 10
 KNOWLEDGE_RESULT_LIMIT = 16

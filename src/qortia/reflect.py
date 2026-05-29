@@ -17,19 +17,18 @@ from app.qortia.common import (
     get_litellm_client,
 )
 from app.qortia.models import ReflectResponse
+from app.config import settings
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-REFLECTION_THRESHOLD = 10
+REFLECTION_THRESHOLD = 10  # overridden by settings.reflection_threshold at call site
 EMBEDDING_BATCH_SIZE = 50
 STABILITY_THRESHOLD = 0.95
-DEDUP_SIMILARITY_THRESHOLD = (
-    0.95  # calibrated for BGE-M3 1024-dim; ADR-105 documents this
-)
-DEDUP_LOOKBACK_DAYS = 7
+DEDUP_SIMILARITY_THRESHOLD = 0.95  # calibrated for BGE-M3 1024-dim; ADR-105; see settings.qortia_dedup_similarity_threshold
+DEDUP_LOOKBACK_DAYS = 7  # see settings.qortia_dedup_lookback_days
 
 
 def _compute_stability_scores(
@@ -315,7 +314,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             WHERE id = $2
             RETURNING reflection_counter
         """,
-            REFLECTION_THRESHOLD,
+            settings.reflection_threshold,
             agent.agent_id,
         )
 
@@ -679,7 +678,7 @@ async def _maybe_dedup_memory(
             memory_type,
             memory_id,
         )
-        if neighbour and float(neighbour["similarity"]) >= DEDUP_SIMILARITY_THRESHOLD:
+        if neighbour and float(neighbour["similarity"]) >= settings.qortia_dedup_similarity_threshold:
             await conn.execute(
                 """
                 UPDATE hindsight_memories
