@@ -303,6 +303,9 @@ async def _recall_episodic(
 async def _recall_short_term(
     body: RecallRequest, agent: AgentIdentity
 ) -> list[RecallResult]:
+    # short_term memories are always in active tier — archive scope is meaningless
+    if body.scope == "archive":
+        raise ValueError("scope='archive' is not supported for type='short_term'")
     if body.scope not in ("private", "all"):
         return []
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
