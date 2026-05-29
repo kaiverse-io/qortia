@@ -71,7 +71,7 @@ async def test_maybe_dedup_archives_when_similarity_above_threshold() -> None:
     mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.reflect.get_main_pool", return_value=mock_pool):
+    with patch("app.qortia.entity_graph.get_main_pool", return_value=mock_pool):
         await _maybe_dedup_memory(memory_id, embedding, uuid4(), uuid4(), "episodic")
 
     mock_conn.execute.assert_called_once()
@@ -93,7 +93,7 @@ async def test_maybe_dedup_no_archive_when_similarity_below_threshold() -> None:
     mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.reflect.get_main_pool", return_value=mock_pool):
+    with patch("app.qortia.entity_graph.get_main_pool", return_value=mock_pool):
         await _maybe_dedup_memory(uuid4(), [0.1] * 1024, uuid4(), uuid4(), "episodic")
 
     mock_conn.execute.assert_not_called()
@@ -111,7 +111,7 @@ async def test_maybe_dedup_no_op_when_no_neighbour() -> None:
     mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.reflect.get_main_pool", return_value=mock_pool):
+    with patch("app.qortia.entity_graph.get_main_pool", return_value=mock_pool):
         await _maybe_dedup_memory(uuid4(), [0.1] * 1024, uuid4(), uuid4(), "episodic")
 
     mock_conn.execute.assert_not_called()
