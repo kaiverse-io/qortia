@@ -422,13 +422,24 @@ async def _vector_private(
     return [_to_result(dict(r), "private") for r in rows]
 
 
-async def _bm25_org(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
-    entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
+async def _bm25_org(
+    body: RecallRequest,
+    agent: AgentIdentity,
+    clearance_order: int,
+    agent_division: str,
+) -> list[RecallResult]:
+    # Explicit clearance predicates: RLS tenant_visibility_read is bypassed by the
+    # platform_write policy for qortia_platform (ADR-080 §0.8 fix).
+    entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=5)
     lang_clause, lang_params = _lang_filter_clause(
-        body.lang, param=3 + len(entity_params)
+        body.lang, param=5 + len(entity_params)
     )
     async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=clearance_order,
+        agent_division=agent_division,
     ) as conn:
         norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
@@ -439,12 +450,18 @@ async def _bm25_org(body: RecallRequest, agent: AgentIdentity) -> list[RecallRes
             FROM org_memory
             WHERE tenant_id = $2
               AND content_tsv @@ plainto_tsquery('simple', $1)
+              AND $3 >= (SELECT level_order FROM tenant_clearance_levels
+                          WHERE tenant_id = org_memory.tenant_id
+                            AND level_name = org_memory.min_clearance)
+              AND ($4 = ANY(audience) OR 'all' = ANY(audience))
               {entity_clause}
               {lang_clause}
             ORDER BY rank DESC LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
             agent.tenant_id,
+            clearance_order,
+            agent_division,
             *entity_params,
             *lang_params,
         )
@@ -452,14 +469,22 @@ async def _bm25_org(body: RecallRequest, agent: AgentIdentity) -> list[RecallRes
 
 
 async def _vector_org(
-    body: RecallRequest, agent: AgentIdentity, qe: list[float]
+    body: RecallRequest,
+    agent: AgentIdentity,
+    qe: list[float],
+    clearance_order: int,
+    agent_division: str,
 ) -> list[RecallResult]:
-    entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
+    entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=5)
     lang_clause, lang_params = _lang_filter_clause(
-        body.lang, param=3 + len(entity_params)
+        body.lang, param=5 + len(entity_params)
     )
     async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=clearance_order,
+        agent_division=agent_division,
     ) as conn:
         rows = await conn.fetch(
             f"""
@@ -469,12 +494,18 @@ async def _vector_org(
             FROM org_memory
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
+              AND $3 >= (SELECT level_order FROM tenant_clearance_levels
+                          WHERE tenant_id = org_memory.tenant_id
+                            AND level_name = org_memory.min_clearance)
+              AND ($4 = ANY(audience) OR 'all' = ANY(audience))
               {entity_clause}
               {lang_clause}
             ORDER BY embedding <=> $1::vector LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             str(qe),
             agent.tenant_id,
+            clearance_order,
+            agent_division,
             *entity_params,
             *lang_params,
         )
@@ -482,10 +513,17 @@ async def _vector_org(
 
 
 async def _bm25_knowledge(
-    body: RecallRequest, agent: AgentIdentity
+    body: RecallRequest,
+    agent: AgentIdentity,
+    clearance_order: int,
+    agent_division: str,
 ) -> list[RecallResult]:
     async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=clearance_order,
+        agent_division=agent_division,
     ) as conn:
         norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
@@ -496,19 +534,33 @@ async def _bm25_knowledge(
             FROM org_knowledge
             WHERE tenant_id = $2
               AND index_tsv @@ plainto_tsquery('simple', $1)
+              AND $3 >= (SELECT level_order FROM tenant_clearance_levels
+                          WHERE tenant_id = org_knowledge.tenant_id
+                            AND level_name = org_knowledge.min_clearance)
+              AND ($4 = ANY(audience) OR 'all' = ANY(audience))
             ORDER BY rank DESC LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
             agent.tenant_id,
+            clearance_order,
+            agent_division,
         )
     return [_to_result(dict(r), "knowledge") for r in rows]
 
 
 async def _vector_knowledge(
-    body: RecallRequest, agent: AgentIdentity, qe: list[float]
+    body: RecallRequest,
+    agent: AgentIdentity,
+    qe: list[float],
+    clearance_order: int,
+    agent_division: str,
 ) -> list[RecallResult]:
     async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=clearance_order,
+        agent_division=agent_division,
     ) as conn:
         rows = await conn.fetch(
             f"""
@@ -518,10 +570,16 @@ async def _vector_knowledge(
             FROM org_knowledge
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
+              AND $3 >= (SELECT level_order FROM tenant_clearance_levels
+                          WHERE tenant_id = org_knowledge.tenant_id
+                            AND level_name = org_knowledge.min_clearance)
+              AND ($4 = ANY(audience) OR 'all' = ANY(audience))
             ORDER BY embedding <=> $1::vector LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             str(qe),
             agent.tenant_id,
+            clearance_order,
+            agent_division,
         )
     results = []
     for r in rows:
@@ -689,7 +747,19 @@ async def _llm_rerank(
                 },
                 timeout=30.0,
             )
-        order = json.loads(resp.json()["choices"][0]["message"]["content"])
+        raw_resp = resp.json()
+        order = json.loads(raw_resp["choices"][0]["message"]["content"])
+        usage = raw_resp.get("usage", {})
+        logger.info(
+            {
+                "event": "qortia_llm_rerank",
+                "the platform.tenant_id": str(agent.tenant_id),
+                "model": model,
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "result_count": len(results),
+            }
+        )
         reranked = [results[i - 1] for i in order if 1 <= i <= len(results)]
         seen = {r.id for r in reranked}
         reranked += [r for r in results if r.id not in seen]
@@ -854,14 +924,22 @@ async def recall(
                 tasks.append(_vector_private(body, agent, query_embedding))
 
         if body.scope in ("org", "all"):
-            tasks.append(_bm25_org(body, agent))
+            tasks.append(_bm25_org(body, agent, clearance_order, agent_division))
             if query_embedding:
-                tasks.append(_vector_org(body, agent, query_embedding))
+                tasks.append(
+                    _vector_org(
+                        body, agent, query_embedding, clearance_order, agent_division
+                    )
+                )
 
         if body.scope in ("knowledge", "all"):
-            tasks.append(_bm25_knowledge(body, agent))
+            tasks.append(_bm25_knowledge(body, agent, clearance_order, agent_division))
             if query_embedding:
-                tasks.append(_vector_knowledge(body, agent, query_embedding))
+                tasks.append(
+                    _vector_knowledge(
+                        body, agent, query_embedding, clearance_order, agent_division
+                    )
+                )
 
         result_sets = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -972,14 +1050,18 @@ async def recall(
     if body.rerank and len(results) >= 2:
         results = await _llm_rerank(body.query, results, agent)
 
-    asyncio.create_task(
-        _record_recall_access(
-            results,
-            agent.tenant_id,
-            agent.agent_id,
-            memory_clearance_order=clearance_order,
-            agent_division=agent_division,
-        )
-    )
+    async def _safe_record_recall_access() -> None:
+        try:
+            await _record_recall_access(
+                results,
+                agent.tenant_id,
+                agent.agent_id,
+                memory_clearance_order=clearance_order,
+                agent_division=agent_division,
+            )
+        except Exception as exc:
+            logger.warning({"event": "recall_access_record_failed", "error": str(exc)})
+
+    asyncio.create_task(_safe_record_recall_access())
 
     return RecallResponse(results=results)

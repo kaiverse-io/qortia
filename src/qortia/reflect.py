@@ -377,7 +377,18 @@ async def _call_litellm_reflect(
         raise HTTPException(500, f"LiteLLM error: {resp.status_code}")
 
     try:
-        raw = resp.json()["choices"][0]["message"]["content"]
+        raw_resp = resp.json()
+        usage = raw_resp.get("usage", {})
+        logger.info(
+            {
+                "event": "qortia_llm_reflect",
+                "the platform.tenant_id": str(tenant_id),
+                "model": model,
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            }
+        )
+        raw = raw_resp["choices"][0]["message"]["content"]
         parsed = json.loads(raw)
         reflections = parsed.get("reflections", [])
         if not reflections:

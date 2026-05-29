@@ -33,7 +33,7 @@ def _get_tenant_cache(tenant_id: str) -> TTLCache[str, list[float]]:
     Must be called under _cache_lock or by functions that acquire it.
     """
     if tenant_id not in _tenant_caches:
-        _tenant_caches[tenant_id] = TTLCache(
+        _tenant_caches[tenant_id] = TTLCache(  # type: ignore[assignment]
             maxsize=settings.embedding_cache_max_size,
             ttl=settings.embedding_cache_ttl_seconds,
         )
