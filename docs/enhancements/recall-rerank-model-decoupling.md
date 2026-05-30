@@ -2,12 +2,12 @@
 kind: enhancement
 owner: platform
 last_reviewed: 2026-05-18
-status: post-mvp
+status: implemented
 ---
 
 # Recall: Decouple LLM Rerank Model from Agent Domain Model
 
-**Status:** Open — not yet implemented
+**Status:** Implemented — 2026-05-30
 **Scope:** `platform/app/qortia/recall.py`
 **ADR required:** No — no schema change, no API contract change; platform settings
 addition is additive

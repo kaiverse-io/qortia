@@ -2,12 +2,12 @@
 kind: enhancement
 owner: platform
 last_reviewed: 2026-05-18
-status: post-mvp
+status: implemented
 ---
 
 # Qortia: Extraction Prompt Improvements
 
-**Status:** Open — not yet implemented
+**Status:** Implemented — 2026-05-30
 **Scope:** `platform/app/qortia/remember.py`, `platform/app/qortia/reflect.py`
 **ADR required:** No — prompt engineering change only; no schema, API contract,
 or dependency change

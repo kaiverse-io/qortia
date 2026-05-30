@@ -2,7 +2,7 @@
 kind: enhancement
 owner: platform
 last_reviewed: 2026-05-18
-status: post-mvp
+status: implemented
 ---
 
 # Multilingual Memory — Qortia Enhancement

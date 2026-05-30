@@ -2,12 +2,12 @@
 kind: enhancement
 owner: platform
 last_reviewed: 2026-05-18
-status: post-mvp
+status: implemented
 ---
 
 # Qortia: Proactive Background Reflection Trigger
 
-**Status:** Open — not yet implemented
+**Status:** Implemented — 2026-05-30
 **Scope:** `platform/app/qortia/reflect.py`, `platform/app/main.py`
 **ADR required:** No — uses existing `reflect()` logic; no schema change, no new
 endpoints, no API contract change
