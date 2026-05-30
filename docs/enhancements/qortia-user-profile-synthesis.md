@@ -1,13 +1,13 @@
 ---
 kind: enhancement
 owner: platform
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-30
 status: post-mvp
 ---
 
 # Qortia: Stakeholder Profile Synthesis for Dedicated-Mode AI Employees
 
-**Status:** Open — not yet implemented
+**Status:** Post-MVP — not yet implemented. See "When to Implement" below.
 **Scope:** `platform/app/qortia/remember.py`, `platform/app/qortia/recall.py`,
 `platform/app/qortia/models.py`, `the agent runtime/scripts/write_user.py`
 **ADR required:** Yes — new LLM call pattern, new API endpoints, profile schema decision
@@ -17,6 +17,30 @@ table and `user_ref` on memories must exist first
 **Research source:** Honcho (plastic-labs/honcho) — deriver architecture and
 `get_context` pattern. `docs/strategy/00-product-vision.md` — Vidya/Munim/health
 navigator scenarios.
+
+---
+
+## When to Implement (Trigger Conditions)
+
+**Classification: Post-MVP.** Do **not** build speculatively. Implement only when
+**all** of the following hold:
+
+1. **GTM trigger** — dedicated-mode (employee-tier) agents become a committed
+   product motion: at least one pilot/paying deployment of a 1:1 named-human agent
+   (e.g. the tutor / support-rep / health-navigator scenarios in
+   `docs/strategy/00-product-vision.md`). While every agent is assistant/shared-mode,
+   there is no `user_ref` to synthesise against — the feature has no input.
+2. **Hard prerequisite** — agent-mode (#70) has shipped to production: the
+   `user_profiles` table and the `user_ref` column on `hindsight_memories` exist and
+   are being populated. This enhancement cannot start before that.
+3. **Telemetry signal** — dedicated-mode agents show the problem this solves:
+   unbounded boot-context growth, or repeated re-recall of the same user facts per
+   session (observable in recall logs). If boot context stays small, defer.
+
+**Do not implement if:** the platform has no dedicated-mode agents in production, or
+#70 has not landed. Until then this is a design on file, not work in flight.
+
+**GitHub issue:** #71 (open, labelled `post-mvp`).
 
 ---
 
