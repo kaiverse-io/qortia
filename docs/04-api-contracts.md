@@ -2,7 +2,7 @@
 kind: architecture
 status: active
 owner: platform
-last_reviewed: 2026-05-20
+last_reviewed: 2026-05-30
 source: migrated from design-clarity-monolith.md Q10–Q97 (qortia-scoped)
 ---
 
@@ -57,6 +57,18 @@ on `author_id` — producing orphaned rows never intentionally authored.
 No path parameter. `agent_id` and `tenant_id` derived exclusively from validated JWT.
 An agent can only fetch its own boot context — no mechanism to request another agent's context.
 Called once per boot by `agent-start.sh`. Never called mid-session.
+
+---
+
+## A2A Tracing Header
+
+`POST /v1/recall` and `POST /v1/remember` accept an optional `X-Work-Order-Id` header.
+When present, the platform includes `work_order_id` in the `recall_executed` and
+`remember_written` structured log events, enabling end-to-end correlation of Qortia
+operations back to the originating work order in the observability pipeline.
+
+`mcp_bridge.py` injects this header automatically via `_the platformAuth.auth_flow()` whenever
+`_active_work_order_id` is set — agents do not need to pass it manually.
 
 ---
 

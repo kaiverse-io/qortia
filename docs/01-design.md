@@ -2,7 +2,7 @@
 kind: architecture
 status: active
 owner: platform
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-30
 ---
 
 # Qortia — Memory Service (Consolidated Design)
