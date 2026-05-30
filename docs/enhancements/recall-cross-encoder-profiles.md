@@ -1,18 +1,32 @@
 ---
 kind: enhancement
 owner: platform
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-30
 status: post-mvp
 ---
 
 # Qortia: Cross-Encoder Reranking and Recall Profiles
 
-**Status:** Open — not yet implemented
-**Scope:** `platform/app/qortia/recall.py`, `platform/app/qortia/models.py`,
-`the agent runtime/mcp_bridge.py`, `litellm.config.yaml`
-**ADR required:** Yes — new model dependency (BGE-Reranker-v2-M3), `rerank`
-type change (bool → union), new `profile` API parameter
-**Depends on:** None
+**Status:** Open — not yet implemented. Architecture decided in **ADR-120**
+(`docs/decisions/qortia.md`); see correction note below before implementing.
+**Scope:** `platform/app/qortia/recall.py`, `platform/app/qortia/recall_rerank.py`,
+`platform/app/qortia/models.py`, `the agent runtime/mcp_bridge.py`, `litellm.config.yaml`,
+`docker-compose.yml` (new Infinity container)
+**ADR:** ADR-120 — Recall Reranking Architecture: Opt-In Profiles + Cross-Encoder
+via Infinity (Not Ollama). Supersedes §2.1 below.
+**Depends on:** Self-hosted Infinity rerank container (ADR-120 D2)
+
+> **⚠️ Correction (2026-05-30, pre-implementation review).** The §2.1 design below
+> assumed BGE-Reranker-v2-M3 could be served via `ollama/bge-reranker-v2-m3` through
+> LiteLLM's `/rerank` with "no new operational dependency". **This is false on our
+> stack.** LiteLLM `v1.83.7-stable` returns `Unsupported provider: ollama` for rerank
+> (BerriAI/litellm#12187), and ollama's own `/api/rerank` is experimental/unpinned
+> (ollama/ollama#7219). Per **ADR-120**, the cross-encoder must be served by a
+> self-hosted **Infinity** container (LiteLLM-supported rerank provider, in-cluster,
+> tenant-safe) — a real new dependency. The model choice (BGE-Reranker-v2-M3) stands;
+> only the serving mechanism changes from ollama to Infinity. The recall-profiles half
+> (§2.2) is independently shippable as **opt-in** (`profile=None` preserves today's
+> path); candidate over-fetch is gated behind the live eval harness (ADR-120 D3).
 **GitHub issue:** #74
 **Research source:** `docs/research/zep-graphiti-review.md` §5 (6 reranker options,
 search config recipes) and §11 (Actionable Patterns #4, #5, #6). Graphiti's
@@ -37,8 +51,10 @@ research synthesis. There is no way to express this without changing the code.
 
 Graphiti's search config recipes (15+ pre-built configurations) and cross-encoder
 reranking (OpenAI, BGE, Gemini reranker models) address both problems. The BGE
-family is already deployed in the platform (BGE-M3 via ollama) — BGE-Reranker-v2-M3
-runs on the same infrastructure with no new operational dependency.
+family is already used in the platform (BGE-M3 via ollama for embeddings).
+BGE-Reranker-v2-M3 reuses the same model family but **cannot** reuse the ollama
+serving path for reranking (see correction note + ADR-120) — it is served by a
+self-hosted Infinity container instead.
 
 ---
 
@@ -88,14 +104,23 @@ async def _cross_encoder_rerank(
     return sorted(candidates, key=lambda r: r.score, reverse=True)
 ```
 
-**LiteLLM config addition** (`litellm.config.yaml`):
+**LiteLLM config addition** (`litellm.config.yaml`) — Infinity-backed, **not** ollama
+(ADR-120 D2). Requires an Infinity container in `docker-compose.yml` serving
+BGE-Reranker-v2-M3 (exact-pinned tag):
 
 ```yaml
 model_list:
   - model_name: bge-reranker-v2-m3
     litellm_params:
-      model: ollama/bge-reranker-v2-m3
-      api_base: http://host.docker.internal:11434
+      model: infinity/bge-reranker-v2-m3
+      api_base: http://infinity:7997
+```
+
+```yaml
+# docker-compose.yml (new service — exact-pinned)
+infinity:
+  image: michaelf34/infinity:<exact-tag>
+  command: ["v2", "--model-id", "BAAI/bge-reranker-v2-m3", "--port", "7997"]
 ```
 
 ### 2.2 Recall profiles
@@ -190,11 +215,11 @@ Tool(name="recall", ..., inputSchema={..., "properties": {
 
 ## 5. Known Constraints
 
-**BGE-Reranker-v2-M3 availability.** The cross-encoder requires the model to be
-pulled in ollama before use. Add to the local dev setup: `ollama pull bge-reranker-v2-m3`.
-The `validate_embedding_dimensions` startup check does not cover the reranker —
-a missing reranker model causes `_cross_encoder_rerank` to fail at call time, not
-at startup. The ADR must document this.
+**BGE-Reranker-v2-M3 availability.** The cross-encoder is served by the Infinity
+container (ADR-120 D2), **not** ollama. Infinity downloads `BAAI/bge-reranker-v2-m3`
+on first boot. The `validate_embedding_dimensions` startup check does not cover the
+reranker — if the Infinity service is unreachable, `_cross_encoder_rerank` fails at
+call time, not at startup. `_llm_rerank` remains the safe fallback.
 
 **`rerank` type change is backward compatible.** `True` maps to `"llm"`, `False`
 maps to no reranking. Existing agents that pass `rerank: true` continue to get LLM
@@ -205,6 +230,13 @@ call (30 candidates × cross-encoder scoring). Agents using `thorough` should no
 be in latency-sensitive paths. The profile description in the MCP tool schema
 makes this explicit.
 
-**LiteLLM rerank endpoint.** LiteLLM's `/rerank` endpoint is available from
-v1.40+. Confirm the pinned LiteLLM version (`v1.83.7-stable`) supports it before
-implementation.
+**LiteLLM rerank endpoint.** Verified (2026-05-30): LiteLLM `v1.83.7-stable`
+exposes `/rerank` but supports it **only** for specific providers (Cohere, Jina,
+Infinity, HF TEI, Bedrock, Azure, Voyage) — **not** ollama (returns
+`Unsupported provider: ollama`, BerriAI/litellm#12187). Infinity is the chosen
+provider precisely because it is LiteLLM-supported, self-hosted, and tenant-safe
+(ADR-120 D2/D4).
+
+**Files Affected (corrected).** The §3 table should add `docker-compose.yml` /
+K8s manifests (new Infinity service) and `platform/app/qortia/recall_rerank.py`
+(where `_cross_encoder_rerank` lives alongside `_llm_rerank`), not `recall.py`.

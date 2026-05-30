@@ -1614,3 +1614,116 @@ In `_embed_single_row`, short_term memories return early before the ollama call.
 - Dedup threshold is provisional — will be amended with production data
 - V13 migration adds `content_hash TEXT` column and replaces the HNSW index
 
+
+---
+
+# ADR-120 — Recall Reranking Architecture: Opt-In Profiles + Cross-Encoder via Infinity (Not Ollama)
+
+**Status:** Accepted
+**Date:** 2026-05-30
+**Phase:** Post-Tenant-0 hardening (Advanced Qortia)
+**Supersedes:** the implementation approach in `docs/qortia/enhancements/recall-cross-encoder-profiles.md` §2.1
+
+---
+
+## Context
+
+`recall()` currently exposes a single reranking option: `RecallRequest.rerank: bool`.
+When `True`, `_llm_rerank` (`recall_rerank.py`) makes a full LLM call (~500ms,
+~$0.001/call) reading the agent's `domain_md` to pick a model, falling back to
+`settings.rerank_model`. The enhancement doc proposed two additions: (1) a
+cross-encoder rerank option and (2) `fast`/`balanced`/`thorough` recall profiles
+with candidate over-fetch.
+
+The enhancement doc's central premise — that BGE-Reranker-v2-M3 "runs on the same
+infrastructure with no new operational dependency" by adding
+`model: ollama/bge-reranker-v2-m3` to `litellm.config.yaml` and calling LiteLLM's
+`/rerank` — was **verified false** during pre-implementation review:
+
+1. **LiteLLM does not support ollama as a rerank provider.** Calling `/rerank` with
+   an `ollama/*` model returns `Unsupported provider: ollama`
+   (BerriAI/litellm#12187, open as of 2026). Our pin is `v1.83.7-stable`
+   (`docker-compose.yml`). LiteLLM rerank providers are Cohere, Jina, Infinity,
+   HuggingFace TEI, AWS Bedrock, Azure AI, Voyage — not ollama.
+2. **Ollama's own `/api/rerank` is experimental.** It is a llama.cpp-derived
+   addition (ollama/ollama#7219, #10467) not reliably present in stable releases;
+   relying on it would float an unpinned, community-maintained capability —
+   violating our exact-pin discipline.
+
+The "no new infra" claim is therefore unachievable as designed. This ADR records
+the corrected architecture so the feature is built on a true premise.
+
+---
+
+## Decisions
+
+### D1: Reranking stays a clean seam; profiles are opt-in and default-preserving
+
+`recall()` applies rerank at exactly one point (`recall.py` — `if body.rerank ...`).
+Recall profiles (`fast`/`balanced`/`thorough`) are added as an **opt-in**
+`RecallRequest.profile` field defaulting to `None`. When `profile is None`, the
+pipeline executes byte-identically to today — no change to the default code path,
+no risk to the competitive recall eval gates. Profiles only alter behaviour when
+an agent explicitly requests one.
+
+`rerank: bool` is widened to `Literal["llm", "cross_encoder"] | bool` with
+`True → "llm"` for backward compatibility.
+
+### D2: Cross-encoder is served by a self-hosted Infinity container, proxied by LiteLLM
+
+BGE-Reranker-v2-M3 is served by an in-cluster **Infinity** container
+(`michaelf34/infinity`, exact-pinned tag) exposing a Cohere/OpenAI-compatible
+rerank endpoint. LiteLLM proxies it as an `infinity` rerank provider — a path
+LiteLLM **does** support. `recall_rerank.py` calls LiteLLM `/rerank` exactly as
+the enhancement doc's `_cross_encoder_rerank` sketch intended; only the LiteLLM
+model entry changes from `ollama/...` to an Infinity-backed entry.
+
+This is a **new operational dependency** (one container). The enhancement doc's
+"no new infra" framing is retracted. Infinity is free, self-hosted, and runs the
+same BGE-Reranker-v2-M3 weights — so the *model* choice stands; only the *serving*
+mechanism changes.
+
+### D3: Candidate over-fetch is gated behind the live eval harness
+
+The valuable half of profiles — `candidate_multiplier` over-fetch — cannot be
+implemented by a single seam edit: the per-method result limits are hardcoded
+inside the six search functions (`_bm25_private`, `_vector_private`, `_bm25_org`,
+`_vector_org`, `_bm25_knowledge`, `_vector_knowledge`). Threading a limit through
+all of them changes candidate sets feeding RRF/MMR and therefore can move
+Recall@5 / MRR. Over-fetch MUST NOT be merged without the eval-regression gates
+passing on a live stack (Recall@5 ≥ 0.95, MRR ≥ 0.86). Until then, profiles ship
+with `candidate_multiplier = 1` (current fetch counts) and only toggle
+stage-enablement + rerank mode.
+
+### D4: Cross-encoder input is tenant memory content — in-cluster serving only
+
+A cross-encoder scores `(query, memory_content)` pairs. Memory content is
+tenant-sensitive (`domain`/`soul`-adjacent). External rerank APIs (Cohere, Jina)
+would egress tenant memory off-cluster — rejected on tenant-isolation grounds.
+Self-hosted Infinity keeps all rerank traffic inside the cluster, consistent with
+the tenant-isolation invariant.
+
+---
+
+## Consequences
+
+- The feature splits into two independently-shippable slices:
+  - **Recall profiles (stage-toggle only)** — no new dependency, eval-safe because
+    default path is untouched; `thorough` routes to existing `_llm_rerank`.
+  - **Cross-encoder + candidate over-fetch** — requires the Infinity container and
+    live-stack eval verification (D2 + D3).
+- A new Infinity container must be added to `docker-compose.yml` and the K8s
+  deployment, exact-pinned, before cross-encoder can be enabled.
+- `recall-cross-encoder-profiles.md` §2.1 is corrected to reference Infinity, not
+  ollama, and the "no new operational dependency" line is removed.
+
+---
+
+## Rejected Alternatives
+
+| Alternative | Why rejected |
+|---|---|
+| `ollama/bge-reranker-v2-m3` via LiteLLM `/rerank` | LiteLLM returns `Unsupported provider: ollama` (litellm#12187). Infeasible on our pin. |
+| Ollama `/api/rerank` called directly from `recall_rerank.py` | Experimental, not in stable ollama; would float an unpinned capability against our exact-pin discipline. |
+| Cohere / Jina hosted rerank API | Egresses tenant memory content off-cluster — violates tenant isolation. |
+| Implement candidate over-fetch now | Touches 6 hardcoded search limits; moves Recall@5/MRR; cannot verify offline. Gated behind live eval harness. |
