@@ -1,13 +1,13 @@
 ---
 kind: enhancement
 owner: platform
-last_reviewed: 2026-05-18
-status: post-mvp
+last_reviewed: 2026-05-30
+status: implemented
 ---
 
 # Recall: Apply Dynamic Importance Decay to Type-Routed Strategies
 
-**Status:** Open — not yet implemented
+**Status:** Implemented — 2026-05-30
 **Scope:** `platform/app/qortia/recall.py`
 **ADR required:** No — no schema change, no API contract change
 **Depends on:** None

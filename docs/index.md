@@ -2,7 +2,7 @@
 kind: index
 status: active
 owner: platform
-last_reviewed: 2026-05-20
+last_reviewed: 2026-05-30
 ---
 
 # Qortia — Component Index
@@ -35,15 +35,15 @@ Memory service: episodic recall, reflection, org knowledge, RBAC, embedding, ben
 
 | File | Title | Status |
 |------|-------|--------|
-| [enhancements/qortia-background-reflection-trigger.md](enhancements/qortia-background-reflection-trigger.md) | Background reflection trigger | post-mvp |
-| [enhancements/qortia-extraction-prompt-improvements.md](enhancements/qortia-extraction-prompt-improvements.md) | Extraction prompt improvements | post-mvp |
-| [enhancements/qortia-semantic-embedding-cache.md](enhancements/qortia-semantic-embedding-cache.md) | Semantic embedding cache (LRU) | post-mvp |
-| [enhancements/qortia-temporal-fact-bounds.md](enhancements/qortia-temporal-fact-bounds.md) | Temporal fact bounds (valid_from/valid_until) | post-mvp |
+| [enhancements/qortia-background-reflection-trigger.md](enhancements/qortia-background-reflection-trigger.md) | Background reflection trigger | implemented |
+| [enhancements/qortia-extraction-prompt-improvements.md](enhancements/qortia-extraction-prompt-improvements.md) | Extraction prompt improvements | implemented |
+| [enhancements/qortia-semantic-embedding-cache.md](enhancements/qortia-semantic-embedding-cache.md) | Semantic embedding cache (LRU) | implemented |
+| [enhancements/qortia-temporal-fact-bounds.md](enhancements/qortia-temporal-fact-bounds.md) | Temporal fact bounds (valid_from/valid_until) | implemented |
 | [enhancements/qortia-user-profile-synthesis.md](enhancements/qortia-user-profile-synthesis.md) | Stakeholder profile synthesis | post-mvp |
-| [enhancements/multilingual-memory.md](enhancements/multilingual-memory.md) | Multilingual memory | post-mvp |
+| [enhancements/multilingual-memory.md](enhancements/multilingual-memory.md) | Multilingual memory | implemented |
 | [enhancements/recall-cross-encoder-profiles.md](enhancements/recall-cross-encoder-profiles.md) | Cross-encoder reranking profiles | post-mvp |
-| [enhancements/recall-importance-decay-type-routed.md](enhancements/recall-importance-decay-type-routed.md) | Importance decay type-routed | post-mvp |
-| [enhancements/recall-rerank-model-decoupling.md](enhancements/recall-rerank-model-decoupling.md) | Rerank model decoupling | post-mvp |
+| [enhancements/recall-importance-decay-type-routed.md](enhancements/recall-importance-decay-type-routed.md) | Importance decay type-routed | implemented |
+| [enhancements/recall-rerank-model-decoupling.md](enhancements/recall-rerank-model-decoupling.md) | Rerank model decoupling | implemented |
 
 ## Related Components
 

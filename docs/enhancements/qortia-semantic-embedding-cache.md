@@ -7,7 +7,7 @@ status: implemented
 
 # Qortia: Semantic Embedding Cache for Recall Pipeline
 
-**Status:** Open — ADR required before implementation
+**Status:** Implemented — 2026-05-30
 **Scope:** `platform/app/qortia/recall.py`, `platform/app/config.py`
 **ADR required:** Yes — introduces a new caching layer with eviction semantics and
 a cosine similarity threshold that must be documented and validated
