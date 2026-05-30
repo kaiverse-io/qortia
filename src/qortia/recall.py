@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import math
 from collections import defaultdict
-from datetime import datetime, timezone
 from uuid import UUID
 
-import yaml
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
@@ -19,18 +15,27 @@ from app.qortia.embedding_cache import get_cached_embedding, put_cached_embeddin
 from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 from app.qortia.remember import _fetch_agent_clearance
-
-logger = logging.getLogger(__name__)
 from app.qortia.recall_helpers import (
-    RRF_K, SEARCH_FETCH_MULTIPLIER, PRIVATE_RESULT_LIMIT,
-    ORG_RESULT_LIMIT, KNOWLEDGE_RESULT_LIMIT, _VALID_MEMORY_TYPES,
-    _bm25_normalization, dynamic_importance, _entity_filter_clause,
-    _type_filter_clause, _temporal_filter_clause, _lang_filter_clause,
-    _to_result, _rrf_fuse, _keyword_boost, _cosine, _mmr, _sort_by_importance,
+    SEARCH_FETCH_MULTIPLIER,
+    PRIVATE_RESULT_LIMIT,
+    ORG_RESULT_LIMIT,
+    KNOWLEDGE_RESULT_LIMIT,
+    _bm25_normalization,
+    _entity_filter_clause,
+    _type_filter_clause,
+    _temporal_filter_clause,
+    _lang_filter_clause,
+    _to_result,
+    _rrf_fuse,
+    _keyword_boost,
+    _mmr,
+    _sort_by_importance,
 )
 from app.qortia.recall_rerank import _llm_rerank, _bfs_entity_traversal
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
 
 async def _embed_query(
     query: str, tenant_id: UUID, lang: str = "en"
@@ -548,6 +553,7 @@ async def _record_recall_access(
 async def recall(
     body: RecallRequest,
     agent: AgentIdentity = Depends(require_agent),
+    x_work_order_id: str | None = Header(default=None, alias="X-Work-Order-Id"),
 ) -> RecallResponse:
     from app.qortia.common import assert_agent_active
 
@@ -740,5 +746,16 @@ async def recall(
             logger.warning({"event": "recall_access_record_failed", "error": str(exc)})
 
     asyncio.create_task(_safe_record_recall_access())
+
+    logger.info(
+        {
+            "event": "recall_executed",
+            "agent_id": str(agent.agent_id),
+            "the platform.tenant_id": str(agent.tenant_id),
+            "scope": body.scope,
+            "result_count": len(results),
+            "work_order_id": x_work_order_id,
+        }
+    )
 
     return RecallResponse(results=results)

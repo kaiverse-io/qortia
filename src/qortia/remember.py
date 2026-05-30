@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
@@ -38,7 +38,7 @@ try:
 
     _DetectorFactory.seed = 0  # deterministic output across calls
 except ImportError:  # pragma: no cover
-    detect = None  # type: ignore[assignment]
+    detect = None
 
 
 def _detect_lang(text: str) -> str:
@@ -46,7 +46,7 @@ def _detect_lang(text: str) -> str:
     if detect is None:
         return "en"
     try:
-        detected = detect(text)
+        detected = str(detect(text))
         return detected.split("-")[0].lower()
     except Exception:
         return "en"
@@ -189,6 +189,7 @@ async def _fetch_agent_clearance(
 async def remember(
     body: RememberRequest,
     agent: AgentIdentity = Depends(require_agent),
+    x_work_order_id: str | None = Header(default=None, alias="X-Work-Order-Id"),
 ) -> RememberResponse:
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -303,6 +304,16 @@ async def remember(
                 episodic_count,
                 agent.agent_id,
             )
+
+    logger.info(
+        {
+            "event": "remember_written",
+            "agent_id": str(agent.agent_id),
+            "the platform.tenant_id": str(agent.tenant_id),
+            "memory_count": len(ids),
+            "work_order_id": x_work_order_id,
+        }
+    )
 
     return RememberResponse(ids=ids)
 
