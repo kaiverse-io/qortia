@@ -26,7 +26,7 @@ from app.qortia.recall_helpers import (
     ORG_RESULT_LIMIT, KNOWLEDGE_RESULT_LIMIT, _VALID_MEMORY_TYPES,
     _bm25_normalization, dynamic_importance, _entity_filter_clause,
     _type_filter_clause, _temporal_filter_clause, _lang_filter_clause,
-    _to_result, _rrf_fuse, _keyword_boost, _cosine, _mmr,
+    _to_result, _rrf_fuse, _keyword_boost, _cosine, _mmr, _sort_by_importance,
 )
 from app.qortia.recall_rerank import _llm_rerank, _bfs_entity_traversal
 
@@ -102,7 +102,7 @@ async def _recall_decisions(
             agent.agent_id,
             *entity_params,
         )
-    return [_to_result(dict(r), "private") for r in rows]
+    return _sort_by_importance([_to_result(dict(r), "private") for r in rows])
 
 
 async def _recall_lessons(
@@ -140,9 +140,9 @@ async def _recall_lessons(
             agent.agent_id,
             *entity_params,
         )
-    return [
-        _to_result(dict(r), "private") for r in rows if (r.get("score") or 0) >= 0.35
-    ]
+    return _sort_by_importance(
+        [_to_result(dict(r), "private") for r in rows if (r.get("score") or 0) >= 0.35]
+    )
 
 
 async def _recall_episodic(
@@ -182,7 +182,7 @@ async def _recall_episodic(
             agent.agent_id,
             *entity_params,
         )
-    return [_to_result(dict(r), "private") for r in rows]
+    return _sort_by_importance([_to_result(dict(r), "private") for r in rows])
 
 
 async def _recall_short_term(
@@ -216,7 +216,7 @@ async def _recall_short_term(
             agent.agent_id,
             *entity_params,
         )
-    return [_to_result(dict(r), "private") for r in rows]
+    return _sort_by_importance([_to_result(dict(r), "private") for r in rows])
 
 
 # ── Full hybrid pipeline ─────────────────────────────────────

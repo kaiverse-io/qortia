@@ -132,6 +132,24 @@ def _rrf_fuse(
 
     return [by_id[rid] for rid in sorted(scores.keys(), key=final_score, reverse=True)]
 
+
+def _sort_by_importance(results: list[RecallResult]) -> list[RecallResult]:
+    """Re-rank a flat result list by dynamic_importance (frequency + recency boost).
+
+    Applied at the return site of type-routed strategies so that frequently-recalled
+    and recently-accessed memories surface above raw BM25/cosine rank.
+    """
+    return sorted(
+        results,
+        key=lambda r: dynamic_importance(
+            base_importance=r.importance if r.importance is not None else 0.5,
+            recall_count=getattr(r, "_recall_count", 0),
+            last_recalled_at=getattr(r, "_last_recalled_at", None),
+        ),
+        reverse=True,
+    )
+
+
 def _keyword_boost(query: str, content: str) -> float:
     """Normalised token overlap between query and content (case-insensitive).
 

@@ -125,11 +125,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
         )
 
     domain = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
-    model = (
-        domain.get("model", "anthropic/claude-3-haiku-20240307")
-        if domain
-        else "anthropic/claude-3-haiku-20240307"
-    )
+    model = (domain.get("model") if domain else None) or settings.rerank_model
 
     litellm_key = await get_litellm_key(str(agent.tenant_id))
     reflections = await _call_litellm_reflect(
@@ -166,11 +162,38 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
     new_ids: list[tuple[object, object]] = []
     new_counter: int = 0
     stable_count = 0
+    memories_written, new_counter = await _write_reflections(
+        agent_id=agent.agent_id,
+        tenant_id=agent.tenant_id,
+        reflections=reflections,
+        new_embeddings=new_embeddings,
+        existing_embeddings=existing_embeddings,
+        existing=existing,
+        clearance_order=clearance_order,
+        agent_division=agent_division,
+    )
+
+    return ReflectResponse(
+        memories_written=memories_written, reflection_counter=new_counter
+    )
+
+
+async def _write_reflections(
+    agent_id: UUID,
+    tenant_id: UUID,
+    reflections: list[dict[str, Any]],
+    new_embeddings: dict[int, list[float] | None],
+    existing_embeddings: dict[str, list[float] | None],
+    existing: list[dict[str, Any]],
+    clearance_order: int,
+    agent_division: str | None,
+) -> tuple[int, int]:
+    """Write reflection results to DB. Returns (memories_written, new_counter)."""
     unstable_count = 0
     async with tenant_transaction(
         get_main_pool(),
-        agent.tenant_id,
-        agent.agent_id,
+        tenant_id,
+        agent_id,
         memory_clearance_order=clearance_order,
         agent_division=agent_division,
     ) as conn:
@@ -179,12 +202,6 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             if r["action"] in ("UPDATE", "RETAIN"):
                 active_ids.append(UUID(r["id"]))
 
-        # 6a. PRUNE — anything not returned by LLM is marked non-consolidated
-        # and valid_until stamped to record when it was superseded (ADR-027, 16j)
-        #
-        # Guard: if the LLM returned nothing useful (empty active_ids) or
-        # covers less than 50% of existing consolidated rows, skip the prune
-        # to prevent accidental mass-supersede from malformed LLM output.
         prune_safe = True
         if existing:
             existing_consolidated_count = await conn.fetchval(
@@ -195,13 +212,13 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                   AND is_consolidated = true
                   AND valid_until IS NULL
                 """,
-                agent.agent_id,
+                agent_id,
             )
             if existing_consolidated_count > 0 and len(active_ids) == 0:
                 logger.warning(
                     {
                         "event": "reflect_prune_aborted_empty",
-                        "agent_id": str(agent.agent_id),
+                        "agent_id": str(agent_id),
                         "existing_consolidated": existing_consolidated_count,
                         "reason": "LLM returned no active IDs — refusing to wipe all memories",
                     }
@@ -214,7 +231,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 logger.warning(
                     {
                         "event": "reflect_prune_aborted_low_coverage",
-                        "agent_id": str(agent.agent_id),
+                        "agent_id": str(agent_id),
                         "existing_consolidated": existing_consolidated_count,
                         "active_ids_count": len(active_ids),
                         "reason": "LLM returned <50% of existing consolidated rows — skipping prune",
@@ -232,12 +249,12 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                   AND type IN ('mental_model', 'lesson')
                   AND is_consolidated = true
                   AND id != ALL($2::uuid[])
-            """,
-                agent.agent_id,
+                """,
+                agent_id,
                 active_ids,
             )
 
-        new_ids = []
+        new_ids: list[tuple[object, object]] = []
         seen_hashes: set[str] = set()
         stable_count = 0
         unstable_count = 0
@@ -245,7 +262,6 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             if r["action"] == "RETAIN":
                 continue
 
-            # sha256 pre-filter: skip exact/near-exact duplicates within this batch
             content_hash = hashlib.sha256(
                 r["content"].lower().strip().encode()
             ).hexdigest()
@@ -254,7 +270,6 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 continue
             seen_hashes.add(content_hash)
 
-            # Compute stability score
             new_emb = new_embeddings.get(i)
             stability: float | None = None
             if r["action"] == "UPDATE" and r.get("id"):
@@ -270,19 +285,17 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             elif r["action"] == "CREATE":
                 unstable_count += 1
 
-            # For UPDATE, deactivate the old row first
             if r["action"] == "UPDATE":
                 await conn.execute(
                     """
                     UPDATE hindsight_memories
                     SET is_consolidated = false
                     WHERE id = $1 AND agent_id = $2
-                """,
+                    """,
                     UUID(r["id"]),
-                    agent.agent_id,
+                    agent_id,
                 )
 
-            # Insert new version (for CREATE or UPDATE)
             try:
                 from app.qortia.knowledge import extract_entities_with_types
 
@@ -299,9 +312,9 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                      is_consolidated, entities, embedding, stability_score)
                 VALUES ($1, $2, $3, $4, $5, true, $6, $7::vector, $8)
                 RETURNING id
-            """,
-                agent.tenant_id,
-                agent.agent_id,
+                """,
+                tenant_id,
+                agent_id,
                 r["type"],
                 r["content"],
                 float(r["importance"]),
@@ -311,7 +324,6 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             )
             new_ids.append((row_id, r.get("id")))
 
-        # 6c. Decrement reflection_counter atomically
         new_counter = await conn.fetchval(
             """
             UPDATE auth.agents
@@ -319,14 +331,13 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 updated_at = now()
             WHERE id = $2
             RETURNING reflection_counter
-        """,
+            """,
             settings.reflection_threshold,
-            agent.agent_id,
+            agent_id,
         )
 
-        # 6d. Audit trail (with lineage for updates)
         for row_id, parent_id in new_ids:
-            metadata = {}
+            metadata: dict[str, Any] = {}
             if parent_id:
                 metadata["parent_id"] = parent_id
             await conn.execute(
@@ -334,9 +345,9 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 INSERT INTO memory_history
                     (tenant_id, agent_id, operation, target_table, target_id, metadata)
                 VALUES ($1, $2, 'reflect', 'hindsight_memories', $3, $4)
-            """,
-                agent.tenant_id,
-                agent.agent_id,
+                """,
+                tenant_id,
+                agent_id,
                 row_id,
                 json.dumps(metadata),
             )
@@ -344,16 +355,14 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
     logger.info(
         {
             "event": "reflect_incremental",
-            "agent_id": str(agent.agent_id),
+            "the platform.agent_id": str(agent_id),
+            "the platform.tenant_id": str(tenant_id),
             "memories_written": len(new_ids),
             "stable_updates": stable_count,
             "unstable_updates": unstable_count,
         }
     )
-
-    return ReflectResponse(
-        memories_written=len(new_ids), reflection_counter=new_counter
-    )
+    return len(new_ids), new_counter
 
 
 async def _call_litellm_reflect(
@@ -704,3 +713,148 @@ async def validate_embedding_dimensions() -> None:
         raise
     except Exception as exc:
         raise RuntimeError(f"Embedding model unavailable: {exc}") from exc
+
+
+# ── Background reflection trigger ────────────────────────────
+
+
+async def run_background_reflection_trigger() -> None:
+    """Supervised background task: triggers reflection for agents idle > window."""
+    while True:
+        await asyncio.sleep(settings.idle_reflection_interval_s)
+        await _trigger_idle_reflections()
+
+
+async def _trigger_idle_reflections() -> None:
+    try:
+        async with get_main_pool().acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT a.id AS agent_id, a.tenant_id
+                FROM auth.agents a
+                WHERE a.status = 'active'
+                  AND a.updated_at < now() - ($1 * interval '1 hour')
+                  AND EXISTS (
+                      SELECT 1 FROM hindsight_memories hm
+                      WHERE hm.agent_id = a.id
+                      LIMIT 1
+                  )
+                """,
+                settings.idle_reflection_window_h,
+            )
+        for row in rows:
+            await _reflect_agent(UUID(str(row["agent_id"])), UUID(str(row["tenant_id"])))
+    except Exception as exc:
+        logger.warning({"event": "idle_reflection_trigger_failed", "error": str(exc)})
+
+
+async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
+    """Run reflection for a single agent from the background trigger.
+
+    Mirrors the HTTP /v1/reflect endpoint logic but accepts raw UUIDs rather than
+    an AgentIdentity so it can be called without an inbound JWT context.
+    """
+    from app.qortia.remember import _fetch_agent_clearance
+
+    try:
+        clearance_order, agent_division = await _fetch_agent_clearance(
+            agent_id, tenant_id
+        )
+        recent: list[dict[str, Any]] = []
+        existing: list[dict[str, Any]] = []
+        domain_md_raw: str | None = None
+
+        async with tenant_transaction(
+            get_main_pool(),
+            tenant_id,
+            agent_id,
+            memory_clearance_order=clearance_order,
+            agent_division=agent_division,
+        ) as conn:
+            status = await conn.fetchval(
+                "SELECT status FROM auth.agents WHERE id = $1 AND tenant_id = $2",
+                agent_id,
+                tenant_id,
+            )
+            if status != "active":
+                return
+
+            recent = await conn.fetch(
+                """
+                SELECT content FROM hindsight_memories
+                WHERE agent_id = $1
+                  AND type IN ('episodic', 'experiential')
+                  AND tier = 'active'
+                  AND (expires_at IS NULL OR expires_at > now())
+                  AND created_at > now() - interval '7 days'
+                ORDER BY created_at DESC LIMIT 30
+                """,
+                agent_id,
+            )
+            existing = await conn.fetch(
+                """
+                SELECT id, type, content, embedding FROM hindsight_memories
+                WHERE agent_id = $1
+                  AND type IN ('mental_model', 'lesson')
+                  AND is_consolidated = true
+                ORDER BY importance DESC
+                """,
+                agent_id,
+            )
+            domain_md_raw = await conn.fetchval(
+                "SELECT domain_md FROM auth.agents WHERE id = $1 AND tenant_id = $2",
+                agent_id,
+                tenant_id,
+            )
+
+        if not recent:
+            return  # nothing to reflect on
+
+        domain = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
+        model = (domain.get("model") if domain else None) or settings.rerank_model
+        litellm_key = await get_litellm_key(str(tenant_id))
+
+        reflections = await _call_litellm_reflect(
+            model=model,
+            recent=[r["content"] for r in recent],
+            existing=[
+                {"id": str(r["id"]), "type": r["type"], "content": r["content"]}
+                for r in existing
+            ],
+            litellm_key=litellm_key,
+            agent_id=agent_id,
+            tenant_id=tenant_id,
+        )
+
+        existing_embeddings: dict[str, list[float] | None] = {
+            str(r["id"]): list(r["embedding"]) if r.get("embedding") else None
+            for r in existing
+        }
+        new_embeddings: dict[int, list[float] | None] = {}
+        for i, r in enumerate(reflections):
+            if r["action"] in ("CREATE", "UPDATE"):
+                try:
+                    new_embeddings[i] = await _get_embedding(r["content"], litellm_key)
+                except Exception as exc:
+                    logger.warning({"event": "reflect_embed_failed", "error": str(exc)})
+                    new_embeddings[i] = None
+
+        await _write_reflections(
+            agent_id=agent_id,
+            tenant_id=tenant_id,
+            reflections=reflections,
+            new_embeddings=new_embeddings,
+            existing_embeddings=existing_embeddings,
+            existing=list(existing),
+            clearance_order=clearance_order,
+            agent_division=agent_division,
+        )
+    except Exception as exc:
+        logger.warning(
+            {
+                "event": "background_reflect_failed",
+                "the platform.agent_id": str(agent_id),
+                "the platform.tenant_id": str(tenant_id),
+                "error": str(exc),
+            }
+        )

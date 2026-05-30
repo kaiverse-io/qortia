@@ -28,6 +28,29 @@ from app.qortia.common import assert_agent_active
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# BCP-47 codes supported by xx_ent_wiki_sm routing in knowledge.py
+_SUPPORTED_INDIC_LANGS = frozenset({"hi", "bn", "ta", "te", "mr"})
+
+
+try:
+    from langdetect import DetectorFactory as _DetectorFactory
+    from langdetect import detect
+
+    _DetectorFactory.seed = 0  # deterministic output across calls
+except ImportError:  # pragma: no cover
+    detect = None  # type: ignore[assignment]
+
+
+def _detect_lang(text: str) -> str:
+    """Detect BCP-47 language code from text. Returns 'en' on failure or unknown lang."""
+    if detect is None:
+        return "en"
+    try:
+        detected = detect(text)
+        return detected.split("-")[0].lower()
+    except Exception:
+        return "en"
+
 
 # ── Extraction Prompt Improvements (#75) ────────────────────────────────────
 # These constants are the canonical extraction guidance for any caller
@@ -176,8 +199,21 @@ async def remember(
         episodic_count = 0
 
         for mem in body.memories:
+            # Auto-detect language when agent did not explicitly set it (defaults to "en")
+            effective_lang = mem.lang
+            if effective_lang == "en" and len(mem.content) >= 20:
+                detected = _detect_lang(mem.content)
+                if detected != "en":
+                    effective_lang = detected
+                    logger.info(
+                        {
+                            "event": "lang_auto_detected",
+                            "detected": detected,
+                            "the platform.tenant_id": str(agent.tenant_id),
+                        }
+                    )
             try:
-                entities = extract_entities_with_types(mem.content, lang=mem.lang)
+                entities = extract_entities_with_types(mem.content, lang=effective_lang)
             except Exception as exc:
                 logger.warning({"event": "ner_extraction_failed", "error": str(exc)})
                 entities = []
@@ -235,7 +271,7 @@ async def remember(
                 json.dumps(stored_metadata),
                 json.dumps(entities),
                 expires_at,
-                mem.lang,
+                effective_lang,
                 content_hash,
                 valid_from,
             )

@@ -1,15 +1,20 @@
 """LLM rerank and entity BFS traversal for the recall pipeline."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from uuid import UUID
+
+import yaml
+
+from app.auth.models import AgentIdentity
+from app.config import settings
+from app.qortia.common import EMBEDDING_MODEL, get_litellm_client
 from app.qortia.models import RecallResult
 from app.qortia.recall_helpers import _cosine
-from app.vault import get_litellm_key
-from app.qortia.common import get_litellm_client, EMBEDDING_MODEL
-from app.auth.models import AgentIdentity
 from app.db import get_main_pool, tenant_transaction
+from app.vault import get_litellm_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +32,9 @@ async def _llm_rerank(
                 agent.agent_id,
                 agent.tenant_id,
             )
-        model = yaml.safe_load(domain_md_raw).get(
-            "model", "anthropic/claude-3-haiku-20240307"
-        )
+        model = (yaml.safe_load(domain_md_raw or "{}") or {}).get(
+            "model"
+        ) or settings.rerank_model
         litellm_key = await get_litellm_key(str(agent.tenant_id))
 
         numbered = "\n".join(
