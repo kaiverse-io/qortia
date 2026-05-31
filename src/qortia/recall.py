@@ -454,11 +454,12 @@ async def _bm25_knowledge(
             FROM org_knowledge
             WHERE tenant_id = $2
               AND index_tsv @@ plainto_tsquery('simple', $1)
-              AND $3 >= (SELECT level_order FROM tenant_clearance_levels
-                          WHERE tenant_id = org_knowledge.tenant_id
-                            AND level_name = org_knowledge.min_clearance)
+              AND ($3 >= (SELECT level_order FROM tenant_clearance_levels
+                           WHERE tenant_id = org_knowledge.tenant_id
+                             AND level_name = org_knowledge.min_clearance)
+                   OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels
+                                  WHERE tenant_id = org_knowledge.tenant_id))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
-              AND (valid_until IS NULL OR valid_until > now())
             ORDER BY rank DESC LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
@@ -491,11 +492,12 @@ async def _vector_knowledge(
             FROM org_knowledge
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
-              AND $3 >= (SELECT level_order FROM tenant_clearance_levels
-                          WHERE tenant_id = org_knowledge.tenant_id
-                            AND level_name = org_knowledge.min_clearance)
+              AND ($3 >= (SELECT level_order FROM tenant_clearance_levels
+                           WHERE tenant_id = org_knowledge.tenant_id
+                             AND level_name = org_knowledge.min_clearance)
+                   OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels
+                                  WHERE tenant_id = org_knowledge.tenant_id))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
-              AND (valid_until IS NULL OR valid_until > now())
             ORDER BY embedding <=> $1::vector LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             str(qe),
