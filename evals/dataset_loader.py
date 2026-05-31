@@ -1,6 +1,6 @@
 """
 Shared utilities for seeding eval agents and memories via the platform API.
-Used by run_reh.py, run_alb.py, run_pib.py, and run_comparative.py.
+Used by run_reh.py and run_pib.py.
 """
 
 from __future__ import annotations

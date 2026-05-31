@@ -53,7 +53,7 @@ def _compute_stability_scores(
                   embedding (list[float] | None)
     existing_embeddings: {str(id): embedding | None} for existing consolidated rows
     """
-    from app.qortia.recall import _cosine
+    from app.qortia.recall_helpers import _cosine
 
     scores: list[float | None] = []
     for mem in new_memories:
@@ -275,7 +275,7 @@ async def _write_reflections(
             if r["action"] == "UPDATE" and r.get("id"):
                 old_emb = existing_embeddings.get(r["id"])
                 if new_emb and old_emb:
-                    from app.qortia.recall import _cosine
+                    from app.qortia.recall_helpers import _cosine
 
                     stability = _cosine(new_emb, old_emb)
                     if stability >= STABILITY_THRESHOLD:
