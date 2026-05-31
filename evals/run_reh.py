@@ -78,18 +78,27 @@ async def run_reh(dataset_path: Path) -> int:
     ]
     avg_drift = sum(drift_gaps) / len(drift_gaps) if drift_gaps else 0.0
 
+    # Token efficiency: avg tokens retrieved per query (Mem0 target: <7k)
+    token_counts = [r.get("tokens_retrieved", 0) for r in case_results if r.get("tokens_retrieved")]
+    avg_tokens = sum(token_counts) / len(token_counts) if token_counts else 0.0
+    TOKEN_TARGET = 7000.0
+
     print(f"\n{'Metric':<25} {'Score':>8}  {'Target':>8}  Status")
     print("-" * 55)
     _print_metric("Recall@5", recall_at_5, RECALL_AT_5_TARGET)
     _print_metric("Recall@10", recall_at_10, RECALL_AT_10_TARGET)
     _print_metric("MRR", mrr, MRR_TARGET)
     _print_metric("Semantic Drift gap", avg_drift, SEMANTIC_DRIFT_TARGET)
+    if avg_tokens > 0:
+        print(f"  {'Avg tokens retrieved':<23} {avg_tokens:>8.0f}  {TOKEN_TARGET:>8.0f}  "
+              f"{'✓' if avg_tokens <= TOKEN_TARGET else '✗'}")
 
     report = {
         "recall_at_5": recall_at_5,
         "recall_at_10": recall_at_10,
         "mrr": mrr,
         "semantic_drift_avg": avg_drift,
+        "avg_tokens_retrieved": avg_tokens,
         "cases": case_results,
     }
     out = Path("evals/results/reh_latest.json")
@@ -204,6 +213,9 @@ async def _run_reh_case(
         if len(results) < case["expected"]["min_results"]:
             passed = False
 
+    # Token efficiency: count words in all returned results (proxy for token count)
+    tokens_retrieved = sum(len(r["content"].split()) for r in results)
+
     return {
         "id": case["id"],
         "pass": passed,
@@ -211,6 +223,7 @@ async def _run_reh_case(
         "recall_at_10": recall_at_10,
         "mrr": mrr,
         "semantic_drift_gap": semantic_drift_gap,
+        "tokens_retrieved": tokens_retrieved,
         "reason": None if passed else "ground truth not in top 5",
     }
 

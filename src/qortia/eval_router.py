@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 from uuid import UUID
@@ -57,6 +58,10 @@ class SeedMemoryRequest(BaseModel):
     mem_type: str = "episodic"
     scope: str = "private"
     lang: str = "en"
+    importance: float = 0.5
+    valid_from: str | None = None   # ISO-8601; None = always valid from creation
+    valid_until: str | None = None  # ISO-8601; None = currently valid (no expiry)
+    is_consolidated: bool = False   # For mental_model/lesson seeded directly
 
 
 @router.post("/seed-memory")
@@ -69,19 +74,47 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
     except Exception:
         entities = []
 
+    def _parse_dt(s: str | None) -> datetime.datetime | None:
+        if s is None:
+            return None
+        try:
+            dt = datetime.datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt
+        except ValueError:
+            return None
+
+    valid_from_dt = _parse_dt(req.valid_from)
+    valid_until_dt = _parse_dt(req.valid_until)
+
+    # Build INSERT dynamically — only include temporal columns when explicitly set
+    # to avoid overriding NOT NULL DEFAULT values with NULL.
+    extra_cols = "is_consolidated"
+    extra_vals = "$8"
+    params: list[object] = [
+        req.tenant_id, req.agent_id, req.mem_type, req.content,
+        req.importance, json.dumps(entities), req.lang, req.is_consolidated,
+    ]
+    if valid_from_dt is not None:
+        params.append(valid_from_dt)
+        extra_cols += f", valid_from"
+        extra_vals += f", ${len(params)}"
+    if valid_until_dt is not None:
+        params.append(valid_until_dt)
+        extra_cols += f", valid_until"
+        extra_vals += f", ${len(params)}"
+
     async with get_main_pool().acquire() as conn:
         row_id = await conn.fetchval(
-            """
-            INSERT INTO hindsight_memories (tenant_id, agent_id, type, content, importance, entities, lang)
-            VALUES ($1, $2, $3, $4, 0.5, $5, $6)
+            f"""
+            INSERT INTO hindsight_memories
+                (tenant_id, agent_id, type, content, importance, entities, lang,
+                 {extra_cols})
+            VALUES ($1, $2, $3, $4, $5, $6, $7, {extra_vals})
             RETURNING id
         """,
-            req.tenant_id,
-            req.agent_id,
-            req.mem_type,
-            req.content,
-            json.dumps(entities),
-            req.lang,
+            *params,
         )
 
     return {"status": "seeded", "memory_id": str(row_id)}

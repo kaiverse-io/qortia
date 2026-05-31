@@ -7,9 +7,9 @@ last_reviewed: 2026-05-18
 
 # Qortia — Memory Layer Benchmarking Guide
 
-**Status:** Layer 1 (REH) complete · Layer 2 (ALB) implemented · Layer 3 (PIB) partial
-**Scope:** Quantitative evaluation of the Qortia memory service
-**Last updated:** 2025-07-26
+**Status:** Full eval stack implemented — 6 harnesses covering retrieval, temporal, extraction, longitudinal, infrastructure, and LongMemEval
+**Scope:** Quantitative evaluation of the Qortia memory service vs. enterprise SoA
+**Last updated:** 2026-05-31
 
 ---
 
@@ -283,14 +283,72 @@ PIB measures the operational cost of Qortia. Runs weekly on staging against a
 
 ---
 
-## 5. Comparative Benchmarking
+## 5. Full Eval Stack — Coverage Map
 
-We benchmark Qortia against Mem0 and Zep using the standardised dataset:
+Six harnesses covering all memory evaluation dimensions:
+
+| Harness | Script | Datasets | What it tests | Run frequency |
+|---|---|---|---|---|
+| **REH** | `run_reh.py` | `recall_v1.json` (55 cases), `recall_smoke.json` (10) | Retrieval accuracy, hard negatives, all types and scopes, token efficiency | Every PR touching recall.py |
+| **TEH** | `run_temporal_eval.py` | `recall_v2_temporal.json` (10), `recall_v2_supersede.json` (8) | Bi-temporal conflict resolution (ADR-078), selective forgetting (ADR-027) — expired facts must not surface | Weekly on staging |
+| **ALB** | `run_alb.py` | Inline (3 tasks) | Temporal ordering, reflection consolidation surfaces, cross-scope recall | Weekly on staging |
+| **EQE** | `run_extraction_eval.py` | Inline (10 cases) | Extraction precision/recall, noise rejection, type accuracy | Weekly on staging |
+| **LEH** | `run_longitudinal_eval.py` | Inline (3 scenarios) | Multi-session reflection learning, rank improvement, context hygiene | Monthly |
+| **PIB** | `run_pib.py` | Synthetic (50–1000 corpus) | p50/p95/p99 latency, embedding throughput, HNSW overhead | Weekly on staging |
+| **LongMemEval** | `run_longmemeval.py` | Public dataset (500 cases) | Cross-session synthesis, temporal reasoning, knowledge updates vs. enterprise benchmarks | Before each major Qortia release |
+
+**Regression gates (CI):** REH smoke (10 cases) on every PR to recall.py. All other harnesses run on staging weekly.
+
+### Running the full stack
+
+```bash
+cd platform
+
+# Layer 1 — Retrieval (55 cases, ~15 min)
+EVAL_MODE=true python3 evals/run_reh.py evals/datasets/recall_v1.json
+
+# Layer 1b — Temporal (18 cases, ~8 min)
+EVAL_MODE=true python3 evals/run_temporal_eval.py
+
+# Layer 2 — Agentic Loop (3 tasks, ~3 min)
+EVAL_MODE=true python3 evals/run_alb.py
+
+# Layer 2b — Extraction Quality (10 cases, ~5 min)
+EVAL_MODE=true python3 evals/run_extraction_eval.py
+
+# Layer 2c — Longitudinal Learning (3 scenarios, ~5 min)
+EVAL_MODE=true python3 evals/run_longitudinal_eval.py
+
+# Layer 3 — Infrastructure (50-corpus, ~5 min)
+EVAL_MODE=true python3 evals/run_pib.py http://localhost:8080 <tenant_id> <agent_id>
+
+# Layer 4 — LongMemEval (download once, then run)
+python3 evals/run_longmemeval.py --download
+EVAL_MODE=true python3 evals/run_longmemeval.py --max-cases 100
+```
+
+### SoA comparison targets
+
+| Benchmark | Mem0 published | Zep published | Qortia current | Qortia target |
+|---|---|---|---|---|
+| LongMemEval Recall@5 | ~72% | ~69% | TBD (run `run_longmemeval.py`) | ≥75% |
+| DMR accuracy | — | 94.8% | not yet run | ≥90% |
+| REH Recall@5 | — | — | **1.000** (55/55) | 1.000 |
+| REH MRR | — | — | **0.942** | ≥0.90 |
+| p99 latency | <400ms | — | **415ms** (cold-start) | <400ms warm |
+| Token efficiency | <7k/query | — | ~200 (estimated) | <2k/query |
+
+---
+
+## 6. Comparative Benchmarking vs. Mem0 and Zep
+
+Qortia is benchmarked against Mem0 and Zep before each major release:
 
 1. Ingest the same 1,000 facts into Qortia and Mem0 (local install).
 2. Fire 50 standardised queries from `recall_v1.json`.
 3. Compare Recall@10 and p99 latency.
-4. If Qortia Recall@10 < Mem0 Recall@10 → "L1 Gap" — open a GitHub issue
+4. Run `run_longmemeval.py` against all three systems with the same 100-case subset.
+5. If Qortia Recall@10 < Mem0 Recall@10 → "L1 Gap" — open a GitHub issue
    with `category:qortia` label and the specific failing query categories.
 
 This runs manually before each major Qortia enhancement ships.

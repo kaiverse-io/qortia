@@ -1,8 +1,8 @@
 {
-  "recall_at_5": 0.9090909090909091,
-  "recall_at_10": 0.9090909090909091,
-  "mrr": 0.8515151515151516,
-  "semantic_drift_avg": 0.4611111111111111,
+  "recall_at_5": 1.0,
+  "recall_at_10": 1.0,
+  "mrr": 0.9424242424242425,
+  "semantic_drift_avg": 0.45238095238095233,
   "cases": [
     {
       "id": "reh-001",
@@ -244,7 +244,7 @@
       "recall_at_5": true,
       "recall_at_10": true,
       "mrr": 1.0,
-      "semantic_drift_gap": null,
+      "semantic_drift_gap": 0.5,
       "reason": null
     },
     {
@@ -366,12 +366,12 @@
     },
     {
       "id": "reh-041",
-      "pass": false,
-      "recall_at_5": false,
-      "recall_at_10": false,
-      "mrr": 0.0,
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
       "semantic_drift_gap": null,
-      "reason": "ground truth not in top 5"
+      "reason": null
     },
     {
       "id": "reh-042",
@@ -465,39 +465,39 @@
     },
     {
       "id": "reh-052",
-      "pass": false,
-      "recall_at_5": false,
-      "recall_at_10": false,
-      "mrr": 0.0,
-      "semantic_drift_gap": null,
-      "reason": "ground truth not in top 5"
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.3333333333333333,
+      "reason": null
     },
     {
       "id": "reh-053",
-      "pass": false,
-      "recall_at_5": false,
-      "recall_at_10": false,
-      "mrr": 0.0,
-      "semantic_drift_gap": null,
-      "reason": "ground truth not in top 5"
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.3333333333333333,
+      "reason": null
     },
     {
       "id": "reh-054",
-      "pass": false,
-      "recall_at_5": false,
-      "recall_at_10": false,
-      "mrr": 0.0,
-      "semantic_drift_gap": null,
-      "reason": "ground truth not in top 5"
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.3333333333333333,
+      "reason": null
     },
     {
       "id": "reh-055",
-      "pass": false,
-      "recall_at_5": false,
-      "recall_at_10": false,
-      "mrr": 0.0,
-      "semantic_drift_gap": null,
-      "reason": "ground truth not in top 5"
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "reason": null
     }
   ]
 }
