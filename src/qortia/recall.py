@@ -92,6 +92,7 @@ async def _recall_decisions(
         rows = await conn.fetch(
             f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
+                   confidence_multiplier,
                    ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM hindsight_memories
             WHERE agent_id = $2
@@ -130,6 +131,7 @@ async def _recall_lessons(
         rows = await conn.fetch(
             f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
+                   confidence_multiplier,
                    1 - (embedding <=> $1::vector) AS score
             FROM hindsight_memories
             WHERE agent_id = $2
@@ -166,6 +168,7 @@ async def _recall_episodic(
         rows = await conn.fetch(
             f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
+                   confidence_multiplier,
                    ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM hindsight_memories
             WHERE agent_id = $2
@@ -206,6 +209,7 @@ async def _recall_short_term(
         rows = await conn.fetch(
             f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
+                   confidence_multiplier,
                    ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM hindsight_memories
             WHERE agent_id = $2
@@ -252,7 +256,7 @@ async def _bm25_private(
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
-                   valid_from, valid_until,
+                   confidence_multiplier, valid_from, valid_until,
                    ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM hindsight_memories
             WHERE agent_id = $2
@@ -300,7 +304,7 @@ async def _vector_private(
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
-                   valid_from, valid_until,
+                   confidence_multiplier, valid_from, valid_until,
                    1 - (embedding <=> $1::vector) AS score
             FROM hindsight_memories
             WHERE agent_id = $2
@@ -348,6 +352,7 @@ async def _bm25_org(
             f"""
             SELECT id, type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
+                   confidence_multiplier,
                    ts_rank_cd(content_tsv, plainto_tsquery('simple', $1), {norm}) AS rank
             FROM org_memory
             WHERE tenant_id = $2
@@ -392,6 +397,7 @@ async def _vector_org(
             f"""
             SELECT id, type, content, NULL::float AS importance,
                    created_at, recall_count, last_recalled_at,
+                   confidence_multiplier,
                    1 - (embedding <=> $1::vector) AS score
             FROM org_memory
             WHERE tenant_id = $2
@@ -544,6 +550,57 @@ async def _record_recall_access(
             )
         except Exception:
             pass
+
+
+async def _record_work_order_outcome(
+    work_order_id: UUID,
+    tenant_id: UUID,
+    agent_id: UUID,
+    outcome: str,  # "SUCCESS" | "MINOR_FAILURE" | "CRITICAL_FAILURE"
+    memory_clearance_order: int = 2,
+    agent_division: str = "all",
+) -> None:
+    """Record WO outcome and decay confidence_multiplier on implicated memories (ADR-125 Phase 2)."""
+    multipliers = {"SUCCESS": 1.05, "MINOR_FAILURE": 0.85, "CRITICAL_FAILURE": 0.60}
+    multiplier = multipliers.get(outcome, 1.0)
+
+    try:
+        async with tenant_transaction(
+            get_main_pool(), tenant_id, agent_id,
+            memory_clearance_order=memory_clearance_order,
+            agent_division=agent_division,
+        ) as conn:
+            # Fetch implicated memory IDs from session reads
+            rows = await conn.fetch(
+                "SELECT DISTINCT memory_id FROM qortia_session_reads WHERE work_order_id = $1 AND tenant_id = $2",
+                work_order_id, tenant_id,
+            )
+            memory_ids = [str(r["memory_id"]) for r in rows]
+            memory_count = len(memory_ids)
+
+            # Update confidence_multiplier on each implicated memory (floor 0.10, cap 1.0)
+            if memory_ids:
+                await conn.execute(
+                    """
+                    UPDATE hindsight_memories
+                    SET confidence_multiplier = GREATEST(0.10, LEAST(1.0, confidence_multiplier * $1))
+                    WHERE id = ANY($2::uuid[]) AND tenant_id = $3
+                    """,
+                    multiplier, memory_ids, tenant_id,
+                )
+
+            # Insert outcome record (ON CONFLICT DO NOTHING — idempotent)
+            await conn.execute(
+                """
+                INSERT INTO qortia_outcome_records
+                    (tenant_id, agent_id, work_order_id, outcome, memory_count)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (work_order_id) DO NOTHING
+                """,
+                tenant_id, agent_id, work_order_id, outcome, memory_count,
+            )
+    except Exception as exc:
+        logger.warning({"event": "outcome_record_failed", "error": str(exc)})
 
 
 async def _log_session_reads(

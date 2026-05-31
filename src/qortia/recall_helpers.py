@@ -23,13 +23,15 @@ def dynamic_importance(
     base_importance: float,
     recall_count: int,
     last_recalled_at: datetime | None,
+    confidence_multiplier: float = 1.0,
 ) -> float:
     frequency_boost = math.log1p(recall_count) / 10.0
     recency_boost = 0.0
     if last_recalled_at:
         days_since = (datetime.now(timezone.utc) - last_recalled_at).days
         recency_boost = max(0.0, 1.0 - (days_since / 30.0)) * 0.2
-    return min(1.0, base_importance + frequency_boost + recency_boost)
+    raw = min(1.0, base_importance + frequency_boost + recency_boost)
+    return max(0.0, min(1.0, raw * confidence_multiplier))
 
 def _entity_filter_clause(
     entities: list[str] | None,
@@ -99,6 +101,7 @@ def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
     )
     r._recall_count = row.get("recall_count", 0) or 0
     r._last_recalled_at = row.get("last_recalled_at")
+    r._confidence_multiplier = float(row.get("confidence_multiplier", 1.0) or 1.0)
     r._score = float(row.get("score") or row.get("rank") or 0.0)
     return r
 
@@ -124,6 +127,7 @@ def _rrf_fuse(
             base_importance=r.importance if r.importance is not None else 0.5,
             recall_count=r._recall_count,
             last_recalled_at=r._last_recalled_at,
+            confidence_multiplier=r._confidence_multiplier,
         )
         boost = 1.0
         if entity_links and rid in entity_links:
@@ -145,6 +149,7 @@ def _sort_by_importance(results: list[RecallResult]) -> list[RecallResult]:
             base_importance=r.importance if r.importance is not None else 0.5,
             recall_count=getattr(r, "_recall_count", 0),
             last_recalled_at=getattr(r, "_last_recalled_at", None),
+            confidence_multiplier=getattr(r, "_confidence_multiplier", 1.0),
         ),
         reverse=True,
     )

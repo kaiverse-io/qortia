@@ -234,6 +234,7 @@ class RecallResult(BaseModel):
     # Internal ranking signals — never serialised (Q95)
     _recall_count: int = PrivateAttr(default=0)
     _last_recalled_at: datetime | None = PrivateAttr(default=None)
+    _confidence_multiplier: float = PrivateAttr(default=1.0)
     _score: float = PrivateAttr(default=0.0)
     _embedding: list[float] = PrivateAttr(default_factory=list)
 
