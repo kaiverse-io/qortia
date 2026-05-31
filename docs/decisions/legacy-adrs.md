@@ -1734,6 +1734,186 @@ the tenant-isolation invariant.
 
 ---
 
+# ADR-125 — Causal Tracking + Outcome-Driven Confidence Decay *(pending)*
+
+**Status:** accepted (pending implementation — V27 migration, Phase 1 of 3)
+**Date:** 2026-05-31
+**Context files:** `platform/app/qortia/recall.py`, `platform/app/qortia/recall_helpers.py`,
+`platform/app/work_orders/router.py`, `platform/migrations/V27__causal_tracking.sql`
+
+## Problem
+
+Qortia tracks `recall_count` and `last_recalled_at` on every memory, but these are
+access counters — they record that a memory was useful without knowing *what* it
+was useful for or *whether* it helped the agent succeed. When an agent relies on
+a stale process memory and fails its work order, nothing in the memory layer learns
+from that failure. The stale memory continues to rank highly on the next recall.
+
+The result: `dynamic_importance()` rewards frequently-recalled memories regardless
+of whether those recalls led to successful outcomes. A memory can be recalled 100
+times across 100 failed work orders and its score will only go up.
+
+## Decision
+
+Add outcome-driven confidence decay in three phases:
+
+**Phase 1 — Read logging (V27 migration):** Every `POST /v1/recall` call that
+carries a `work_order_id` header logs the recalled memory IDs to a new
+`qortia_session_reads` table, keyed by `(work_order_id, memory_id)`.
+Fire-and-forget, never blocks recall latency.
+
+**Phase 2 — Outcome recording:** When a work order transitions to `completed` or
+`failed`, the work orders router writes one row to `qortia_outcome_records`
+linking `work_order_id` → `outcome` (`SUCCESS | MINOR_FAILURE | CRITICAL_FAILURE`)
+→ implicated memory IDs (joined from `qortia_session_reads`). Updates
+`confidence_multiplier` on each implicated `hindsight_memories` row.
+
+**Phase 3 — Scoring integration:** `dynamic_importance()` in `recall_helpers.py`
+incorporates `confidence_multiplier` as a post-RRF scaling factor.
+
+## Schema (V27 migration)
+
+```sql
+-- Read log: one row per (work_order_id, recalled memory) per recall call
+CREATE TABLE qortia_session_reads (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id   UUID NOT NULL,
+    agent_id    UUID NOT NULL,
+    work_order_id UUID NOT NULL,          -- foreign key to work_orders.id
+    memory_id   UUID NOT NULL,            -- foreign key to hindsight_memories.id
+    recalled_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+CREATE INDEX idx_session_reads_wo ON qortia_session_reads (work_order_id);
+CREATE INDEX idx_session_reads_memory ON qortia_session_reads (memory_id);
+
+-- RLS: tenant scoped
+ALTER TABLE qortia_session_reads ENABLE ROW LEVEL SECURITY;
+CREATE POLICY session_reads_tenant ON qortia_session_reads
+    USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+-- Outcome record: one row per work order outcome
+CREATE TABLE qortia_outcome_records (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID NOT NULL,
+    agent_id        UUID NOT NULL,
+    work_order_id   UUID NOT NULL UNIQUE,
+    outcome         TEXT NOT NULL CHECK (outcome IN ('SUCCESS', 'MINOR_FAILURE', 'CRITICAL_FAILURE')),
+    memory_count    INT NOT NULL DEFAULT 0,    -- count of implicated memories
+    recorded_at     TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+ALTER TABLE qortia_outcome_records ENABLE ROW LEVEL SECURITY;
+CREATE POLICY outcome_records_tenant ON qortia_outcome_records
+    USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+-- Confidence multiplier on the memory row (default 1.0 = no prior outcome data)
+ALTER TABLE hindsight_memories ADD COLUMN confidence_multiplier FLOAT NOT NULL DEFAULT 1.0;
+ALTER TABLE org_memory ADD COLUMN confidence_multiplier FLOAT NOT NULL DEFAULT 1.0;
+```
+
+## Confidence Decay Formula
+
+Applied per work order outcome across all implicated memories:
+
+```
+outcome          multiplier applied    notes
+SUCCESS          × 1.05               cap at 1.0 — recovery from prior failures
+MINOR_FAILURE    × 0.85               compounding per failure
+CRITICAL_FAILURE × 0.60               single failure can halve a memory's weight
+floor            0.10                 memories never become entirely invisible
+```
+
+Applied cumulatively (each outcome multiplies the existing value):
+
+```python
+NEW = max(0.10, min(1.0, CURRENT × MULTIPLIER))
+```
+
+## Updated `dynamic_importance()` Signature
+
+```python
+def dynamic_importance(
+    recall_count: int,
+    last_recalled_at: datetime,
+    base_importance: float,
+    confidence_multiplier: float = 1.0,    # new
+) -> float:
+    raw = base_importance * (1 + 0.1 * log1p(recall_count)) * recency_factor(...)
+    return raw * confidence_multiplier      # outcome scaling applied last
+```
+
+## Recall API — `work_order_id` Header
+
+Agents pass `X-Work-Order-ID` when recalling inside a work order context.
+The MCP bridge (`mcp_bridge.py`) already sends `work_order_id` in every tool
+call payload — it will be forwarded as a header. Recall calls without this
+header are logged without a session association (no change to existing behaviour).
+
+## Work Order Completion Hook
+
+In `work_orders/router.py`, the `advance_work_order` endpoint, on transition to
+`completed` or `failed`:
+
+1. Derive outcome:
+   - state=`completed` → `SUCCESS`
+   - state=`failed`, agent-reported severity → `CRITICAL_FAILURE`
+   - state=`failed`, timeout/input-required expiry → `MINOR_FAILURE`
+2. Query `qortia_session_reads` for all `memory_id` values under this `work_order_id`.
+3. Apply multiplier to each `hindsight_memories.confidence_multiplier` row.
+4. Insert one `qortia_outcome_records` row.
+5. All DB writes inside `tenant_transaction()` — same invariant as all Qortia writes.
+
+## Implementation Constraints
+
+- Read logging is fire-and-forget (same pattern as `recall_count` increment in ADR-055).
+  Must not add latency to the recall response path.
+- `qortia_session_reads` has no retention policy at launch. Add a 90-day TTL
+  cleanup job in Phase 2 alongside the archival task in `reflect.py`.
+- `confidence_multiplier` is never exposed via the recall API response —
+  it is an internal scoring signal only.
+- ADR-025 (blind supersede) is unaffected: superseded memories retain their
+  `confidence_multiplier` to avoid rewarding the pattern of creating new memories
+  to escape a bad confidence score.
+- Tenant isolation: all reads and writes use `tenant_transaction()`. The
+  `qortia_session_reads` RLS policy ensures cross-tenant read leakage is impossible.
+
+## What This Does Not Solve
+
+- **Causal attribution accuracy:** If an agent recalls 10 memories but only relies
+  on 2, all 10 are implicated. Attribution is at recall-list granularity, not
+  citation granularity. Finer-grained attribution (which specific memory the LLM
+  cited) requires trace analysis and is deferred.
+- **CoW versioning for org_memory:** A separate ADR is needed before implementing
+  per-version confidence tracking on org_memory rows.
+- **Reflection feedback loop:** reflect.py currently scores by semantic stability
+  (cosine similarity between consecutive versions). Outcome-driven confidence is
+  a separate signal that could also inform `RETAIN` vs `UPDATE` decisions. Deferred.
+
+## Alternatives Rejected
+
+**Apply decay at query time (not write time):** Compute outcome scores on the fly
+during recall. Rejected — adds latency to the hot path and requires joining
+`qortia_session_reads` and `qortia_outcome_records` on every recall call.
+Write-time updates keep the hot path clean.
+
+**Use work order cost ledger as the outcome signal:** `agent_cost_ledger` tracks
+token spend but not success/failure. Rejected — cost is a proxy for work done,
+not for whether the work was correct.
+
+## Implementation Phases
+
+| Phase | Scope | Migration | Status |
+|---|---|---|---|
+| 1 | Tables + read logging in recall.py (fire-and-forget) | V27 | pending |
+| 2 | Outcome recording on WO completion + multiplier update | V27 (continued) | pending |
+| 3 | `dynamic_importance()` integration + recall tests | no migration | pending |
+
+All three phases must ship atomically — Phase 1 alone (logging without scoring)
+has no user-visible effect and can be merged safely as a dark launch.
+
+---
+
 ## Rejected Alternatives
 
 | Alternative | Why rejected |
