@@ -546,6 +546,41 @@ async def _record_recall_access(
             pass
 
 
+async def _log_session_reads(
+    results: list[RecallResult],
+    tenant_id: UUID,
+    agent_id: UUID,
+    work_order_id: UUID,
+    memory_clearance_order: int = 2,
+    agent_division: str = "all",
+) -> None:
+    """Fire-and-forget: log recalled private memory IDs against the work order (ADR-125 Phase 1)."""
+    private_ids = [r.id for r in results if r.scope == "private"]
+    if not private_ids:
+        return
+    try:
+        async with tenant_transaction(
+            get_main_pool(),
+            tenant_id,
+            agent_id,
+            memory_clearance_order=memory_clearance_order,
+            agent_division=agent_division,
+        ) as conn:
+            await conn.execute(
+                """
+                INSERT INTO qortia_session_reads
+                    (tenant_id, agent_id, work_order_id, memory_id)
+                SELECT $1, $2, $3, unnest($4::uuid[])
+                """,
+                tenant_id,
+                agent_id,
+                work_order_id,
+                private_ids,
+            )
+    except Exception as exc:
+        logger.warning({"event": "session_reads_log_failed", "error": str(exc)})
+
+
 # ── POST /v1/recall ──────────────────────────────────────────
 
 
@@ -746,6 +781,25 @@ async def recall(
             logger.warning({"event": "recall_access_record_failed", "error": str(exc)})
 
     asyncio.create_task(_safe_record_recall_access())
+
+    if isinstance(x_work_order_id, str) and x_work_order_id:
+        try:
+            wo_uuid = UUID(x_work_order_id)
+        except ValueError:
+            wo_uuid = None
+        if wo_uuid is not None:
+
+            async def _safe_log_session_reads() -> None:
+                await _log_session_reads(
+                    results,
+                    agent.tenant_id,
+                    agent.agent_id,
+                    wo_uuid,  # type: ignore[arg-type]
+                    memory_clearance_order=clearance_order,
+                    agent_division=agent_division,
+                )
+
+            asyncio.create_task(_safe_log_session_reads())
 
     logger.info(
         {
