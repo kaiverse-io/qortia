@@ -411,12 +411,22 @@ Layers 2 and 3 are not yet implemented.
 
 ### Layer 2 — Agentic Loop Benchmarking (ALB)
 
-**Status: not yet implemented.** `run_alb.py` does not exist.
+**Status: implemented.** `platform/evals/run_alb.py` — three gold-standard tasks,
+semi-automated scoring.
 
-- **Scope (planned):** End-to-end agent behaviour
-- **Mechanism (planned):** Sandbox agents with pre-seeded memories, semi-automated scoring
-- **Metrics (planned):** Memory Utilization, Hallucination Rate, Context Window Hygiene
-- **Run frequency (planned):** Weekly on staging
+- **Scope:** Memory layer contract — recall quality and reflection output for three
+  canonical agent scenarios. Does not require a live agent container.
+- **Mechanism:** Seeds memories via eval API, fires recall/reflect endpoints, evaluates
+  results deterministically. Human-scored fields (Memory Utilization, Hallucination Rate)
+  are output as null in the report for manual annotation after a real agent run.
+- **Auto-scored metrics:**
+  - Task A — Temporal recency: newer conflicting memory ranks above older one
+  - Task B — Reflection promotion: reflect produces mental_model/lesson type memories
+    that appear in subsequent recall
+  - Task C — Cross-scope coverage: scope=all recall returns from both private and org
+- **Task B note:** Makes one real LLM call via `/v1/reflect`. LiteLLM gateway must be
+  reachable. Budget: ~$0.002 per run at claude-haiku rates.
+- **Run frequency:** Manual or weekly on staging (not a PR gate — requires full stack)
 
 ### Layer 3 — Infrastructure Benchmarking (PIB)
 

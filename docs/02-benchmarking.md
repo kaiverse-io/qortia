@@ -7,7 +7,7 @@ last_reviewed: 2026-05-18
 
 # Qortia — Memory Layer Benchmarking Guide
 
-**Status:** Partial — framework defined, benchmarks in progress
+**Status:** Layer 1 (REH) complete · Layer 2 (ALB) implemented · Layer 3 (PIB) partial
 **Scope:** Quantitative evaluation of the Qortia memory service
 **Last updated:** 2025-07-26
 
@@ -206,8 +206,11 @@ Never set `EVAL_MODE=true` in staging or production.
 
 ## 3. Layer 2: Agentic Loop Benchmarking (ALB)
 
-ALB measures end-to-end agent cognition. It requires a running agent container
-and is not run on every PR. It runs weekly on staging.
+ALB measures whether Qortia serves the right memories for three gold-standard
+agent scenarios. It does not require a live agent container — it evaluates the
+memory layer's contract (recall quality and reflection output), leaving agent
+reasoning scores for human annotation in the output report. Runs manually or
+weekly on staging.
 
 ### 3.1 Gold Standard Tasks
 
@@ -236,11 +239,30 @@ Tests multi-hop recall across memory scopes.
 | **Hallucination Rate** | % of steps where agent claimed a memory not present in Qortia |
 | **Context Window Hygiene** | Ratio of relevant vs filler memories in the final LLM prompt |
 
-ALB scoring is semi-automated. The harness seeds memories and captures tool call
-logs. Human review scores Memory Utilization and Hallucination Rate. Context
-Window Hygiene is computed automatically from recall responses vs cited sources.
+ALB scoring is semi-automated:
 
-Full automation is deferred — LLM-as-judge violates the determinism principle.
+- **Auto-scored (deterministic):** Task A temporal ordering, Task B reflection
+  promotion (consolidated type present in results), Task C scope coverage.
+- **Human-scored (annotated in report):** Memory Utilization and Hallucination
+  Rate — filled in after running a real agent against the same seeded scenarios.
+
+Full LLM-as-judge automation is deferred — violates the determinism principle.
+
+### 3.3 Running the Harness
+
+```bash
+# Prerequisites: full stack running (just up), EVAL_MODE=true, LiteLLM reachable
+cd platform
+
+EVAL_MODE=true python3 evals/run_alb.py
+
+# Report written to evals/results/alb_latest.json
+# Annotate 'memory_utilization' and 'hallucination_rate' fields after
+# running a real agent against the seeded scenarios.
+```
+
+**Task B** makes a real LLM inference call via `/v1/reflect`. LiteLLM gateway
+must be reachable. Budget: ~1 reflection call per run (~$0.002 at claude-haiku rates).
 
 ---
 
