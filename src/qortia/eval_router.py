@@ -136,7 +136,7 @@ async def eval_recall(
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     body = RecallRequest(query=query, scope=scope)
-    resp = await recall(body, agent)
+    resp = await recall(body, agent, x_work_order_id=None)
     return resp.model_dump()
 
 
@@ -167,7 +167,7 @@ async def eval_recall_full(
         lang=body.lang,
         as_of=body.as_of,
     )
-    resp = await recall(req, agent)
+    resp = await recall(req, agent, x_work_order_id=None)
     return resp.model_dump()
 
 
@@ -212,7 +212,25 @@ async def eval_remember_org(
         lang=body.lang,
     )
     resp = await remember_org(req, agent)
-    return {"id": resp.id}
+    org_id = resp.id
+
+    # Apply valid_until/valid_from if provided (eval-only — supports TEH temporal cases)
+    if body.valid_until or body.valid_from:
+        valid_until_dt = _parse_dt(body.valid_until)
+        valid_from_dt = _parse_dt(body.valid_from)
+        async with get_main_pool().acquire() as conn:
+            if valid_until_dt:
+                await conn.execute(
+                    "UPDATE org_memory SET valid_until = $1 WHERE id = $2 AND tenant_id = $3",
+                    valid_until_dt, UUID(org_id), tenant_id,
+                )
+            if valid_from_dt:
+                await conn.execute(
+                    "UPDATE org_memory SET valid_from = $1 WHERE id = $2 AND tenant_id = $3",
+                    valid_from_dt, UUID(org_id), tenant_id,
+                )
+
+    return {"id": org_id}
 
 
 # ── Request models for eval endpoints ─────────────────────────────────────
@@ -236,6 +254,8 @@ class RememberOrgRequestBody(_BaseModel):
     title: str
     content: str
     lang: str = "en"
+    valid_from: str | None = None
+    valid_until: str | None = None
 
 
 @router.post("/knowledge")

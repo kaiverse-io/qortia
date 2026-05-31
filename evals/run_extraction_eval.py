@@ -264,36 +264,20 @@ async def _run_extraction_case(
 
     seeded_memory_ids: list[str] = []
 
-    # Seed via the normal remember endpoint (not eval endpoint) to test extraction
+    # Seed each memory individually so noise cases aren't concatenated
     memories = inp.get("memories", [])
-    if memories:
-        resp = await client.post(
+    for m in memories:
+        r = await client.post(
             "/v1/internal/eval/seed-memory",
-            # Use seed endpoint directly — extraction eval uses the remember endpoint
-            # which actually exercises extraction logic
             json={
                 "agent_id": agent_id,
                 "tenant_id": tenant_id,
-                "content": "\n\n".join(m["content"] for m in memories),
-                "mem_type": memories[0]["type"] if len(memories) == 1 else "episodic",
+                "content": m["content"],
+                "mem_type": m["type"],
             },
         )
-        if resp.status_code == 200:
-            seeded_memory_ids.append(resp.json()["memory_id"])
-        else:
-            # Multi-memory: seed each
-            for m in memories:
-                r2 = await client.post(
-                    "/v1/internal/eval/seed-memory",
-                    json={
-                        "agent_id": agent_id,
-                        "tenant_id": tenant_id,
-                        "content": m["content"],
-                        "mem_type": m["type"],
-                    },
-                )
-                if r2.status_code == 200:
-                    seeded_memory_ids.append(r2.json()["memory_id"])
+        if r.status_code == 200:
+            seeded_memory_ids.append(r.json()["memory_id"])
 
     # Seed org memories
     org_memories = inp.get("org_memories", [])

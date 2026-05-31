@@ -102,12 +102,16 @@ async def _seed_temporal_org_memory(
     agent_id: str,
     mem: dict[str, Any],
 ) -> str:
-    payload = {
+    payload: dict[str, Any] = {
         "type": mem.get("type", "handoff"),
         "title": mem.get("title", "Untitled"),
         "content": mem["content"],
         "lang": mem.get("lang", "en"),
     }
+    if "valid_until" in mem:
+        payload["valid_until"] = _resolve_relative_date(mem["valid_until"])
+    if "valid_from" in mem:
+        payload["valid_from"] = _resolve_relative_date(mem["valid_from"])
     resp = await client.post(
         "/v1/internal/eval/remember-org",
         json=payload,
@@ -156,7 +160,8 @@ async def _run_case(
             expired_ids.add(mid)
         await asyncio.sleep(0.1)
 
-    await asyncio.sleep(EMBEDDING_WAIT_SECONDS)
+    # Wait 2 full embedding cycles — handles cold-start and batch backlog
+    await asyncio.sleep(EMBEDDING_WAIT_SECONDS * 2)
 
     # Resolve ground truth
     ground_truth_source = case.get("ground_truth_source", "memories")
@@ -178,17 +183,21 @@ async def _run_case(
             if mid:
                 expired_ids.add(mid)
 
-    # Execute recall
+    # Execute recall (retry once if 0 results — handles embedding race on cold-start)
     query_body = case["query"]
-    resp = await client.post(
-        "/v1/internal/eval/recall-full",
-        json=query_body,
-        params={"tenant_id": tenant_id, "agent_id": agent_id},
-    )
-    if resp.status_code != 200:
-        return _failed(case["id"], f"recall HTTP {resp.status_code}: {resp.text[:200]}")
-
-    results = resp.json().get("results", [])
+    results = []
+    for attempt in range(2):
+        resp = await client.post(
+            "/v1/internal/eval/recall-full",
+            json=query_body,
+            params={"tenant_id": tenant_id, "agent_id": agent_id},
+        )
+        if resp.status_code != 200:
+            return _failed(case["id"], f"recall HTTP {resp.status_code}: {resp.text[:200]}")
+        results = resp.json().get("results", [])
+        if results or attempt == 1:
+            break
+        await asyncio.sleep(EMBEDDING_WAIT_SECONDS)  # embedding not ready, retry after one cycle
     result_ids = [r["id"] for r in results]
     top5_ids = set(result_ids[:5])
     result_contents = [r["content"] for r in results]

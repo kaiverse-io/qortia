@@ -48,6 +48,7 @@ async def _find_similar_memories(
                   AND type != 'short_term'
                   AND tier = 'active'
                   AND (expires_at IS NULL OR expires_at > now())
+                  AND (valid_until IS NULL OR valid_until > now())
                   AND 1 - (embedding <=> $1::vector) >= $4
                 ORDER BY embedding <=> $1::vector
                 LIMIT $5
@@ -157,6 +158,7 @@ async def _expand_with_links(
                   AND agent_id = $3
                   AND tier = 'active'
                   AND (expires_at IS NULL OR expires_at > now())
+                  AND (valid_until IS NULL OR valid_until > now())
                 """,
                 new_ids,
                 tenant_id,

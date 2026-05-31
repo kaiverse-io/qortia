@@ -100,6 +100,7 @@ async def _recall_decisions(
               AND content_tsv @@ plainto_tsquery('simple', $1)
               {tier_clause}
               AND (expires_at IS NULL OR expires_at > now())
+              AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
             ORDER BY rank DESC, created_at DESC
             LIMIT 10
@@ -139,6 +140,7 @@ async def _recall_lessons(
               AND embedding IS NOT NULL
               {tier_clause}
               AND (expires_at IS NULL OR expires_at > now())
+              AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
             ORDER BY embedding <=> $1::vector
             LIMIT 10
@@ -179,6 +181,7 @@ async def _recall_episodic(
               )
               {tier_clause}
               AND (expires_at IS NULL OR expires_at > now())
+              AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
             ORDER BY
                 CASE WHEN content_tsv @@ plainto_tsquery('simple', $1) THEN 0 ELSE 1 END,
@@ -217,6 +220,7 @@ async def _recall_short_term(
               AND content_tsv @@ plainto_tsquery('simple', $1)
               AND tier = 'active'
               AND (expires_at IS NULL OR expires_at > now())
+              AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
             ORDER BY rank DESC, created_at DESC
             LIMIT 10
@@ -264,6 +268,7 @@ async def _bm25_private(
               AND type != 'short_term'
               {tier_clause}
               AND (expires_at IS NULL OR expires_at > now())
+              AND (valid_until IS NULL OR valid_until > now())
               {type_clause}
               {entity_clause}
               {temporal_clause}
@@ -312,6 +317,7 @@ async def _vector_private(
               AND type != 'short_term'
               {tier_clause}
               AND (expires_at IS NULL OR expires_at > now())
+              AND (valid_until IS NULL OR valid_until > now())
               {type_clause}
               {entity_clause}
               {temporal_clause}
@@ -357,10 +363,13 @@ async def _bm25_org(
             FROM org_memory
             WHERE tenant_id = $2
               AND content_tsv @@ plainto_tsquery('simple', $1)
-              AND $3 >= (SELECT level_order FROM tenant_clearance_levels
-                          WHERE tenant_id = org_memory.tenant_id
-                            AND level_name = org_memory.min_clearance)
+              AND ($3 >= (SELECT level_order FROM tenant_clearance_levels
+                           WHERE tenant_id = org_memory.tenant_id
+                             AND level_name = org_memory.min_clearance)
+                   OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels
+                                  WHERE tenant_id = org_memory.tenant_id))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
+              AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
               {lang_clause}
             ORDER BY rank DESC LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
@@ -402,10 +411,13 @@ async def _vector_org(
             FROM org_memory
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
-              AND $3 >= (SELECT level_order FROM tenant_clearance_levels
-                          WHERE tenant_id = org_memory.tenant_id
-                            AND level_name = org_memory.min_clearance)
+              AND ($3 >= (SELECT level_order FROM tenant_clearance_levels
+                           WHERE tenant_id = org_memory.tenant_id
+                             AND level_name = org_memory.min_clearance)
+                   OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels
+                                  WHERE tenant_id = org_memory.tenant_id))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
+              AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
               {lang_clause}
             ORDER BY embedding <=> $1::vector LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
@@ -446,6 +458,7 @@ async def _bm25_knowledge(
                           WHERE tenant_id = org_knowledge.tenant_id
                             AND level_name = org_knowledge.min_clearance)
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
+              AND (valid_until IS NULL OR valid_until > now())
             ORDER BY rank DESC LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             body.query,
@@ -482,6 +495,7 @@ async def _vector_knowledge(
                           WHERE tenant_id = org_knowledge.tenant_id
                             AND level_name = org_knowledge.min_clearance)
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
+              AND (valid_until IS NULL OR valid_until > now())
             ORDER BY embedding <=> $1::vector LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,
             str(qe),
@@ -865,7 +879,7 @@ async def recall(
             "the platform.tenant_id": str(agent.tenant_id),
             "scope": body.scope,
             "result_count": len(results),
-            "work_order_id": x_work_order_id,
+            "work_order_id": x_work_order_id if isinstance(x_work_order_id, str) else None,
         }
     )
 

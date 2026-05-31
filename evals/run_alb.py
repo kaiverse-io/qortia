@@ -235,7 +235,8 @@ async def _run_task_b(client: httpx.AsyncClient) -> dict[str, Any]:
     consolidated_id = resp.json()["memory_id"]
 
     # Wait for embedding worker (lesson recall is vector-only — needs embedding)
-    await asyncio.sleep(EMBEDDING_WAIT_SECONDS)
+    # 3 cycles to handle cold-start and batching with Task A memories
+    await asyncio.sleep(EMBEDDING_WAIT_SECONDS * 3)
 
     resp = await client.post(
         "/v1/internal/eval/recall-full",
