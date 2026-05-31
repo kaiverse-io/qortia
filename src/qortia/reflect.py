@@ -124,7 +124,8 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             agent.tenant_id,
         )
 
-    domain = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
+    domain_parsed = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
+    domain = domain_parsed if isinstance(domain_parsed, dict) else {}
     model = (domain.get("model") if domain else None) or settings.rerank_model
 
     litellm_key = await get_litellm_key(str(agent.tenant_id))
@@ -810,7 +811,8 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
         if not recent:
             return  # nothing to reflect on
 
-        domain = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
+        domain_parsed = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
+        domain = domain_parsed if isinstance(domain_parsed, dict) else {}
         model = (domain.get("model") if domain else None) or settings.rerank_model
         litellm_key = await get_litellm_key(str(tenant_id))
 

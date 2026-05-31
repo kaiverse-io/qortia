@@ -105,3 +105,131 @@ async def eval_recall(
     body = RecallRequest(query=query, scope=scope)
     resp = await recall(body, agent)
     return resp.model_dump()
+
+
+@router.post("/recall-full")
+async def eval_recall_full(
+    body: "RecallRequestFull",
+    tenant_id: UUID,
+    agent_id: UUID,
+) -> dict[str, Any]:
+    """Full RecallRequest eval endpoint — accepts complete recall body without JWT.
+
+    Used by REH and ALB harnesses to call the production recall pipeline without
+    requiring a signed JWT. Only reachable when EVAL_MODE=true.
+    """
+    if not settings.eval_mode:
+        raise HTTPException(404, "Not found")
+
+    from app.qortia.recall import recall
+    from app.qortia.models import RecallRequest
+
+    agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
+    req = RecallRequest(
+        query=body.query,
+        scope=body.scope,
+        type=body.type,
+        entities=body.entities,
+        rerank=body.rerank,
+        lang=body.lang,
+        as_of=body.as_of,
+    )
+    resp = await recall(req, agent)
+    return resp.model_dump()
+
+
+@router.post("/reflect")
+async def eval_reflect(
+    tenant_id: UUID,
+    agent_id: UUID,
+) -> dict[str, Any]:
+    """Trigger reflection for an eval agent without JWT.
+
+    Used by ALB Task B to verify reflection consolidation behaviour.
+    Only reachable when EVAL_MODE=true.
+    """
+    if not settings.eval_mode:
+        raise HTTPException(404, "Not found")
+
+    from app.qortia.reflect import reflect
+
+    agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
+    resp = await reflect(agent)
+    return resp.model_dump()
+
+
+@router.post("/remember-org")
+async def eval_remember_org(
+    body: "RememberOrgRequestBody",
+    tenant_id: UUID,
+    agent_id: UUID,
+) -> dict[str, Any]:
+    """Seed org memory for eval without JWT. Only reachable when EVAL_MODE=true."""
+    if not settings.eval_mode:
+        raise HTTPException(404, "Not found")
+
+    from app.qortia.remember import remember_org
+    from app.qortia.models import RememberOrgRequest
+
+    agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
+    req = RememberOrgRequest(
+        type=body.type,
+        title=body.title,
+        content=body.content,
+        lang=body.lang,
+    )
+    resp = await remember_org(req, agent)
+    return {"id": resp.id}
+
+
+# ── Request models for eval endpoints ─────────────────────────────────────
+
+
+from pydantic import BaseModel as _BaseModel  # noqa: E402
+
+
+class RecallRequestFull(_BaseModel):
+    query: str
+    scope: Literal["private", "org", "knowledge", "all"] = "private"
+    type: str | None = None
+    entities: list[str] | None = None
+    rerank: bool = False
+    lang: str | None = None
+    as_of: str | None = None
+
+
+class RememberOrgRequestBody(_BaseModel):
+    type: str
+    title: str
+    content: str
+    lang: str = "en"
+
+
+@router.post("/knowledge")
+async def eval_ingest_knowledge(
+    body: "KnowledgeIngestBody",
+    tenant_id: UUID,
+    agent_id: UUID,
+) -> dict[str, Any]:
+    """Ingest knowledge for eval without JWT. Only reachable when EVAL_MODE=true."""
+    if not settings.eval_mode:
+        raise HTTPException(404, "Not found")
+
+    from app.qortia.knowledge import ingest_knowledge
+    from app.qortia.models import KnowledgeIngestRequest
+
+    agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
+    req = KnowledgeIngestRequest(
+        source_type=body.source_type,
+        source_path=body.source_path,
+        content=body.content,
+        lang=body.lang,
+    )
+    return await ingest_knowledge(req, agent)
+
+
+class KnowledgeIngestBody(_BaseModel):
+    source_type: str
+    source_path: str
+    content: str
+    lang: str = "en"

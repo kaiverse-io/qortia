@@ -100,7 +100,11 @@ async def seed_org_memories(
     headers = _agent_headers(agent_id, tenant_id)
     org_id_map: dict[int, str] = {}
     for i, om in enumerate(case["setup"].get("org_memories", [])):
-        resp = await client.post("/v1/remember-org", json=om, headers=headers)
+        resp = await client.post(
+            "/v1/internal/eval/remember-org",
+            json=om,
+            params={"tenant_id": tenant_id, "agent_id": agent_id},
+        )
         if resp.status_code == 200:
             org_id_map[i] = resp.json().get("id", "")
     return org_id_map
@@ -116,7 +120,11 @@ async def seed_knowledge(
     headers = _agent_headers(agent_id, tenant_id)
     source_paths: list[str] = []
     for k in case["setup"].get("knowledge", []):
-        resp = await client.post("/v1/knowledge", json=k, headers=headers)
+        resp = await client.post(
+            "/v1/internal/eval/knowledge",
+            json=k,
+            params={"tenant_id": tenant_id, "agent_id": agent_id},
+        )
         if resp.status_code == 200:
             source_paths.append(k.get("source_path", ""))
     return source_paths

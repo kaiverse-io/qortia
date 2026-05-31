@@ -134,9 +134,9 @@ async def _run_reh_case(
 
     query_body = case["query"]
     resp = await client.post(
-        "/v1/recall",
+        "/v1/internal/eval/recall-full",
         json=query_body,
-        headers=_agent_headers(agent_id, tenant_id),
+        params={"tenant_id": tenant_id, "agent_id": agent_id},
     )
     if resp.status_code != 200:
         return _failed(case["id"], f"recall HTTP {resp.status_code}: {resp.text[:200]}")

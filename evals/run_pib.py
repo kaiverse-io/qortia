@@ -56,15 +56,17 @@ async def _seed_corpus(
 
     for offset in range(0, len(memories), batch_size):
         batch = memories[offset : offset + batch_size]
-        resp = await client.post(
-            f"{platform_url}/v1/remember",
-            json={"memories": batch},
-            headers={
-                "X-Tenant-Id": tenant_id,
-                "X-Agent-Id": agent_id,
-            },
-        )
-        resp.raise_for_status()
+        for mem in batch:
+            resp = await client.post(
+                f"{platform_url}/v1/internal/eval/seed-memory",
+                json={
+                    "agent_id": agent_id,
+                    "tenant_id": tenant_id,
+                    "content": mem["content"],
+                    "mem_type": mem["type"],
+                },
+            )
+            resp.raise_for_status()
 
     elapsed = time.perf_counter() - start
     print(f"Seeded {corpus_size} memories in {elapsed:.2f}s")

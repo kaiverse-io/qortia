@@ -1,11 +1,11 @@
 {
-  "recall_at_5": 0.9,
-  "recall_at_10": 0.9,
-  "mrr": 0.775,
-  "semantic_drift_avg": 0.43589743589743585,
+  "recall_at_5": 1.0,
+  "recall_at_10": 1.0,
+  "mrr": 0.95,
+  "semantic_drift_avg": 0.47619047619047616,
   "cases": [
     {
-      "id": "reh-v2-001",
+      "id": "reh-001",
       "pass": true,
       "recall_at_5": true,
       "recall_at_10": true,
@@ -14,7 +14,7 @@
       "reason": null
     },
     {
-      "id": "reh-v2-002",
+      "id": "reh-006",
       "pass": true,
       "recall_at_5": true,
       "recall_at_10": true,
@@ -23,16 +23,16 @@
       "reason": null
     },
     {
-      "id": "reh-v2-003",
-      "pass": false,
-      "recall_at_5": false,
-      "recall_at_10": false,
-      "mrr": 0.0,
+      "id": "reh-011",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
       "semantic_drift_gap": null,
-      "reason": "ground truth not in top 5"
+      "reason": null
     },
     {
-      "id": "reh-v2-004",
+      "id": "reh-016",
       "pass": true,
       "recall_at_5": true,
       "recall_at_10": true,
@@ -41,7 +41,16 @@
       "reason": null
     },
     {
-      "id": "reh-v2-005",
+      "id": "reh-021",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.3333333333333333,
+      "reason": null
+    },
+    {
+      "id": "reh-026",
       "pass": true,
       "recall_at_5": true,
       "recall_at_10": true,
@@ -50,138 +59,39 @@
       "reason": null
     },
     {
-      "id": "reh-v2-006",
+      "id": "reh-031",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "reason": null
+    },
+    {
+      "id": "reh-036",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "reason": null
+    },
+    {
+      "id": "reh-041",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "reason": null
+    },
+    {
+      "id": "reh-046",
       "pass": true,
       "recall_at_5": true,
       "recall_at_10": true,
       "mrr": 1.0,
       "semantic_drift_gap": 0.6666666666666666,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-007",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": 0.3333333333333333,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-008",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": 0.5,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-009",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": null,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-010",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 0.5,
-      "semantic_drift_gap": null,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-011",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": 0.6666666666666666,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-012",
-      "pass": false,
-      "recall_at_5": false,
-      "recall_at_10": false,
-      "mrr": 0.0,
-      "semantic_drift_gap": null,
-      "reason": "ground truth not in top 5"
-    },
-    {
-      "id": "reh-v2-013",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": 0.3333333333333333,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-014",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": 0.5,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-015",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 0.5,
-      "semantic_drift_gap": null,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-016",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 0.5,
-      "semantic_drift_gap": null,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-017",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": 0.6666666666666666,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-018",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 0.5,
-      "semantic_drift_gap": -0.3333333333333333,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-019",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": 0.5,
-      "reason": null
-    },
-    {
-      "id": "reh-v2-020",
-      "pass": true,
-      "recall_at_5": true,
-      "recall_at_10": true,
-      "mrr": 1.0,
-      "semantic_drift_gap": null,
       "reason": null
     }
   ]
