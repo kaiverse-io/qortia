@@ -398,29 +398,34 @@ We needed a regression gate that:
 ## Decision
 
 Three-layer evaluation system. Layer 1 (REH) is the primary regression gate —
-runs on every PR to `recall.py`. Layers 2 and 3 run weekly on staging.
+runs on every PR that touches `recall.py`, `reflect.py`, or `litellm.config.yaml`.
+Layers 2 and 3 are not yet implemented.
 
 ### Layer 1 — Retrieval Evaluation Harness (REH)
 
 - **Scope:** `recall.py` in isolation
 - **Mechanism:** Static JSON dataset with ground truth IDs and hard negatives
 - **Metrics:** Recall@5, Recall@10, MRR, Semantic Drift gap
-- **Run frequency:** Every PR affecting Qortia (smoke: 10 cases; full: 55 cases)
+- **Run frequency:** Every qualifying PR (CI `recall-eval` job). In CI: smoke dataset (10 cases) + multilingual dataset (20 cases). Full 55-case `recall_v1.json` is run manually, not in CI.
 - **Scoring:** Deterministic — ground truth ID in result list or not. No LLM-as-judge.
 
 ### Layer 2 — Agentic Loop Benchmarking (ALB)
 
-- **Scope:** End-to-end agent behaviour
-- **Mechanism:** Sandbox agents with pre-seeded memories, semi-automated scoring
-- **Metrics:** Memory Utilization, Hallucination Rate, Context Window Hygiene
-- **Run frequency:** Weekly on staging
+**Status: not yet implemented.** `run_alb.py` does not exist.
+
+- **Scope (planned):** End-to-end agent behaviour
+- **Mechanism (planned):** Sandbox agents with pre-seeded memories, semi-automated scoring
+- **Metrics (planned):** Memory Utilization, Hallucination Rate, Context Window Hygiene
+- **Run frequency (planned):** Weekly on staging
 
 ### Layer 3 — Infrastructure Benchmarking (PIB)
 
+**Status: partial.** `run_pib.py` measures p50/p95 recall latency only (5 hardcoded queries, configurable iterations). The full spec below reflects the target; cost, throughput, HNSW overhead, and corpus scaling are not yet measured.
+
 - **Scope:** Platform performance
-- **Mechanism:** 1,000-fact corpus, latency/throughput/cost measurement
-- **Metrics:** p99 latency, embedding throughput, reflection cost, HNSW overhead
-- **Run frequency:** Weekly on staging
+- **Mechanism (target):** 1,000-fact corpus, latency/throughput/cost measurement
+- **Metrics (target):** p99 latency, embedding throughput, reflection cost, HNSW overhead
+- **Run frequency:** Manual only
 
 ## Implementation Details
 
@@ -480,10 +485,10 @@ the correct answer could be present but ranked 20th. Rejected.
 
 Regression floors in `run_reh.py` are set to these values minus 5% tolerance.
 
-## Production Baseline (full 55-case dataset)
+## Manual Baseline (full 55-case dataset — not a CI gate)
 
-Established after full dataset validation and 16k keyword boost fix (commit `cf65af7`).
-Regression floors updated in `run_reh.py`.
+Established by a single manual run after full dataset validation and 16k keyword boost fix (commit `cf65af7`).
+Regression floors in `run_reh.py` reflect these scores. The full dataset is not run in CI — only the smoke (10 cases) and multilingual (20 cases) datasets run automatically.
 
 | Metric | Score | North Star | Floor |
 |---|---|---|---|
