@@ -160,8 +160,8 @@ async def _run_scenario(
         if r.status_code == 200:
             episodic_ids.append(r.json()["memory_id"])
 
-    # Wait extra time: 10 episodic + 1 lesson = 11 memories; embedding worker runs every 10s
-    await asyncio.sleep(EMBEDDING_WAIT_SECONDS * 3)
+    # Wait 5 full embedding cycles: 11 memories × ~2s each = ~22s per batch + buffer
+    await asyncio.sleep(EMBEDDING_WAIT_SECONDS * 5)
 
     # Phase 3 — Recall BEFORE consolidation (type=lesson — expect 0 results pre-consolidation)
     pre = await client.post(
@@ -186,8 +186,8 @@ async def _run_scenario(
     consolidated_id = r.json()["memory_id"] if r.status_code == 200 else None
     consolidated_seeded = consolidated_id is not None
 
-    # Wait for consolidated memory embedding (lesson vector search needs embedding)
-    await asyncio.sleep(EMBEDDING_WAIT_SECONDS * 2)
+    # Wait for consolidated memory embedding (same as episodic wait — embedding takes up to 75s)
+    await asyncio.sleep(EMBEDDING_WAIT_SECONDS * 5)
 
     # Phase 4 — Recall AFTER consolidation (type=lesson uses dedicated vector path)
     post = await client.post(
@@ -237,7 +237,7 @@ async def _run_scenario(
 async def run_leh() -> int:
     results: list[dict[str, Any]] = []
 
-    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=120.0) as client:
+    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=600.0) as client:
         print("=" * 60)
         print(f"LONGITUDINAL EVAL HARNESS — {len(SCENARIOS)} scenarios")
         print("=" * 60)

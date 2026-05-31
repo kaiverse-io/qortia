@@ -19,6 +19,19 @@ logger = logging.getLogger(__name__)
 router: APIRouter = APIRouter(prefix="/v1/internal/eval")
 
 
+def _parse_dt(s: str | None) -> datetime.datetime | None:
+    """Parse ISO-8601 string to timezone-aware datetime. Returns None if None/invalid."""
+    if s is None:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
 # lint:allow-cross-tenant — ADR-073: eval endpoints seed test data across tenants by design;
 # only reachable when settings.eval_mode is True (never enabled in production).
 @router.post("/seed-agent")
@@ -74,16 +87,7 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
     except Exception:
         entities = []
 
-    def _parse_dt(s: str | None) -> datetime.datetime | None:
-        if s is None:
-            return None
-        try:
-            dt = datetime.datetime.fromisoformat(s)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=datetime.timezone.utc)
-            return dt
-        except ValueError:
-            return None
+    # _parse_dt is defined at module level
 
     valid_from_dt = _parse_dt(req.valid_from)
     valid_until_dt = _parse_dt(req.valid_until)
