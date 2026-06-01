@@ -1734,9 +1734,9 @@ the tenant-isolation invariant.
 
 ---
 
-# ADR-125 — Causal Tracking + Outcome-Driven Confidence Decay *(pending)*
+# ADR-125 — Causal Tracking + Outcome-Driven Confidence Decay *(implemented)*
 
-**Status:** accepted (pending implementation — V27 migration, Phase 1 of 3)
+**Status:** implemented — V27 migration shipped, all 3 phases live (dark-launch mode)
 **Date:** 2026-05-31
 **Context files:** `platform/app/qortia/recall.py`, `platform/app/qortia/recall_helpers.py`,
 `platform/app/work_orders/router.py`, `platform/migrations/V27__causal_tracking.sql`
@@ -1905,12 +1905,13 @@ not for whether the work was correct.
 
 | Phase | Scope | Migration | Status |
 |---|---|---|---|
-| 1 | Tables + read logging in recall.py (fire-and-forget) | V27 | pending |
-| 2 | Outcome recording on WO completion + multiplier update | V27 (continued) | pending |
-| 3 | `dynamic_importance()` integration + recall tests | no migration | pending |
+| 1 | Tables + read logging in recall.py (fire-and-forget) | V27 | ✅ implemented |
+| 2 | Outcome recording on WO completion + multiplier update | V27 (continued) | ✅ implemented |
+| 3 | `dynamic_importance()` integration + recall tests | no migration | ✅ implemented |
 
-All three phases must ship atomically — Phase 1 alone (logging without scoring)
-has no user-visible effect and can be merged safely as a dark launch.
+All three phases shipped atomically as a dark launch (commit `31f907d`). Phase 1 alone
+(logging without scoring) has no user-visible effect; all phases are live and writing
+to `qortia_session_reads` / `qortia_outcome_records` in production.
 
 ---
 
