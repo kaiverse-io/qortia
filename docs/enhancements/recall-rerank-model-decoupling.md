@@ -117,7 +117,7 @@ longer needs a DB round-trip to `auth.agents` — it only needs the LiteLLM key.
 |---|---|
 | Unit test — `test_recall_pipeline.py` | `_llm_rerank` uses `settings.rerank_model`, not agent's `domain_md` model |
 | Unit test — `test_config.py` | `rerank_model` has correct default value |
-| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 296/296 |
+| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 798/798 |
 | Recall eval | `evals/run_reh.py` — Recall@5 ≥ 0.95, MRR ≥ 0.86 (must not regress) |
 
 ---

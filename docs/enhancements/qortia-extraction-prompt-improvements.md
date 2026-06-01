@@ -173,7 +173,7 @@ No migration. No new dependencies. No API contract change.
 | Manual canary | Write 10 episodic memories with relative temporal references ("last Tuesday", "last week") — verify resolved timestamps appear in stored content |
 | Manual canary | Write episodic memories from a conversation — verify `[User]`/`[Observed]` prefixes appear |
 | Manual canary | Attempt to write status-only content ("done", "ok") — verify not extracted as episodic memory |
-| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 296/296 |
+| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 798/798 |
 | Full stack health | `python3 scripts/local_agents.py` — 21/21 checks |
 
 ---

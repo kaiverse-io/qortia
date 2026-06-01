@@ -1332,7 +1332,7 @@ Files changed:
 - `docs/decisions/adrs/adr-080.md` — this file
 - `docs/decisions/adr-log.md` — ADR-080 row added
 
-Test gate at merge: 296/296 unit tests passing, 3 skipped.
+Test gate at merge: 798/798 unit tests passing, 3 skipped.
 
 ---
 

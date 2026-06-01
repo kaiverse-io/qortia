@@ -2,12 +2,12 @@
 kind: architecture
 status: active
 owner: platform
-last_reviewed: 2026-05-30
+last_reviewed: 2026-06-01
 ---
 
 # Qortia — Memory Service (Consolidated Design)
 
-**Status:** Partial — core pipeline implemented, see STATUS.md for gaps
+**Status:** Core pipeline implemented — ADR-125 (causal tracking) and ADR-078 (bi-temporal filtering) shipped 2026-06-01
 **Scope:** Complete memory architecture for the the platform AI workforce platform
 **Last updated:** 2025-07-26
 
@@ -162,15 +162,28 @@ the model returns 1024-dim vectors before any data is written (ADR-081).
 - RLS: permissive tenant policy + restrictive agent read policy (`qortia_platform` exempt)
 - Key columns: `type`, `content`, `content_tsv` (generated), `embedding`, `importance`,
   `is_consolidated`, `entities` (JSONB), `recall_count`, `last_recalled_at`, `stability_score`,
-  `tier` (active/archive), `expires_at` (short_term TTL), `valid_from`, `valid_until` (temporal bounds, 16j)
-- Superseded memories: `valid_until IS NOT NULL` — excluded from default recall, queryable via `as_of`
+  `tier` (active/archive), `expires_at` (short_term TTL), `valid_from`, `valid_until` (temporal bounds, ADR-078),
+  `confidence_multiplier FLOAT NOT NULL DEFAULT 1.0` (outcome-driven decay, ADR-125)
+- Superseded memories: `valid_until IS NOT NULL` — excluded from default recall (`valid_until IS NULL OR valid_until > now()`), queryable via `as_of`
 
 **`org_memory`** — Shared tenant memory:
 - RLS: `tenant_visibility_read` (two-axis RBAC: clearance order + division, ADR-080) + platform unrestricted write
-- New columns: `min_clearance TEXT DEFAULT 'internal'`, `audience TEXT[] DEFAULT '{all}'`
+- Columns: `min_clearance TEXT DEFAULT 'internal'`, `audience TEXT[] DEFAULT '{all}'`,
+  `valid_from TIMESTAMPTZ`, `valid_until TIMESTAMPTZ` (ADR-078 — V28 migration),
+  `confidence_multiplier FLOAT NOT NULL DEFAULT 1.0` (ADR-125 — V27 migration)
 - `org_chart` rows hardcoded to `min_clearance='external'`, `audience='{all}'` — all agents can see the roster
 - Unique indexes for upsertable types: `(tenant_id, type, title)` WHERE `type IN ('process', 'decision_log')`
 - Unique index for org_chart: `(tenant_id, author_id)` WHERE `type = 'org_chart'`
+
+**`qortia_session_reads`** — ADR-125 causal read log (V27 migration):
+- `(work_order_id, memory_id, tenant_id, agent_id, recalled_at)` — one row per recalled memory per WO
+- Fire-and-forget write on every `POST /v1/recall` that carries `X-Work-Order-Id` header
+- RLS + FORCE ROW LEVEL SECURITY; never blocks recall latency
+
+**`qortia_outcome_records`** — ADR-125 WO outcome log (V27 migration):
+- `(work_order_id UNIQUE, outcome, memory_count, tenant_id, agent_id, recorded_at)`
+- Written by `work_orders/router.py` on WO completion/failure; triggers `confidence_multiplier` update
+- RLS + FORCE ROW LEVEL SECURITY
 
 **`org_knowledge`** — Document corpus:
 - RLS: `tenant_visibility_read` (same two-axis RBAC as org_memory, ADR-080) + platform unrestricted write
@@ -361,14 +374,24 @@ BM25-only across all scopes. Never return 500 due to LiteLLM being down ([two-sc
 **Re-rank failure is non-fatal:** `_llm_rerank` catches all exceptions and returns
 original order. Uses agent's configured model — never free-worker (confidential content).
 
-### 7.4 Dynamic Importance (Enhancement 2 — Shipped)
+### 7.4 Dynamic Importance (ADR-055 + ADR-125)
 
 ```python
-def dynamic_importance(base_importance, recall_count, last_recalled_at):
+def dynamic_importance(
+    recall_count: int,
+    last_recalled_at: datetime | None,
+    base_importance: float,
+    confidence_multiplier: float = 1.0,  # ADR-125: outcome-driven scaling
+) -> float:
     frequency_boost = log1p(recall_count) / 10.0        # log scale, ~0.3 at 1000 recalls
-    recency_boost = linear_decay(last_recalled_at, 30)   # 0→0.2 over 30 days
-    return min(1.0, base_importance + frequency_boost + recency_boost)
+    recency_boost = linear_decay(last_recalled_at, 30)  # 0→0.2 over 30 days
+    raw = min(1.0, base_importance + frequency_boost + recency_boost)
+    return max(0.0, min(1.0, raw * confidence_multiplier))  # outcome scaling last
 ```
+
+`confidence_multiplier` is stored on each `hindsight_memories` and `org_memory` row (default 1.0).
+Updated by `_record_work_order_outcome()` when a work order completes/fails:
+- `SUCCESS × 1.05` (cap 1.0) · `MINOR_FAILURE × 0.85` · `CRITICAL_FAILURE × 0.60` (floor 0.10)
 
 Applied as multiplier in RRF fusion: `final_score = rrf_score × dynamic_importance`.
 Access tracking is fire-and-forget after response assembly (separate connection, non-blocking).

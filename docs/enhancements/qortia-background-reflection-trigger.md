@@ -197,7 +197,7 @@ Note: `tenant_id` as a label is acceptable here because tenant count is bounded
 | Unit test — `test_reflect.py` | Agents with recent `updated_at` (within idle window) are not triggered |
 | Integration test | Agent with `reflection_counter = 10` and `updated_at` 25h ago is reflected; `reflection_counter` decrements |
 | Integration test | `start_supervised_tasks` patch in `conftest.py` covers `run_reflection_trigger` (no-op in tests) |
-| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 296/296 |
+| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 798/798 |
 | Full stack health | `python3 scripts/local_agents.py` — 21/21 checks |
 
 ---

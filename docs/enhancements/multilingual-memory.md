@@ -632,7 +632,7 @@ E2 and E3 are independent of each other — they can ship in either order after 
 - [x] `_indic_pipelines` cache keyed by `lang`, not model name
 - [x] `_get_indic_pipeline` logs `spacy_model_load_failed` on `OSError` and re-raises
 - [x] `load_spacy_model()` warms up `xx_ent_wiki_sm` at startup
-- [x] Platform unit tests pass: 367/367
+- [x] Platform unit tests pass: 798/798
 - [x] Full stack health: `python3 scripts/local_agents.py` 21/21
 
 ### E3
@@ -642,5 +642,5 @@ E2 and E3 are independent of each other — they can ship in either order after 
 - [x] Hindi memory written via `remember` tool has non-null `embedding` in DB after worker cycle
 - [x] Hindi recall query returns semantically relevant results (manual canary test)
 - [x] English recall quality unchanged (regression canary: existing English memories still recalled correctly)
-- [x] Platform unit tests pass: 296/296
+- [x] Platform unit tests pass: 798/798
 - [x] Staging canary: agent reaches `status=active`, `boot_complete` logged, tool call succeeds

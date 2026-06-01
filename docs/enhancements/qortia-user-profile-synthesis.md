@@ -237,7 +237,7 @@ touching memories.
 | Integration | Full lifecycle: 5 episodic writes with `user_ref` → synthesis runs → `user_profiles` row populated |
 | Integration | `GET /v1/context?user_ref=X` returns `user_profile_summary` after synthesis |
 | Integration | `DELETE /v1/profiles/{user_ref}` removes profile and all tagged memories |
-| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 296/296 |
+| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 798/798 |
 | Full stack health | `python3 scripts/local_agents.py` — 21/21 checks |
 
 ---

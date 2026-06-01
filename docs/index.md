@@ -20,16 +20,18 @@ Memory service: episodic recall, reflection, org knowledge, RBAC, embedding, ben
 
 ## Key Decisions (ADRs)
 
-| ADR | Decision |
-|-----|---------|
-| [ADR-041](../decisions/qortia.md) | Embedding worker per-row error isolation |
-| [ADR-054](../decisions/qortia.md) | NER entity extraction at write time |
-| [ADR-055](../decisions/qortia.md) | Dynamic importance: recall_count + last_recalled_at |
-| [ADR-056](../decisions/qortia.md) | Thought trace preservation (cognitive persistence) |
-| [ADR-071](../decisions/platform-api.md) | HNSW index parameters |
-| [ADR-074](../decisions/qortia.md) | Knowledge candidate keyword boost before MMR |
-| [ADR-080](../decisions/qortia.md) | Org memory RBAC: two-axis access control (clearance + division) |
-| [ADR-105](../decisions/qortia.md) | Memory quality: MRL + dedup strategy |
+| ADR | Decision | Status |
+|-----|---------|--------|
+| [ADR-041](../decisions/qortia.md) | Embedding worker per-row error isolation | implemented |
+| [ADR-054](../decisions/qortia.md) | NER entity extraction at write time | implemented |
+| [ADR-055](../decisions/qortia.md) | Dynamic importance: recall_count + last_recalled_at | implemented |
+| [ADR-056](../decisions/qortia.md) | Thought trace preservation (cognitive persistence) | implemented |
+| [ADR-071](../decisions/platform-api.md) | HNSW index parameters | implemented |
+| [ADR-074](../decisions/qortia.md) | Knowledge candidate keyword boost before MMR | implemented |
+| [ADR-078](../decisions/qortia.md) | Bi-temporal fact bounds: valid_from / valid_until on all recall paths | implemented |
+| [ADR-080](../decisions/qortia.md) | Org memory RBAC: two-axis access control (clearance + division) | implemented |
+| [ADR-105](../decisions/qortia.md) | Memory quality: MRL + dedup strategy | implemented |
+| [ADR-125](../decisions/qortia.md) | Causal tracking + outcome-driven confidence decay (dark-launch) | implemented |
 
 ## Open Enhancements
 
@@ -44,6 +46,21 @@ Memory service: episodic recall, reflection, org knowledge, RBAC, embedding, ben
 | [enhancements/recall-cross-encoder-profiles.md](enhancements/recall-cross-encoder-profiles.md) | Cross-encoder reranking profiles | post-mvp |
 | [enhancements/recall-importance-decay-type-routed.md](enhancements/recall-importance-decay-type-routed.md) | Importance decay type-routed | implemented |
 | [enhancements/recall-rerank-model-decoupling.md](enhancements/recall-rerank-model-decoupling.md) | Rerank model decoupling | implemented |
+
+## Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `platform/app/qortia/recall.py` | Main recall pipeline — 10 SQL paths, RRF fusion, `valid_until` filter |
+| `platform/app/qortia/recall_helpers.py` | `dynamic_importance()`, `_cosine()`, `_mmr()`, RRF utils |
+| `platform/app/qortia/recall_rerank.py` | Cross-encoder reranking (post-MVP, gated behind `#74`) |
+| `platform/app/qortia/links.py` | Write-time and read-time entity link expansion |
+| `platform/app/qortia/reflect.py` | Reflection / consolidation LLM pipeline |
+| `platform/app/qortia/remember.py` | Memory ingestion |
+| `platform/app/qortia/knowledge.py` | Knowledge corpus ingestion |
+| `platform/app/qortia/entity_graph.py` | BFS entity graph traversal |
+| `platform/app/qortia/models.py` | Pydantic models: `RecallResult`, `RecallRequest`, etc. |
+| `platform/app/qortia/eval_router.py` | Internal eval endpoints (EVAL_MODE guard — never in prod) |
 
 ## Related Components
 

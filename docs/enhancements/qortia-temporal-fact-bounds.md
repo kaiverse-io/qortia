@@ -119,12 +119,16 @@ AND (valid_until IS NULL OR valid_until > :as_of)
 **Default behaviour (no `as_of`):** Only return currently-valid memories:
 
 ```sql
-AND (valid_until IS NULL)
+AND (valid_until IS NULL OR valid_until > now())
 ```
 
-This is a **breaking change** in recall semantics. Currently, superseded memories
-(`is_consolidated = true`) are returned unless the caller explicitly filters them.
-After this change, memories with `valid_until` set are excluded from default recall.
+This correctly handles both expired memories (`valid_until` is a past timestamp) and
+memories with a future expiry (still valid). The simpler `AND (valid_until IS NULL)`
+would incorrectly exclude memories that have an explicit future `valid_until`.
+
+This is a **breaking change** in recall semantics. Previously, superseded memories
+(`is_consolidated = true`) were returned unless the caller explicitly filtered them.
+After this change, memories with `valid_until` set to a past timestamp are excluded.
 
 The `is_consolidated` filter remains for backward compatibility — it is a separate
 signal (whether the memory was processed by reflection) from `valid_until` (whether
@@ -169,7 +173,7 @@ Tool(name="recall", ..., inputSchema={..., "properties": {
 | Integration | `recall` with `as_of` before supersession returns the older memory |
 | Integration | `recall` with `as_of` after supersession returns the newer memory only |
 | Eval regression | `evals/run_reh.py` — Recall@5 ≥ 0.95, MRR ≥ 0.86 after default filter change |
-| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 296/296 |
+| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 798/798 |
 | Full stack health | `python3 scripts/local_agents.py` — 21/21 checks |
 
 ---

@@ -133,9 +133,9 @@ MMR balances relevance vs diversity:
 mmr_score = lambda_param * similarity - (1 - lambda_param) * max_similarity_to_selected
 ```
 
-**Authoritative parameters:**
-- `lambda_param = 0.7` — weights relevance (1.0) vs diversity (0.0)
-- Candidate pool: top-50 by cosine similarity before MMR re-ranking
+**Authoritative parameters (from `recall_helpers.py::_mmr`):**
+- `lambda_ = 0.5` — equal weight on relevance and diversity
+- Candidate pool: all embedded knowledge candidates before MMR re-ranking
 - Final selection: top-k from MMR (k = caller's limit, default 10)
 
 MMR runs on `org_knowledge` only. `hindsight_memories` and `org_memory` use RRF fusion.
@@ -176,7 +176,7 @@ CREATE INDEX idx_hindsight_entities ON hindsight_memories USING GIN (entities);
 CREATE INDEX idx_org_memory_entities ON org_memory USING GIN (entities);
 ```
 
-**Migration:** `migrations/002_ner_entities.sql`
+**Migration:** `migrations/V2__ner_entities.sql`
 
 **Platform-internal org_memory writes:**
 - `org_chart`: entities extracted from formatted org chart string
@@ -187,13 +187,14 @@ CREATE INDEX idx_org_memory_entities ON org_memory USING GIN (entities);
 Static `importance` (assigned at write time by memory type) is augmented with a dynamic signal
 computed from access frequency and recency. Replaces static lookup in RRF fusion.
 
-**New columns on all three memory tables:**
+**Columns added to `hindsight_memories` and `org_memory`:**
 ```sql
-recall_count     SMALLINT NOT NULL DEFAULT 0   -- SMALLINT sufficient (max 32767)
-last_recalled_at TIMESTAMPTZ
+recall_count          SMALLINT NOT NULL DEFAULT 0   -- SMALLINT sufficient (max 32767)
+last_recalled_at      TIMESTAMPTZ
+confidence_multiplier FLOAT    NOT NULL DEFAULT 1.0  -- ADR-125: outcome-driven decay
 ```
 
-**Access tracking — fire-and-forget after recall:**
+**Access tracking — fire-and-forget after recall (`_record_recall_access`):**
 ```python
 async def _record_recall_access(table: str, row_ids: list[UUID]) -> None:
     async with main_pool.acquire() as conn:
@@ -204,30 +205,44 @@ async def _record_recall_access(table: str, row_ids: list[UUID]) -> None:
         """, row_ids)
 ```
 
-Failure non-fatal — log warning, do not propagate.
+**ADR-125 causal read logging — fire-and-forget when `X-Work-Order-Id` header present (`_log_session_reads`):**
+Inserts one row per recalled memory into `qortia_session_reads(work_order_id, memory_id, ...)`.
+Used by the WO outcome recorder to identify which memories were implicated in a succeeded/failed WO.
 
-**dynamic_importance formula:**
+**ADR-125 outcome recording — triggered by `work_orders/router.py` on WO completion (`_record_work_order_outcome`):**
+Queries `qortia_session_reads` for the WO, applies `confidence_multiplier` decay to all implicated
+`hindsight_memories` rows, inserts one `qortia_outcome_records` row.
+Decay: `SUCCESS × 1.05` (cap 1.0) · `MINOR_FAILURE × 0.85` · `CRITICAL_FAILURE × 0.60` (floor 0.10).
+
+**dynamic_importance formula (from `recall_helpers.py`):**
 ```python
-import math
-from datetime import datetime, timezone
-
-def dynamic_importance(base_importance: float, recall_count: int,
-                       last_recalled_at: datetime | None) -> float:
-    frequency_boost = math.log1p(recall_count) / 10.0          # ~0.0 at 0, ~0.3 at 1000
+def dynamic_importance(
+    recall_count: int,
+    last_recalled_at: datetime | None,
+    base_importance: float,
+    confidence_multiplier: float = 1.0,   # ADR-125: outcome-driven scaling
+) -> float:
+    frequency_boost = math.log1p(recall_count) / 10.0
     recency_boost = 0.0
     if last_recalled_at:
         days_since = (datetime.now(timezone.utc) - last_recalled_at).days
-        recency_boost = max(0.0, 1.0 - (days_since / 30.0)) * 0.2  # decays to 0 over 30 days
-    return min(1.0, base_importance + frequency_boost + recency_boost)
+        recency_boost = max(0.0, 1.0 - (days_since / 30.0)) * 0.2
+    raw = min(1.0, base_importance + frequency_boost + recency_boost)
+    return max(0.0, min(1.0, raw * confidence_multiplier))   # outcome scaling last
 ```
 
-**Wired into `_rrf_fuse`:** `final_score` lambda replaces static `importance` with
-`dynamic_importance(r.importance, r._recall_count, r._last_recalled_at)`.
+`confidence_multiplier` is read from the DB column, never exposed in the API response
+(stored as `RecallResult._confidence_multiplier` private attr).
+
+**Wired into `_rrf_fuse`:** `final_score` replaces static `importance` with
+`dynamic_importance(r._recall_count, r._last_recalled_at, r.importance, r._confidence_multiplier)`.
 
 **No effect on boot context assembly:** `GET /v1/context` uses fixed `ORDER BY importance DESC` /
 `ORDER BY created_at DESC`. Dynamic importance is recall-time only.
 
-**Migration:** `migrations/003_recall_tracking.sql` — six ALTER TABLE statements across three tables.
+**Migration:** `migrations/V3__recall_tracking.sql` — ALTER TABLE statements across memory tables.
+V27 adds `confidence_multiplier` column to `hindsight_memories` and `org_memory`, and creates
+`qortia_session_reads` and `qortia_outcome_records` tables.
 
 ---
 

@@ -123,7 +123,7 @@ return _sort_by_importance([_to_result(dict(r), "private") for r in rows])
 | Unit test — `test_recall_pipeline.py` | `_recall_decisions` returns results sorted by `dynamic_importance`, not raw BM25 rank |
 | Unit test — `test_recall_pipeline.py` | A result with `recall_count=10` outranks one with `recall_count=0` when BM25 scores are equal |
 | Recall eval | `evals/run_reh.py` — Recall@5 ≥ 0.95, MRR ≥ 0.86 (must not regress) |
-| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 296/296 |
+| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 798/798 |
 
 ---
 

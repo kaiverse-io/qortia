@@ -211,7 +211,7 @@ async def _embed_query(
 | Unit test — `test_recall_pipeline.py` | Cache miss after TTL expiry |
 | Unit test — `test_recall_pipeline.py` | Cache miss on embed failure (no stale negative caching) |
 | Recall eval | `evals/run_reh.py` — Recall@5 ≥ 0.95, MRR ≥ 0.86 (must not regress) |
-| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 296/296 |
+| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 798/798 |
 
 ---
 

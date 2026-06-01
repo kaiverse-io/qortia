@@ -242,7 +242,7 @@ Tool(name="recall", ..., inputSchema={..., "properties": {
 | Integration | `recall` with `rerank="cross_encoder"` returns results sorted by cross-encoder score |
 | Eval regression | `thorough` profile Recall@5 ≥ `balanced` profile Recall@5 |
 | Eval regression | `balanced` profile Recall@5 ≥ 0.95, MRR ≥ 0.86 (no regression from candidate over-fetch) |
-| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 296/296 |
+| Platform unit tests | `cd platform && python3 -m pytest tests/unit/ -q` — 798/798 |
 | Full stack health | `python3 scripts/local_agents.py` — 21/21 checks |
 
 ---
