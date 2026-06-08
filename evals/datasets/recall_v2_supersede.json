@@ -1,0 +1,308 @@
+{
+  "version": "2",
+  "description": "Selective forgetting — tests ADR-027 blind supersede. Each case seeds a CURRENT fact and an EXPIRED fact (valid_until in past). Recall must NOT return the expired fact. This tests that valid_until filtering correctly hides stale memories.",
+  "requires": ["valid_until filtering in recall pipeline", "ADR-027", "ADR-078"],
+  "cases": [
+    {
+      "id": "sup-001",
+      "description": "Redis decision: current supersedes expired — expired must NOT appear",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided to use Redis for all caching. Reduces database load by 60% under peak traffic.",
+            "scope": "private",
+            "valid_until": "-7 days",
+            "importance": 0.9
+          },
+          {
+            "type": "decision",
+            "content": "Removed Redis from caching layer. Operational complexity outweighed benefits at current scale. Database query cache is sufficient.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "negative_must_not_appear_index": 0,
+      "query": {
+        "query": "Redis caching decision",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "expired_must_not_appear_in_top5": true,
+        "must_contain_in_top_result": ["removed", "Removed"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "sup-002",
+      "description": "Outdated lesson: superseded operational lesson must not appear",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "When a Vault token expires, simply restart the platform service. It fetches a new token on startup.",
+            "scope": "private",
+            "valid_until": "-14 days",
+            "is_consolidated": true
+          },
+          {
+            "type": "lesson",
+            "content": "When a Vault token expires, use the renewal endpoint — do NOT restart. Restart triggers a 30-second agent re-provisioning cascade that drops in-flight requests. Use: vault token renew <token>.",
+            "scope": "private",
+            "is_consolidated": true
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "negative_must_not_appear_index": 0,
+      "query": {
+        "query": "Vault token expires what to do",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "expired_must_not_appear_in_top5": true,
+        "must_contain_in_top_result": ["renew"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "sup-003",
+      "description": "Expired mental model about deployment strategy — current model must dominate",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "Deploy every Friday afternoon. Weekly cadence allows QA team to verify over the weekend before Monday traffic.",
+            "scope": "private",
+            "valid_until": "-21 days",
+            "is_consolidated": true
+          },
+          {
+            "type": "mental_model",
+            "content": "Continuous deployment on every merged PR to main. Automated tests + canary gate replaced the weekly release cycle. Friday deployments are no longer the pattern.",
+            "scope": "private",
+            "is_consolidated": true
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "negative_must_not_appear_index": 0,
+      "query": {
+        "query": "deployment cadence and strategy",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "expired_must_not_appear_in_top5": true,
+        "must_contain_in_top_result": ["Continuous"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "sup-004",
+      "description": "Expired org process — old code review SLA superseded by new policy",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "process",
+            "title": "Code review SLA",
+            "content": "Code review SLA: 5 business days. All PRs require two approvals. Architecture PRs require CTO sign-off.",
+            "valid_until": "-10 days"
+          },
+          {
+            "type": "process",
+            "title": "Code review SLA",
+            "content": "Code review SLA: 24 hours (reduced from 5 days following Q2 velocity initiative). All PRs require one approval. Architecture PRs require tech lead sign-off."
+          }
+        ],
+        "memories": [
+          {"type": "episodic", "content": "Placeholder.", "scope": "private"}
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "org_memories",
+      "negative_must_not_appear_index": 0,
+      "query": {
+        "query": "code review SLA process",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "expired_must_not_appear_in_top5": true,
+        "must_contain_in_top_result": ["24"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "sup-005",
+      "description": "Multiple expired memories — only current one should surface",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Using gRPC for inter-service communication. Chosen over REST for lower latency and binary encoding.",
+            "scope": "private",
+            "valid_until": "-60 days"
+          },
+          {
+            "type": "decision",
+            "content": "Switched from gRPC to REST/JSON for inter-service. gRPC added protobuf complexity with no measurable latency benefit at current RPS.",
+            "scope": "private",
+            "valid_until": "-20 days"
+          },
+          {
+            "type": "decision",
+            "content": "Standardized on HTTP/2 + JSON for inter-service communication. REST/JSON with HTTP/2 multiplexing provides gRPC latency profile without protobuf overhead.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 2,
+      "ground_truth_source": "memories",
+      "negative_must_not_appear_indices": [0, 1],
+      "query": {
+        "query": "inter-service communication protocol decision",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "expired_must_not_appear_in_top5": true,
+        "must_contain_in_top_result": ["HTTP/2"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "sup-006",
+      "description": "Episodic correction — bug reported then resolved; resolved version must surface",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Regression found in auth middleware after v1.42 deploy. JWT validation fails for tokens issued before 2026-01-01. Issue #891 open. Workaround: re-issue tokens.",
+            "scope": "private",
+            "valid_until": "-3 days"
+          },
+          {
+            "type": "episodic",
+            "content": "Auth middleware regression fixed in v1.43. JWT validation for pre-2026-01-01 tokens now works correctly. Issue #891 closed. No workaround needed.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "negative_must_not_appear_index": 0,
+      "query": {
+        "query": "auth middleware JWT regression",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "expired_must_not_appear_in_top5": true,
+        "must_contain_in_top_result": ["fixed", "closed"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "sup-007",
+      "description": "Experiential update — updated understanding of a system's failure mode",
+      "setup": {
+        "memories": [
+          {
+            "type": "experiential",
+            "content": "LiteLLM gateway times out under 200+ concurrent embedding requests. Set max concurrency to 150 as workaround.",
+            "scope": "private",
+            "valid_until": "-5 days"
+          },
+          {
+            "type": "experiential",
+            "content": "LiteLLM gateway timeout under high embedding concurrency was fixed by upgrading to v1.84. Max concurrency increased to 500. Previous 150-limit workaround no longer needed.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "negative_must_not_appear_index": 0,
+      "query": {
+        "query": "LiteLLM embedding concurrency limit",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "expired_must_not_appear_in_top5": true,
+        "must_contain_in_top_result": ["500", "fixed"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "sup-008",
+      "description": "Cross-scope supersede — expired org process, current one in place",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "process",
+            "title": "Incident response runbook",
+            "content": "P0 incidents: page oncall immediately, start war room in #incidents Slack, RTO is 4 hours.",
+            "valid_until": "-8 days"
+          },
+          {
+            "type": "process",
+            "title": "Incident response runbook",
+            "content": "P0 incidents: automated PagerDuty alert fires within 60s, war room auto-created in Slack, RTO target is 2 hours. Runbook: docs/ops/incident-p0.md."
+          }
+        ],
+        "memories": [
+          {"type": "episodic", "content": "Placeholder.", "scope": "private"}
+        ],
+        "hard_negatives": []
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "org_memories",
+      "negative_must_not_appear_index": 0,
+      "query": {
+        "query": "P0 incident response process",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "expired_must_not_appear_in_top5": true,
+        "must_contain_in_top_result": ["2 hours", "PagerDuty"],
+        "min_results": 1
+      }
+    }
+  ]
+}

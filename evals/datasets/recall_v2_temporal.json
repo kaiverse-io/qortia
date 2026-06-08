@@ -1,0 +1,416 @@
+{
+  "version": "2",
+  "description": "Bi-temporal conflict resolution — tests ADR-078 valid_from/valid_until semantics. Each case seeds a SUPERSEDED fact (valid_until set to past) and a CURRENT fact. Recall must return the current fact, not the superseded one.",
+  "requires": ["valid_until filtering in recall pipeline", "ADR-078"],
+  "cases": [
+    {
+      "id": "temp-001",
+      "description": "Decision supersede — removed Redis, now back to Postgres session storage",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Decided to use Redis for session storage. Postgres was too slow under peak load. Redis sustains 10k req/s.",
+            "scope": "private",
+            "valid_until": "-7 days"
+          },
+          {
+            "type": "decision",
+            "content": "Reverted session storage to Postgres. Redis operational costs outweighed the latency benefit. Postgres with connection pooling is sufficient.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Decided to use Memcached for session storage as a compromise between Redis and Postgres.",
+            "scope": "private",
+            "valid_until": "-14 days"
+          }
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "query": {
+        "query": "current decision on session storage",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_not_contain_superseded": true,
+        "must_contain_in_top_result": ["Postgres"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-002",
+      "description": "Preference update — user changed preferred language from TypeScript to Python",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "User strongly prefers TypeScript over Python for all new services. Type safety is the primary concern.",
+            "scope": "private",
+            "valid_until": "-3 days",
+            "is_consolidated": true
+          },
+          {
+            "type": "mental_model",
+            "content": "User now prefers Python for data pipeline work after TypeScript async overhead proved costly. TypeScript remains preferred for API services.",
+            "scope": "private",
+            "is_consolidated": true
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "User prefers Go for all backend services due to compilation speed and goroutine efficiency.",
+            "scope": "private",
+            "valid_until": "-10 days",
+            "is_consolidated": true
+          }
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "query": {
+        "query": "what language does the user prefer",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["Python"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-003",
+      "description": "Org ownership transfer — project lead changed from Alice to Bob",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "handoff",
+            "title": "Project Nexus ownership",
+            "content": "Alice is the project lead for Project Nexus. All architectural decisions require her approval. Contact: alice@the platform.internal.",
+            "valid_until": "-5 days"
+          },
+          {
+            "type": "handoff",
+            "title": "Project Nexus ownership transfer",
+            "content": "Bob is now the project lead for Project Nexus following Alice's promotion to CTO. All architectural decisions route to Bob. Contact: bob@the platform.internal."
+          }
+        ],
+        "memories": [
+          {"type": "episodic", "content": "Placeholder private memory.", "scope": "private"}
+        ],
+        "hard_negatives": [
+          {"type": "episodic", "content": "Placeholder hard negative.", "scope": "private"}
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "org_memories",
+      "query": {
+        "query": "who leads Project Nexus",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["Bob"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-004",
+      "description": "Technical decision — database ORM changed from SQLAlchemy to asyncpg",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Using SQLAlchemy ORM for all database access. Chosen for its mature ecosystem and migration tooling.",
+            "scope": "private",
+            "valid_until": "-30 days"
+          },
+          {
+            "type": "decision",
+            "content": "Migrated from SQLAlchemy to asyncpg for direct async SQL. SQLAlchemy's sync model blocked event loop performance under load. All queries now use raw SQL with asyncpg.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Evaluated Tortoise ORM as an async alternative to SQLAlchemy but rejected it due to limited migration support.",
+            "scope": "private",
+            "valid_until": "-25 days"
+          }
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "query": {
+        "query": "database access library decision",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["asyncpg"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-005",
+      "description": "Lesson update — deployment process improved after incident",
+      "setup": {
+        "memories": [
+          {
+            "type": "lesson",
+            "content": "Deploy directly to production after staging green. The staging environment is identical enough to production that intermediate rollout is unnecessary.",
+            "scope": "private",
+            "valid_until": "-14 days",
+            "is_consolidated": true
+          },
+          {
+            "type": "lesson",
+            "content": "Always use a canary deployment: 5% traffic for 30 minutes before full rollout. The 2026-05-10 incident showed that staging cannot catch all production traffic patterns.",
+            "scope": "private",
+            "is_consolidated": true
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "lesson",
+            "content": "Blue-green deployments are overkill for this service size. Single active deployment is sufficient.",
+            "scope": "private",
+            "valid_until": "-60 days",
+            "is_consolidated": true
+          }
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "query": {
+        "query": "how should we deploy to production",
+        "scope": "private",
+        "type": "lesson",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["canary"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-006",
+      "description": "Architecture decision — moved from monolith to services after scaling milestone",
+      "setup": {
+        "memories": [
+          {
+            "type": "decision",
+            "content": "Maintaining monolithic architecture until 100k active users. Current team size cannot support microservices overhead.",
+            "scope": "private",
+            "valid_until": "-21 days"
+          },
+          {
+            "type": "decision",
+            "content": "Beginning extraction of notification service from monolith. Hit 100k users. Auth and billing are next extraction candidates.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "decision",
+            "content": "Serverless functions for all new features. Lambda + DynamoDB for stateless workloads.",
+            "scope": "private",
+            "valid_until": "-45 days"
+          }
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "query": {
+        "query": "what is the current architecture decision",
+        "scope": "private",
+        "type": "decision",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["notification"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-007",
+      "description": "Contact info update — primary oncall rotation changed",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "process",
+            "title": "Oncall rotation",
+            "content": "Primary oncall is the platform team, rotation weekly. Escalation goes to @alice. PagerDuty policy: platform-oncall-v1.",
+            "valid_until": "-10 days"
+          },
+          {
+            "type": "process",
+            "title": "Oncall rotation",
+            "content": "Primary oncall is now the SRE team. Platform team handles escalations only. PagerDuty policy: sre-oncall-v1. Contact @charlie for escalations."
+          }
+        ],
+        "memories": [
+          {"type": "episodic", "content": "Placeholder.", "scope": "private"}
+        ],
+        "hard_negatives": [
+          {"type": "episodic", "content": "Placeholder hard negative.", "scope": "private"}
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "org_memories",
+      "query": {
+        "query": "oncall rotation process",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["SRE"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-008",
+      "description": "Mental model refinement — updated understanding of agent reflection threshold",
+      "setup": {
+        "memories": [
+          {
+            "type": "mental_model",
+            "content": "Agent reflection should trigger after every 5 episodic memories to maintain synthesis freshness.",
+            "scope": "private",
+            "valid_until": "-7 days",
+            "is_consolidated": true
+          },
+          {
+            "type": "mental_model",
+            "content": "Agent reflection threshold is 10 episodic memories. Triggering at 5 caused excessive LLM calls with insufficient input for meaningful synthesis. 10 provides enough signal.",
+            "scope": "private",
+            "is_consolidated": true
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "mental_model",
+            "content": "Reflection should only trigger when the agent is idle for more than 24 hours, regardless of episodic memory count.",
+            "scope": "private",
+            "valid_until": "-21 days",
+            "is_consolidated": true
+          }
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "query": {
+        "query": "agent reflection threshold",
+        "scope": "private",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["10"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-009",
+      "description": "Security policy update — API key rotation period tightened",
+      "setup": {
+        "org_memories": [
+          {
+            "type": "process",
+            "title": "API key rotation policy",
+            "content": "API keys rotate every 90 days. Automated rotation via Vault. Alert fires 7 days before expiry.",
+            "valid_until": "-14 days"
+          },
+          {
+            "type": "process",
+            "title": "API key rotation policy",
+            "content": "API keys rotate every 30 days following the 2026-04 audit finding. Automated rotation via Vault. Alert fires 3 days before expiry. Non-compliance blocks deployment."
+          }
+        ],
+        "memories": [
+          {"type": "episodic", "content": "Placeholder.", "scope": "private"}
+        ],
+        "hard_negatives": [
+          {"type": "episodic", "content": "Placeholder hard negative.", "scope": "private"}
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "org_memories",
+      "query": {
+        "query": "API key rotation policy frequency",
+        "scope": "org",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["30"],
+        "min_results": 1
+      }
+    },
+    {
+      "id": "temp-010",
+      "description": "Episodic correction — bug status updated from open to resolved",
+      "setup": {
+        "memories": [
+          {
+            "type": "episodic",
+            "content": "Memory leak confirmed in the embedding worker. Issue #482 open. Affects long-running agents after 48h uptime.",
+            "scope": "private",
+            "valid_until": "-2 days"
+          },
+          {
+            "type": "episodic",
+            "content": "Memory leak in embedding worker fixed in commit a7f3c21. Issue #482 closed. Root cause: asyncpg connection not released on embed failure. Tested over 72h without regression.",
+            "scope": "private"
+          }
+        ],
+        "hard_negatives": [
+          {
+            "type": "episodic",
+            "content": "Possible memory leak observed in the reflection worker, but not confirmed. Monitoring for 48h before filing issue.",
+            "scope": "private",
+            "valid_until": "-5 days"
+          }
+        ]
+      },
+      "ground_truth_index": 1,
+      "ground_truth_source": "memories",
+      "query": {
+        "query": "embedding worker memory leak",
+        "scope": "private",
+        "type": "episodic",
+        "rerank": false,
+        "entities": null
+      },
+      "expected": {
+        "ground_truth_must_rank_above_hard_negatives": true,
+        "must_contain_in_top_result": ["fixed"],
+        "min_results": 1
+      }
+    }
+  ]
+}
