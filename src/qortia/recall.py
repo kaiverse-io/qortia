@@ -666,7 +666,6 @@ async def _log_session_reads(
 # ── POST /v1/recall ──────────────────────────────────────────
 
 
-@router.post("/v1/recall", response_model=RecallResponse)
 async def _hybrid_recall_pipeline(
     body: RecallRequest,
     agent: AgentIdentity,
@@ -826,6 +825,7 @@ async def _hybrid_recall_pipeline(
     return results
 
 
+@router.post("/v1/recall", response_model=RecallResponse)
 async def recall(
     body: RecallRequest,
     agent: AgentIdentity = Depends(require_agent),
