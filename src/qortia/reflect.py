@@ -17,10 +17,10 @@ from app.qortia.common import (
     get_litellm_client,
 )
 from app.qortia.entity_graph import (
-    _update_entity_summary,
     _maybe_dedup_memory,
-    _maybe_update_entity_summary,
+    _maybe_update_entity_summary as _maybe_update_entity_summary,
     _populate_graph_batch,
+    _update_entity_summary as _update_entity_summary,
 )
 from app.qortia.models import ReflectResponse
 from app.config import settings
@@ -160,9 +160,6 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
                 new_embeddings[i] = None
 
     # Write transaction
-    new_ids: list[tuple[object, object]] = []
-    new_counter: int = 0
-    stable_count = 0
     memories_written, new_counter = await _write_reflections(
         agent_id=agent.agent_id,
         tenant_id=agent.tenant_id,
@@ -479,8 +476,6 @@ NEVER include:
 - Abstract concepts without grounding ("things went well", "it was difficult")"""
 
 
-
-
 # ── Archival background task ─────────────────────────────────
 
 
@@ -744,7 +739,9 @@ async def _trigger_idle_reflections() -> None:
                 settings.idle_reflection_window_h,
             )
         for row in rows:
-            await _reflect_agent(UUID(str(row["agent_id"])), UUID(str(row["tenant_id"])))
+            await _reflect_agent(
+                UUID(str(row["agent_id"])), UUID(str(row["tenant_id"]))
+            )
     except Exception as exc:
         logger.warning({"event": "idle_reflection_trigger_failed", "error": str(exc)})
 

@@ -1,18 +1,19 @@
 """Entity graph maintenance: summary updates, deduplication, and graph population."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
 from typing import Any
-from uuid import UUID
 
 from app.config import settings
-from app.qortia.common import EMBEDDING_MODEL, get_litellm_client
-from app.db import get_main_pool, tenant_transaction
+from app.qortia.common import get_litellm_client
+from app.db import get_main_pool
 from app.vault import get_litellm_key
 
 logger = logging.getLogger(__name__)
+
 
 async def _update_entity_summary(
     existing_summary: str | None,
@@ -51,6 +52,7 @@ async def _update_entity_summary(
     except Exception as exc:
         logger.warning({"event": "entity_summary_update_failed", "error": str(exc)})
         return existing_summary
+
 
 async def _maybe_dedup_memory(
     memory_id: object,
@@ -107,6 +109,7 @@ async def _maybe_dedup_memory(
                     "agent_id": str(agent_id),
                 }
             )
+
 
 async def _maybe_update_entity_summary(
     conn: Any,
@@ -191,8 +194,8 @@ async def _maybe_update_entity_summary(
         logger.warning({"event": "entity_summary_write_failed", "error": str(exc)})
 
 
-
 # ── Graph batch population ────────────────────────────────────
+
 
 async def _populate_graph_batch() -> None:
     """
