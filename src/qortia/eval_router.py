@@ -72,9 +72,9 @@ class SeedMemoryRequest(BaseModel):
     scope: str = "private"
     lang: str = "en"
     importance: float = 0.5
-    valid_from: str | None = None   # ISO-8601; None = always valid from creation
+    valid_from: str | None = None  # ISO-8601; None = always valid from creation
     valid_until: str | None = None  # ISO-8601; None = currently valid (no expiry)
-    is_consolidated: bool = False   # For mental_model/lesson seeded directly
+    is_consolidated: bool = False  # For mental_model/lesson seeded directly
 
 
 @router.post("/seed-memory")
@@ -97,16 +97,22 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
     extra_cols = "is_consolidated"
     extra_vals = "$8"
     params: list[object] = [
-        req.tenant_id, req.agent_id, req.mem_type, req.content,
-        req.importance, json.dumps(entities), req.lang, req.is_consolidated,
+        req.tenant_id,
+        req.agent_id,
+        req.mem_type,
+        req.content,
+        req.importance,
+        json.dumps(entities),
+        req.lang,
+        req.is_consolidated,
     ]
     if valid_from_dt is not None:
         params.append(valid_from_dt)
-        extra_cols += f", valid_from"
+        extra_cols += ", valid_from"
         extra_vals += f", ${len(params)}"
     if valid_until_dt is not None:
         params.append(valid_until_dt)
-        extra_cols += f", valid_until"
+        extra_cols += ", valid_until"
         extra_vals += f", ${len(params)}"
 
     async with get_main_pool().acquire() as conn:
@@ -226,12 +232,16 @@ async def eval_remember_org(
             if valid_until_dt:
                 await conn.execute(
                     "UPDATE org_memory SET valid_until = $1 WHERE id = $2 AND tenant_id = $3",
-                    valid_until_dt, UUID(org_id), tenant_id,
+                    valid_until_dt,
+                    UUID(org_id),
+                    tenant_id,
                 )
             if valid_from_dt:
                 await conn.execute(
                     "UPDATE org_memory SET valid_from = $1 WHERE id = $2 AND tenant_id = $3",
-                    valid_from_dt, UUID(org_id), tenant_id,
+                    valid_from_dt,
+                    UUID(org_id),
+                    tenant_id,
                 )
 
     return {"id": org_id}
@@ -246,15 +256,25 @@ from pydantic import BaseModel as _BaseModel  # noqa: E402
 class RecallRequestFull(_BaseModel):
     query: str
     scope: Literal["private", "org", "knowledge", "all"] = "private"
-    type: str | None = None
+    type: (
+        Literal[
+            "episodic",
+            "experiential",
+            "mental_model",
+            "decision",
+            "lesson",
+            "short_term",
+        ]
+        | None
+    ) = None
     entities: list[str] | None = None
     rerank: bool = False
     lang: str | None = None
-    as_of: str | None = None
+    as_of: datetime.datetime | None = None
 
 
 class RememberOrgRequestBody(_BaseModel):
-    type: str
+    type: Literal["handoff", "process", "decision_log"]
     title: str
     content: str
     lang: str = "en"
@@ -286,7 +306,7 @@ async def eval_ingest_knowledge(
 
 
 class KnowledgeIngestBody(_BaseModel):
-    source_type: str
+    source_type: Literal["file", "url", "transcript", "note"]
     source_path: str
     content: str
     lang: str = "en"

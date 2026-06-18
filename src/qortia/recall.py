@@ -268,7 +268,6 @@ async def _bm25_private(
               AND type != 'short_term'
               {tier_clause}
               AND (expires_at IS NULL OR expires_at > now())
-              AND (valid_until IS NULL OR valid_until > now())
               {type_clause}
               {entity_clause}
               {temporal_clause}
@@ -582,14 +581,17 @@ async def _record_work_order_outcome(
 
     try:
         async with tenant_transaction(
-            get_main_pool(), tenant_id, agent_id,
+            get_main_pool(),
+            tenant_id,
+            agent_id,
             memory_clearance_order=memory_clearance_order,
             agent_division=agent_division,
         ) as conn:
             # Fetch implicated memory IDs from session reads
             rows = await conn.fetch(
                 "SELECT DISTINCT memory_id FROM qortia_session_reads WHERE work_order_id = $1 AND tenant_id = $2",
-                work_order_id, tenant_id,
+                work_order_id,
+                tenant_id,
             )
             memory_ids = [str(r["memory_id"]) for r in rows]
             memory_count = len(memory_ids)
@@ -602,7 +604,9 @@ async def _record_work_order_outcome(
                     SET confidence_multiplier = GREATEST(0.10, LEAST(1.0, confidence_multiplier * $1))
                     WHERE id = ANY($2::uuid[]) AND tenant_id = $3
                     """,
-                    multiplier, memory_ids, tenant_id,
+                    multiplier,
+                    memory_ids,
+                    tenant_id,
                 )
 
             # Insert outcome record (ON CONFLICT DO NOTHING — idempotent)
@@ -613,7 +617,11 @@ async def _record_work_order_outcome(
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (work_order_id) DO NOTHING
                 """,
-                tenant_id, agent_id, work_order_id, outcome, memory_count,
+                tenant_id,
+                agent_id,
+                work_order_id,
+                outcome,
+                memory_count,
             )
     except Exception as exc:
         logger.warning({"event": "outcome_record_failed", "error": str(exc)})
@@ -657,6 +665,165 @@ async def _log_session_reads(
 # ── POST /v1/recall ──────────────────────────────────────────
 
 
+async def _hybrid_recall_pipeline(
+    body: RecallRequest,
+    agent: AgentIdentity,
+    clearance_order: int,
+    agent_division: str,
+) -> list[RecallResult]:
+    """Full hybrid search pipeline: BM25+vector across scopes, entity graph
+    boost, BFS traversal, MMR/RRF fusion, and cross-memory link expansion."""
+    query_embedding = await _embed_query(
+        body.query, agent.tenant_id, lang=body.lang or "en"
+    )
+    tasks = []
+
+    if body.scope in ("private", "all", "archive"):
+        tasks.append(_bm25_private(body, agent))
+        if query_embedding:
+            tasks.append(_vector_private(body, agent, query_embedding))
+
+    if body.scope in ("org", "all"):
+        tasks.append(_bm25_org(body, agent, clearance_order, agent_division))
+        if query_embedding:
+            tasks.append(
+                _vector_org(
+                    body, agent, query_embedding, clearance_order, agent_division
+                )
+            )
+
+    if body.scope in ("knowledge", "all"):
+        tasks.append(_bm25_knowledge(body, agent, clearance_order, agent_division))
+        if query_embedding:
+            tasks.append(
+                _vector_knowledge(
+                    body, agent, query_embedding, clearance_order, agent_division
+                )
+            )
+
+    result_sets = await asyncio.gather(*tasks, return_exceptions=True)
+
+    memory_results: list[RecallResult] = []
+    knowledge_candidates: list[RecallResult] = []
+
+    for rs in result_sets:
+        if isinstance(rs, Exception):
+            logger.warning({"event": "recall_search_error", "error": str(rs)})
+            try:
+                from app.telemetry.instruments import (
+                    qortia_recall_degraded,
+                )
+
+                qortia_recall_degraded.add(
+                    1,
+                    {
+                        "reason": "search_error",
+                        "the platform.tenant_id": str(agent.tenant_id),
+                    },
+                )
+            except Exception:
+                pass
+            continue
+        for r in list(rs):  # type: ignore[arg-type]
+            if r.scope == "knowledge":
+                knowledge_candidates.append(r)
+            else:
+                memory_results.append(r)
+
+    # ── Entity Graph Boost (The Obsidian Layer) ──
+    from app.qortia.knowledge import extract_entities
+
+    try:
+        query_entities = extract_entities(body.query)
+    except Exception:
+        query_entities = []
+    entity_links: set[str] = set()
+    top_entity_summary: str | None = None
+    if query_entities:
+        async with tenant_transaction(
+            get_main_pool(),
+            agent.tenant_id,
+            agent.agent_id,
+            memory_clearance_order=clearance_order,
+            agent_division=agent_division,
+        ) as conn:
+            linked_rows = await conn.fetch(
+                """
+                SELECT unnest(linked_memory_ids) as mem_id, summary
+                FROM qortia_entities
+                WHERE tenant_id = $1
+                  AND (agent_id IS NULL OR agent_id = $2)
+                  AND entity_text = ANY($3::text[])
+                  AND max_clearance_order <= $4
+            """,
+                agent.tenant_id,
+                agent.agent_id,
+                query_entities,
+                clearance_order,
+            )
+            entity_links = {str(r["mem_id"]) for r in linked_rows}
+            top_entity_summary = next(
+                (r["summary"] for r in linked_rows if r["summary"]), None
+            )
+
+    fused_memory = _rrf_fuse(memory_results, entity_links=entity_links)
+
+    # 2-hop BFS traversal — surfaces memories reachable via entity co-occurrence
+    if entity_links and query_embedding:
+        async with tenant_transaction(
+            get_main_pool(), agent.tenant_id, agent.agent_id
+        ) as conn:
+            seed_rows = await conn.fetch(
+                """
+                SELECT id FROM qortia_entities
+                WHERE tenant_id = $1
+                  AND (agent_id IS NULL OR agent_id = $2)
+                  AND entity_text = ANY($3::text[])
+                  AND max_clearance_order <= $4
+                """,
+                agent.tenant_id,
+                agent.agent_id,
+                query_entities,
+                clearance_order,
+            )
+        seed_ids = [r["id"] for r in seed_rows]
+        bfs_boosts = await _bfs_entity_traversal(
+            query_embedding, seed_ids, agent.tenant_id, agent.agent_id
+        )
+        if bfs_boosts:
+            # Merge BFS boosts into entity_links for a second RRF pass
+            combined_links = entity_links | set(bfs_boosts.keys())
+            fused_memory = _rrf_fuse(memory_results, entity_links=combined_links)
+
+    if query_embedding and knowledge_candidates:
+        for kc in knowledge_candidates:
+            boost = _keyword_boost(body.query, kc.content)
+            kc._score = kc._score * (1.0 + boost)
+        knowledge_results = _mmr(
+            query_embedding=query_embedding,
+            candidates=knowledge_candidates,
+            min_score=0.30,
+        )
+    else:
+        knowledge_results = knowledge_candidates[:4]
+
+    # Cross-memory link expansion (16i) — expand top-5 fused results with linked memories
+    if fused_memory and query_embedding:
+        from app.qortia.links import _expand_with_links
+
+        fused_memory = await _expand_with_links(
+            fused_memory, agent.tenant_id, agent.agent_id
+        )
+
+    results = fused_memory + knowledge_results
+
+    # Attach entity summary to the top result if available
+    if top_entity_summary and results:
+        results[0].entity_summary = top_entity_summary
+
+    return results
+
+
 @router.post("/v1/recall", response_model=RecallResponse)
 async def recall(
     body: RecallRequest,
@@ -689,154 +856,9 @@ async def recall(
     elif body.type == "short_term":
         results = await _recall_short_term(body, agent)
     else:
-        # Full hybrid pipeline
-        query_embedding = await _embed_query(
-            body.query, agent.tenant_id, lang=body.lang or "en"
+        results = await _hybrid_recall_pipeline(
+            body, agent, clearance_order, agent_division
         )
-        tasks = []
-
-        if body.scope in ("private", "all", "archive"):
-            tasks.append(_bm25_private(body, agent))
-            if query_embedding:
-                tasks.append(_vector_private(body, agent, query_embedding))
-
-        if body.scope in ("org", "all"):
-            tasks.append(_bm25_org(body, agent, clearance_order, agent_division))
-            if query_embedding:
-                tasks.append(
-                    _vector_org(
-                        body, agent, query_embedding, clearance_order, agent_division
-                    )
-                )
-
-        if body.scope in ("knowledge", "all"):
-            tasks.append(_bm25_knowledge(body, agent, clearance_order, agent_division))
-            if query_embedding:
-                tasks.append(
-                    _vector_knowledge(
-                        body, agent, query_embedding, clearance_order, agent_division
-                    )
-                )
-
-        result_sets = await asyncio.gather(*tasks, return_exceptions=True)
-
-        memory_results: list[RecallResult] = []
-        knowledge_candidates: list[RecallResult] = []
-
-        for rs in result_sets:
-            if isinstance(rs, Exception):
-                logger.warning({"event": "recall_search_error", "error": str(rs)})
-                try:
-                    from app.telemetry.instruments import (
-                        qortia_recall_degraded,
-                    )
-
-                    qortia_recall_degraded.add(
-                        1,
-                        {
-                            "reason": "search_error",
-                            "the platform.tenant_id": str(agent.tenant_id),
-                        },
-                    )
-                except Exception:
-                    pass
-                continue
-            for r in list(rs):  # type: ignore[arg-type]
-                if r.scope == "knowledge":
-                    knowledge_candidates.append(r)
-                else:
-                    memory_results.append(r)
-
-        # ── Entity Graph Boost (The Obsidian Layer) ──
-        from app.qortia.knowledge import extract_entities
-
-        try:
-            query_entities = extract_entities(body.query)
-        except Exception:
-            query_entities = []
-        entity_links: set[str] = set()
-        top_entity_summary: str | None = None
-        if query_entities:
-            async with tenant_transaction(
-                get_main_pool(),
-                agent.tenant_id,
-                agent.agent_id,
-                memory_clearance_order=clearance_order,
-                agent_division=agent_division,
-            ) as conn:
-                linked_rows = await conn.fetch(
-                    """
-                    SELECT unnest(linked_memory_ids) as mem_id, summary
-                    FROM qortia_entities
-                    WHERE tenant_id = $1
-                      AND (agent_id IS NULL OR agent_id = $2)
-                      AND entity_text = ANY($3::text[])
-                      AND max_clearance_order <= $4
-                """,
-                    agent.tenant_id,
-                    agent.agent_id,
-                    query_entities,
-                    clearance_order,
-                )
-                entity_links = {str(r["mem_id"]) for r in linked_rows}
-                top_entity_summary = next(
-                    (r["summary"] for r in linked_rows if r["summary"]), None
-                )
-
-        fused_memory = _rrf_fuse(memory_results, entity_links=entity_links)
-
-        # 2-hop BFS traversal — surfaces memories reachable via entity co-occurrence
-        if entity_links and query_embedding:
-            async with tenant_transaction(
-                get_main_pool(), agent.tenant_id, agent.agent_id
-            ) as conn:
-                seed_rows = await conn.fetch(
-                    """
-                    SELECT id FROM qortia_entities
-                    WHERE tenant_id = $1
-                      AND (agent_id IS NULL OR agent_id = $2)
-                      AND entity_text = ANY($3::text[])
-                      AND max_clearance_order <= $4
-                    """,
-                    agent.tenant_id,
-                    agent.agent_id,
-                    query_entities,
-                    clearance_order,
-                )
-            seed_ids = [r["id"] for r in seed_rows]
-            bfs_boosts = await _bfs_entity_traversal(
-                query_embedding, seed_ids, agent.tenant_id, agent.agent_id
-            )
-            if bfs_boosts:
-                # Merge BFS boosts into entity_links for a second RRF pass
-                combined_links = entity_links | set(bfs_boosts.keys())
-                fused_memory = _rrf_fuse(memory_results, entity_links=combined_links)
-
-        if query_embedding and knowledge_candidates:
-            for kc in knowledge_candidates:
-                boost = _keyword_boost(body.query, kc.content)
-                kc._score = kc._score * (1.0 + boost)
-            knowledge_results = _mmr(
-                query_embedding=query_embedding,
-                candidates=knowledge_candidates,
-                min_score=0.30,
-            )
-        else:
-            knowledge_results = knowledge_candidates[:4]
-
-        # Cross-memory link expansion (16i) — expand top-5 fused results with linked memories
-        if fused_memory and query_embedding:
-            from app.qortia.links import _expand_with_links
-
-            fused_memory = await _expand_with_links(
-                fused_memory, agent.tenant_id, agent.agent_id
-            )
-
-        results = fused_memory + knowledge_results
-
-        # Attach entity summary to the top result if available
-        if top_entity_summary and results:
-            results[0].entity_summary = top_entity_summary
 
     if body.rerank and len(results) >= 2:
         results = await _llm_rerank(body.query, results, agent)
@@ -867,7 +889,7 @@ async def recall(
                     results,
                     agent.tenant_id,
                     agent.agent_id,
-                    wo_uuid,  # type: ignore[arg-type]
+                    wo_uuid,
                     memory_clearance_order=clearance_order,
                     agent_division=agent_division,
                 )
@@ -881,7 +903,9 @@ async def recall(
             "the platform.tenant_id": str(agent.tenant_id),
             "scope": body.scope,
             "result_count": len(results),
-            "work_order_id": x_work_order_id if isinstance(x_work_order_id, str) else None,
+            "work_order_id": x_work_order_id
+            if isinstance(x_work_order_id, str)
+            else None,
         }
     )
 
