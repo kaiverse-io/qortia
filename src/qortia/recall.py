@@ -268,7 +268,6 @@ async def _bm25_private(
               AND type != 'short_term'
               {tier_clause}
               AND (expires_at IS NULL OR expires_at > now())
-              AND (valid_until IS NULL OR valid_until > now())
               {type_clause}
               {entity_clause}
               {temporal_clause}
