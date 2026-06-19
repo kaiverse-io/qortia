@@ -73,7 +73,7 @@ def _compute_stability_scores(
 
 
 @router.post("/v1/reflect", response_model=ReflectResponse)
-async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectResponse:
+async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectResponse:  # noqa: B008
     from app.qortia.common import assert_agent_active
     from app.qortia.remember import _fetch_agent_clearance
 
@@ -176,7 +176,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
     )
 
 
-async def _write_reflections(
+async def _write_reflections(  # noqa: C901
     agent_id: UUID,
     tenant_id: UUID,
     reflections: list[dict[str, Any]],
@@ -363,7 +363,7 @@ async def _write_reflections(
     return len(new_ids), new_counter
 
 
-async def _call_litellm_reflect(
+async def _call_litellm_reflect(  # noqa: C901
     model: str,
     recent: list[str],
     existing: list[dict],  # type: ignore[type-arg]
@@ -420,7 +420,7 @@ async def _call_litellm_reflect(
                     raise ValueError("content must not be empty")
     except (KeyError, ValueError, json.JSONDecodeError) as exc:
         logger.error({"event": "reflection_llm_malformed", "error": str(exc)})
-        raise HTTPException(500, "Reflection failed: malformed LLM response")
+        raise HTTPException(500, "Reflection failed: malformed LLM response")  # noqa: B904
 
     return reflections  # type: ignore[no-any-return]
 
@@ -634,7 +634,7 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
         embedding = await _get_embedding(row["text_to_embed"], litellm_key)
         async with get_main_pool().acquire() as conn:
             await conn.execute(
-                f"UPDATE {row['tbl']} SET embedding = $1::vector WHERE id = $2",
+                f"UPDATE {row['tbl']} SET embedding = $1::vector WHERE id = $2",  # noqa: S608
                 str(embedding),
                 row["id"],
             )
@@ -657,11 +657,12 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
     except Exception as exc:
         async with get_main_pool().acquire() as conn:
             await conn.execute(
-                f"UPDATE {row['tbl']} SET embedding_attempts = embedding_attempts + 1 WHERE id = $1",
+                f"UPDATE {row['tbl']} SET embedding_attempts = embedding_attempts + 1 WHERE id = $1",  # noqa: S608
                 row["id"],
             )
             attempts = await conn.fetchval(
-                f"SELECT embedding_attempts FROM {row['tbl']} WHERE id = $1", row["id"]
+                f"SELECT embedding_attempts FROM {row['tbl']} WHERE id = $1",  # noqa: S608
+                row["id"],
             )
         if attempts and attempts >= 3:
             logger.warning(

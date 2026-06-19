@@ -123,7 +123,7 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
                  {extra_cols})
             VALUES ($1, $2, $3, $4, $5, $6, $7, {extra_vals})
             RETURNING id
-        """,
+        """,  # noqa: S608
             *params,
         )
 

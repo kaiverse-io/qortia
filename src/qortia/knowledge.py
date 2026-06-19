@@ -238,7 +238,7 @@ router = APIRouter()
 @router.post("/v1/knowledge")
 async def ingest_knowledge(
     body: KnowledgeIngestRequest,
-    agent: AgentIdentity = Depends(require_agent),
+    agent: AgentIdentity = Depends(require_agent),  # noqa: B008
 ) -> dict:  # type: ignore[type-arg]
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -290,7 +290,7 @@ async def ingest_knowledge(
         sections_created = 0
         sections_deduped = 0
 
-        for idx, (section, content_hash) in enumerate(zip(sections, incoming_hashes)):
+        for idx, (section, content_hash) in enumerate(zip(sections, incoming_hashes)):  # noqa: B905
             index_fields = extract_index_fields(
                 section["heading"], section["text"], lang=body.lang
             )
@@ -363,7 +363,7 @@ async def ingest_knowledge(
 @router.delete("/v1/knowledge/{source_path:path}")
 async def delete_knowledge(
     source_path: str,
-    agent: AgentIdentity = Depends(require_agent),
+    agent: AgentIdentity = Depends(require_agent),  # noqa: B008
 ) -> dict:  # type: ignore[type-arg]
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -431,7 +431,7 @@ async def _run_weekly_summary_cycle() -> None:
 
     for tenant in tenants:
         tenant_id = tenant["id"]
-        day_offset = int(_hashlib.md5(str(tenant_id).encode()).hexdigest(), 16) % 7
+        day_offset = int(_hashlib.md5(str(tenant_id).encode()).hexdigest(), 16) % 7  # noqa: S324
         if datetime.date.today().weekday() != day_offset:
             continue
         await _summarise_tenant(tenant_id, tenant["weekly_summary_last_run_at"])

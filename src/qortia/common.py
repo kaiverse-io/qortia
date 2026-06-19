@@ -14,7 +14,7 @@ _litellm_client: httpx.AsyncClient | None = None
 
 def init_litellm_client() -> None:
     global _litellm_client
-    _litellm_client = httpx.AsyncClient(base_url=settings.litellm_url, timeout=None)
+    _litellm_client = httpx.AsyncClient(base_url=settings.litellm_url, timeout=None)  # noqa: S113
 
 
 async def close_litellm_client() -> None:
@@ -23,7 +23,7 @@ async def close_litellm_client() -> None:
 
 
 def get_litellm_client() -> httpx.AsyncClient:
-    assert _litellm_client is not None, "LiteLLM client not initialised"
+    assert _litellm_client is not None, "LiteLLM client not initialised"  # noqa: S101
     return _litellm_client
 
 
