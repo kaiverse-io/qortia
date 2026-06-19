@@ -188,7 +188,7 @@ async def _fetch_agent_clearance(
 @router.post("/v1/remember", response_model=RememberResponse)
 async def remember(
     body: RememberRequest,
-    agent: AgentIdentity = Depends(require_agent),
+    agent: AgentIdentity = Depends(require_agent),  # noqa: B008
     x_work_order_id: str | None = Header(default=None, alias="X-Work-Order-Id"),
 ) -> RememberResponse:
     async with tenant_transaction(
@@ -321,7 +321,7 @@ async def remember(
 @router.post("/v1/remember-org", response_model=RememberOrgResponse)
 async def remember_org(
     body: RememberOrgRequest,
-    agent: AgentIdentity = Depends(require_agent),
+    agent: AgentIdentity = Depends(require_agent),  # noqa: B008
 ) -> RememberOrgResponse:
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -411,7 +411,7 @@ async def remember_org(
 @router.post("/v1/forget", response_model=ForgetResponse)
 async def forget(
     body: ForgetRequest,
-    agent: AgentIdentity = Depends(require_agent),
+    agent: AgentIdentity = Depends(require_agent),  # noqa: B008
 ) -> ForgetResponse:
     async with tenant_transaction(
         get_main_pool(), agent.tenant_id, agent.agent_id
@@ -441,7 +441,7 @@ async def forget(
                 raise HTTPException(403, "Cannot delete another agent's memory")
             table, row, content = "hindsight_memories", hm, hm["content"]
         else:
-            assert (
+            assert (  # noqa: S101
                 om is not None
             )  # guarded by `if hm is None and om is None` raise above
             mem_type = om["type"]
@@ -460,7 +460,7 @@ async def forget(
             table, row, content = "org_memory", om, om["content"]
 
         content_hash = hashlib.sha256(content.encode()).hexdigest()
-        await conn.execute(f"DELETE FROM {table} WHERE id = $1", row["id"])
+        await conn.execute(f"DELETE FROM {table} WHERE id = $1", row["id"])  # noqa: S608
 
         # Obsidian Layer: Cleanup entity graph
         await conn.execute(
@@ -502,7 +502,7 @@ async def forget(
 
 
 @router.get("/v1/context", response_model=ContextResponse)
-async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextResponse:
+async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextResponse:  # noqa: B008
     clearance_order, agent_division = await _fetch_agent_clearance(
         agent.agent_id, agent.tenant_id
     )

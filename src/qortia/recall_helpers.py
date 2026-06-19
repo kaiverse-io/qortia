@@ -1,4 +1,5 @@
 """Pure helper functions for the recall pipeline. No I/O or database access."""
+
 from __future__ import annotations
 
 import math
@@ -15,9 +16,11 @@ _VALID_MEMORY_TYPES: frozenset[str] = frozenset(
     {"episodic", "experiential", "mental_model", "decision", "lesson", "short_term"}
 )
 
+
 def _bm25_normalization(query: str) -> int:
     """ts_rank_cd normalization: 32 for short queries (≤3 tokens), 0 otherwise."""
     return 32 if len(query.split()) <= 3 else 0
+
 
 def dynamic_importance(
     base_importance: float,
@@ -33,6 +36,7 @@ def dynamic_importance(
     raw = min(1.0, base_importance + frequency_boost + recency_boost)
     return max(0.0, min(1.0, raw * confidence_multiplier))
 
+
 def _entity_filter_clause(
     entities: list[str] | None,
     base_param: int,
@@ -46,8 +50,9 @@ def _entity_filter_clause(
             SELECT 1 FROM jsonb_array_elements(entities) AS e
             WHERE e->>0 = ANY(${base_param}::text[])
         )
-    """
+    """  # noqa: S608
     return clause, [entities]
+
 
 def _type_filter_clause(
     memory_type: str | None,
@@ -62,6 +67,7 @@ def _type_filter_clause(
     if not memory_type or memory_type not in _VALID_MEMORY_TYPES:
         return "", []
     return f"AND type = ${param}", [memory_type]
+
 
 def _temporal_filter_clause(
     as_of: object,
@@ -79,6 +85,7 @@ def _temporal_filter_clause(
         [as_of],
     )
 
+
 def _lang_filter_clause(
     lang: str | None,
     param: int,
@@ -87,6 +94,7 @@ def _lang_filter_clause(
     if not lang:
         return "", []
     return f"AND lang = ${param}", [lang]
+
 
 def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
     r = RecallResult(
@@ -104,6 +112,7 @@ def _to_result(row: dict, scope: str) -> RecallResult:  # type: ignore[type-arg]
     r._confidence_multiplier = float(row.get("confidence_multiplier", 1.0) or 1.0)
     r._score = float(row.get("score") or row.get("rank") or 0.0)
     return r
+
 
 def _rrf_fuse(
     results: list[RecallResult], entity_links: set[str] | None = None
@@ -170,13 +179,15 @@ def _keyword_boost(query: str, content: str) -> float:
     matched = sum(1 for t in query_tokens if t in content_lower)
     return matched / len(query_tokens)
 
+
 def _cosine(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b))  # noqa: B905
     mag_a = sum(x * x for x in a) ** 0.5
     mag_b = sum(x * x for x in b) ** 0.5
     if mag_a == 0 or mag_b == 0:
         return 0.0
     return dot / (mag_a * mag_b)  # type: ignore[no-any-return]
+
 
 def _mmr(
     query_embedding: list[float],
@@ -227,4 +238,3 @@ def _mmr(
         selected.append(best_candidate)
 
     return selected
-

@@ -97,7 +97,7 @@ async def _upsert_memory_links(
         logger.warning({"event": "memory_link_upsert_failed", "error": str(exc)})
 
 
-async def _expand_with_links(
+async def _expand_with_links(  # noqa: C901
     results: list[RecallResult],
     tenant_id: UUID,
     agent_id: UUID,
