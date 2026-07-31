@@ -1,0 +1,33 @@
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "console",
+    "OTEL_LOGS_EXPORTER": "console",
+    "OTEL_METRIC_EXPORT_INTERVAL": "60000"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(just:*)",
+      "Bash(uv:*)",
+      "Bash(uv run *)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(pre-commit run *)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/session-start-cockpit.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

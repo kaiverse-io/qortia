@@ -1,0 +1,111 @@
+{
+  "name": "Qortia",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  // Literal, matching the workspace volume in docker-compose.yml — compose can't
+  // substitute ${localWorkspaceFolderBasename}, so both sides hardcode the name.
+  "workspaceFolder": "/workspaces/qortia",
+
+  // ── Features (pinned — no "lts") ─────────────────────────────────────────
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // Node/npm is unconditional, not gated behind include_ts: the AI-usage cockpit
+    // (codeburn, AI Engineer Coach) and the Claude Code CLI itself are all
+    // installed via npm in post-create.sh regardless of the project's own language.
+    // installYarnUsingApt: false — the feature's default apt-based Yarn install adds
+    // the dl.yarnpkg.com repo, which is effectively unmaintained (Yarn's own
+    // published keyring has rotated since; the repo's signature no longer verifies
+    // against any current key). A fresh build fails apt-get update with
+    // "NO_PUBKEY 62D54FD4003F6525" — confirmed 2026-07-11 by fetching
+    // dl.yarnpkg.com/debian/pubkey.gpg directly and finding that key ID absent from
+    // it entirely. Only bites on a true fresh build (cached layers hide it, which is
+    // why an existing container can look fine while a new clone fails immediately).
+    // Corepack/npm install Yarn fine without touching apt at all.
+    "ghcr.io/devcontainers/features/node:1": { "version": "22", "installYarnUsingApt": false }
+    // Project-specific features — add here as needed:
+    //   Docker-outside-of-docker — sibling containers, not nested: forwards the HOST's
+    //   docker.sock (mount below) rather than running a second Docker daemon in this
+    //   one. Only needed if the project's own docker-compose.yml boots services beyond
+    //   `app` (a database, other backing services). Only works when the host itself
+    //   runs Docker — a no-host-Docker remote devcontainer needs docker-in-docker
+    //   instead, a different feature+mount pair. Pair with the socket mount below and
+    //   see post-create.sh's socket permission-fix step, which activates automatically
+    //   once the mount is present — the socket's host-side ownership rarely matches
+    //   this container's pre-baked docker group, so that step is not optional.
+    //   `"moby": false` is deliberate, not optional either: the feature defaults to
+    //   installing `moby-cli` from packages.microsoft.com, and on a build sandbox that
+    //   only allowlists docker.com (a common corporate VPN/proxy shape), that install
+    //   fails with a bare "exit code: 100" — apt's generic failure code, with the real
+    //   cause hidden unless you rebuild with `--progress=plain`. `moby: false` installs
+    //   `docker-ce-cli` from download.docker.com instead, which is the repo that's
+    //   actually reachable in that shape of network:
+    //     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": { "moby": false }
+  },
+
+  // Generate the shadow settings.json (mounted below) as `{}` before the container starts,
+  // if absent. It's gitignored, not tracked — Claude Code writes live per-developer prefs
+  // into it. Runs on the host, so the bind source is always a real file, never a
+  // Docker-created directory on a fresh clone. See docs/explanation/devcontainer-persistence.md.
+  "initializeCommand": "test -f .devcontainer/claude-user-settings.json || echo '{}' > .devcontainer/claude-user-settings.json",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "forwardPorts": [8080],
+
+  // ── Mounts (4-layer model) ────────────────────────────────────────────────
+  // Layer 2 — mounted host-state (machine-agnostic, gitignored on host)
+  "mounts": [
+    // Agent memory — writable (required)
+    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+    // Isolate THIS project's Claude Code settings.json from the shared ~/.claude
+    // mount above and from every other project's container. settings.json is the
+    // one path under ~/.claude that is a single, non-project-namespaced shared
+    // file (unlike ~/.claude/projects/<slug>, which is already partitioned per
+    // project) — any container-side write to it (a permissions change, a hook, an
+    // install script's undocumented default) silently reconfigures or hard-blocks
+    // every sibling container's session, and the host's own Claude Code, in one
+    // write. This file lives in THIS project's own .devcontainer/ (generated as
+    // `{}` by initializeCommand above, gitignored — Claude Code writes live prefs
+    // into it) and shadows the parent mount for just this one path — a more
+    // specific mount overrides the broader one at the same path, so nothing
+    // written here ever reaches the host or any other project again.
+    "source=${localWorkspaceFolder}/.devcontainer/claude-user-settings.json,target=/home/vscode/.claude/settings.json,type=bind,consistency=cached",
+    // Claude Code account/session state — a sibling FILE, not inside ~/.claude/ above
+    // (oauth account, mcpServers, recent-projects/trust list, onboarding flags).
+    // Writable: Claude Code updates it continuously. Requires the file to already
+    // exist on host (run Claude Code there at least once first).
+    "source=${localEnv:HOME}/.claude.json,target=/home/vscode/.claude.json,type=bind,consistency=cached",
+    // Git identity — read-only
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached,readonly",
+    // SSH keys — read-only (create ~/.ssh on host if missing)
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached,readonly",
+    // GH CLI auth — read-only. The github-cli feature above installs the `gh` binary;
+    // without this mount it has nothing to authenticate with (create ~/.config/gh on
+    // host via `gh auth login` if missing).
+    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached,readonly"
+    // Project-specific credentials — add here as needed:
+    //   AWS: "source=${localEnv:HOME}/.aws,target=/home/vscode/.aws,type=bind,consistency=cached,readonly"
+    //   Docker socket (pairs with docker-outside-of-docker feature above):
+    //     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+
+  "remoteUser": "vscode",
+
+  // ── VS Code ───────────────────────────────────────────────────────────────
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker"
+
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      }
+    }
+  }
+}

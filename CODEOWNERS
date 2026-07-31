@@ -1,0 +1,9 @@
+# CODEOWNERS — https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# Each pattern is matched against the file path from the repo root.
+# Last matching pattern wins.
+
+# Default owner for everything
+*   @km2411
+
+# ADRs require explicit sign-off
+docs/decisions/   @km2411

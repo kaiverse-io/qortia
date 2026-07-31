@@ -1,0 +1,13 @@
+_commit: v0.8.7
+_src_path: /tmp/claude-1000/-workspaces-aither/31597a6f-6810-4b2b-b4d5-bb13c844af14/scratchpad/chassis
+author_email: ''
+author_name: km2411
+description: Portable memory layer for AI agents
+github_owner: km2411
+include_ts: false
+install_ai_coach: false
+license: Apache-2.0
+project_name: Qortia
+python_package_name: qortia
+python_version: '3.12'
+

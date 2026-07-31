@@ -1,0 +1,50 @@
+# Dev environment for Qortia.
+# Add project-specific services (databases, queues, etc.) below the app service.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sleep infinity
+    volumes:
+      # Mounts just this project's own root, not a shared parent folder — a sibling
+      # project mounted alongside it would be reachable from inside this container
+      # with no isolation, the same class of leak ADR-003 fixes for settings.json.
+      # Hardcoded literal, matching workspaceFolder in devcontainer.json. It can't be
+      # ${localWorkspaceFolderBasename}: that variable is substituted only in
+      # devcontainer.json — Docker Compose resolves ${...} from its own environment,
+      # where it's unset, so it silently becomes "" and the workspace mounts at bare
+      # /workspaces while VS Code opens /workspaces/<name> ("workspace doesn't exist").
+      - ..:/workspaces/qortia:cached
+      # Layer 3 — cache volumes (fast rebuilds, never committed)
+      - uv-cache:/home/vscode/.cache/uv
+      - precommit-cache:/home/vscode/.cache/pre-commit
+      # Claude Code session transcripts deliberately have NO separate mount here —
+      # they fall through to the devcontainer.json ~/.claude bind mount like
+      # everything else under ~/.claude. A prior version nested a named Docker
+      # volume at .claude/projects, reasoning the parent bind mount isn't durable
+      # on remote/cloud devcontainers. In practice that volume lives on the local
+      # Docker Desktop VM's own disk, not the host machine's disk — so on a local
+      # devcontainer it made session history LESS durable (a rebuild that
+      # recreates the volume, e.g. after a devcontainer.json features change,
+      # silently orphans every prior session with no host-side trace). Revisit
+      # only for a project that actually runs on a remote/cloud devcontainer.
+
+    environment:
+      UV_LINK_MODE: copy   # volumes are on different filesystems in Docker
+
+# ── Project-specific services (add here) ─────────────────────────────────────
+# Example:
+#   db:
+#     image: postgres:16
+#     environment:
+#       POSTGRES_USER: qortia
+#       POSTGRES_PASSWORD: localdev
+#       POSTGRES_DB: qortia
+#     volumes:
+#       - pgdata:/var/lib/postgresql/data
+
+# ── Cache volumes (Layer 3) ───────────────────────────────────────────────────
+volumes:
+  uv-cache:
+  precommit-cache:

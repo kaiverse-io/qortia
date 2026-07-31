@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+.eggs/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment
+.env
+.venv
+venv/
+env/
+
+# Editor
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv (keep uv.lock committed — it's the lockfile)
+.uv/
+
+# devcontainer CLI/VS Code regenerates this on every rebuild — not worth committing
+# a snapshot that goes stale the moment devcontainer.json's features change
+.devcontainer/devcontainer-lock.json
+
+# graphify regenerates this from the repo itself — not worth committing
+graphify-out/
+
+# Claude Code per-user/per-machine overrides (settings.json is the shared, checked-in layer)
+.claude/settings.local.json
+
+# The container's user-level settings.json (shadow-mounted from here, see chassis ADR-003).
+# Claude Code writes live per-developer prefs into it (model, effort, onboarding flags), so it's
+# generated as `{}` by devcontainer.json's initializeCommand, not tracked — committing it would
+# pin one developer's prefs onto everyone.
+.devcontainer/claude-user-settings.json

@@ -1,0 +1,15 @@
+rules:
+  # 12-factor-agents F2: own your prompts. Long inline string literals assigned to
+  # prompt-shaped names are a smell — they should live in prompts/ and be loaded at runtime.
+  - id: no-inline-prompt-literals
+    languages: [python]
+    patterns:
+      - pattern-regex: '(?s)(prompt|system_prompt|instructions)\s*[:=]\s*("""|\x27\x27\x27).{200,}?("""|\x27\x27\x27)'
+    message: >
+      Inline prompt literal (200+ chars) assigned to a prompt-shaped name. Prompts are
+      versioned artifacts (12-factor-agents F2) — move this to prompts/ and load it at
+      runtime instead of embedding it in application code.
+    severity: WARNING
+    metadata:
+      category: architecture
+      technology: [agents]

@@ -1,0 +1,59 @@
+rules:
+  # Agents must not bypass pre-commit hooks — fix the violation instead.
+  - id: agent-no-skip-verify
+    languages: [generic]
+    pattern-regex: "--no-verify"
+    message: >
+      Self-weakening: --no-verify bypasses pre-commit hooks.
+      Fix the violation; never skip the check.
+    severity: ERROR
+    metadata:
+      category: security
+      technology: [git]
+
+  # Agents must not silence CI failures with continue-on-error.
+  - id: agent-no-continue-on-error
+    languages: [yaml]
+    pattern-regex: "continue-on-error:\\s*true"
+    message: >
+      Self-weakening: continue-on-error silences CI failures.
+      Fix the failing step instead.
+    severity: ERROR
+    metadata:
+      category: security
+      technology: [github-actions]
+
+  # Bare # noqa suppresses all lint on a line — require specific codes.
+  - id: agent-no-bare-noqa
+    languages: [python]
+    pattern-regex: "#\\s*noqa\\s*$"
+    message: >
+      Self-weakening: bare # noqa suppresses all lint.
+      Use specific codes with a reason (e.g. # noqa: E501  # line too long by design).
+    severity: WARNING
+    metadata:
+      category: maintainability
+
+  # Agents must not disable pre-commit by uninstalling it.
+  - id: agent-no-precommit-uninstall
+    languages: [generic]
+    pattern-regex: "pre-commit\\s+uninstall"
+    message: >
+      Self-weakening: pre-commit uninstall removes all hooks.
+      This is forbidden. Fix the hook failure instead.
+    severity: ERROR
+    metadata:
+      category: security
+      technology: [pre-commit]
+
+  # Agents must not lower the coverage floor.
+  - id: agent-no-lower-coverage-floor
+    languages: [toml]
+    patterns:
+      - pattern-regex: "fail_under\\s*=\\s*0"
+    message: >
+      Coverage floor is 0 — the ratchet is unset. Raise fail_under to at least
+      the current measured coverage percentage and never lower it.
+    severity: WARNING
+    metadata:
+      category: quality

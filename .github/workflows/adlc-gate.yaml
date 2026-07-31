@@ -1,0 +1,39 @@
+name: ADLC Agent-Change Gate
+
+# Bucket D — wired-but-waiting. Triggers only on agent-affecting paths. The eval step is a
+# documented no-op until evals/golden/ has real fixtures (see evals/README.md) — it does not
+# silently stay green forever once content lands; remove the no-op branch to activate for real.
+
+on:
+  pull_request:
+    paths:
+      - "prompts/**"
+      - "evals/**"
+      - "src/qortia/core/**"
+      - ".claude/**"
+      - ".agents/**"
+
+permissions:
+  contents: read
+
+jobs:
+  agent-change-gate:
+    name: Eval + security-review gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Eval gate
+        run: |
+          if [ -z "$(find evals/golden -type f ! -name .gitkeep 2>/dev/null)" ]; then
+            echo "::notice::evals/golden/ is empty — eval gate is a documented no-op (see evals/README.md)"
+          else
+            echo "::error::evals/golden/ has fixtures but no eval runner is wired yet."
+            echo "::error::Wire a real eval engine (e.g. promptfoo) and remove this no-op branch."
+            exit 1
+          fi
+
+      - name: Security-review reminder
+        run: |
+          echo "::notice::This PR touches agent-affecting paths (prompts/, evals/, core/, .claude/, .agents/)."
+          echo "::notice::Request a security-focused review before merge — see AGENTS.md forbidden patterns."
