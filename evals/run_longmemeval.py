@@ -50,7 +50,6 @@ import argparse
 import asyncio
 import json
 import sys
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -89,16 +88,16 @@ CATEGORIES = [
 
 def download_dataset() -> None:
     DATASET_PATH.parent.mkdir(exist_ok=True)
-    last_exc: Exception | None = None
     for url in DATASET_URLS:
         print(f"Trying: {url}")
         try:
-            urllib.request.urlretrieve(url, DATASET_PATH)
+            response = httpx.get(url, follow_redirects=True, timeout=60.0)
+            response.raise_for_status()
+            DATASET_PATH.write_bytes(response.content)
             data = json.loads(DATASET_PATH.read_text())
             print(f"Downloaded {len(data)} cases.")
             return
         except Exception as exc:
-            last_exc = exc
             print(f"  Failed: {exc}")
     print("\nAll download attempts failed.")
     print("Manual download options:")
@@ -260,39 +259,28 @@ async def _run_lme_case(
 # ── Main ───────────────────────────────────────────────────────────────────
 
 
-async def run_longmemeval(category: str | None, max_cases: int) -> int:
-    if not DATASET_PATH.exists():
-        print(f"Dataset not found at {DATASET_PATH}. Run with --download first.")
-        return 1
+def _select_cases(
+    all_cases: list[dict[str, Any]], category: str | None, max_cases: int
+) -> list[dict[str, Any]]:
+    cases = [c for c in all_cases if c.get("category") == category] if category else all_cases
 
-    all_cases = json.loads(DATASET_PATH.read_text())
+    if not max_cases:
+        return cases
 
-    # Filter by category
     if category:
-        cases = [c for c in all_cases if c.get("category") == category]
-    else:
-        cases = all_cases
+        return cases[:max_cases]
 
-    if max_cases:
-        # Sample evenly across categories
-        if not category:
-            per_cat = max_cases // len(CATEGORIES)
-            sampled = []
-            for cat in CATEGORIES:
-                cat_cases = [c for c in cases if c.get("category") == cat]
-                sampled.extend(cat_cases[:per_cat])
-            cases = sampled[:max_cases]
-        else:
-            cases = cases[:max_cases]
+    # Sample evenly across categories
+    per_cat = max_cases // len(CATEGORIES)
+    sampled = []
+    for cat in CATEGORIES:
+        cat_cases = [c for c in cases if c.get("category") == cat]
+        sampled.extend(cat_cases[:per_cat])
+    return sampled[:max_cases]
 
-    print("=" * 60)
-    print(f"LongMemEval — {len(cases)} cases")
-    if category:
-        print(f"Category filter: {category}")
-    print("=" * 60)
 
+async def _execute_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
-
     async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=60.0) as client:
         for i, case in enumerate(cases):
             result = await _run_lme_case(client, case)
@@ -304,8 +292,10 @@ async def run_longmemeval(category: str | None, max_cases: int) -> int:
                     f"{result['category']}/{result['id']} "
                     f"complete={result['completeness']} acc={result['accuracy']}"
                 )
+    return results
 
-    # Aggregate by category
+
+def _summarize_by_category(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     cat_summaries: dict[str, dict[str, Any]] = {}
     for cat in CATEGORIES:
         cat_results = [r for r in results if r.get("category") == cat]
@@ -322,15 +312,17 @@ async def run_longmemeval(category: str | None, max_cases: int) -> int:
             "context_completeness": complete,
             "answer_accuracy": accurate,
         }
+    return cat_summaries
 
-    total_recall = sum(1 for r in results if r["recall_at_5"]) / max(len(results), 1)
-    total_complete = sum(1 for r in results if r["completeness"] in ("COMPLETE", "PARTIAL")) / max(
-        len(results), 1
-    )
-    total_accurate = sum(1 for r in results if r["accuracy"] == "CORRECT") / max(len(results), 1)
-    overall_pass = total_recall >= RECALL_AT_5_FLOOR and total_complete >= CONTEXT_COMPLETE_FLOOR
 
-    print(f"\n{'='*72}")
+def _print_report(
+    cat_summaries: dict[str, dict[str, Any]],
+    total_recall: float,
+    total_complete: float,
+    total_accurate: float,
+    num_results: int,
+) -> None:
+    print(f"\n{'=' * 72}")
     print("LONGMEMEVAL RESULTS")
     print("=" * 72)
     print(f"\n{'Category':<32} {'Recall@5':>9} {'Complete':>9} {'Accurate':>9} {'Cases':>6}")
@@ -342,10 +334,37 @@ async def run_longmemeval(category: str | None, max_cases: int) -> int:
         )
     print("-" * 72)
     print(
-        f"  {'TOTAL':<30} {total_recall:>9.1%} {total_complete:>9.1%} {total_accurate:>9.1%} {len(results):>6}"
+        f"  {'TOTAL':<30} {total_recall:>9.1%} {total_complete:>9.1%} "
+        f"{total_accurate:>9.1%} {num_results:>6}"
     )
-
     print(f"\nFloors: Recall@5≥{RECALL_AT_5_FLOOR:.0%}  Complete≥{CONTEXT_COMPLETE_FLOOR:.0%}")
+
+
+async def run_longmemeval(category: str | None, max_cases: int) -> int:
+    if not DATASET_PATH.exists():
+        print(f"Dataset not found at {DATASET_PATH}. Run with --download first.")
+        return 1
+
+    all_cases = json.loads(DATASET_PATH.read_text())
+    cases = _select_cases(all_cases, category, max_cases)
+
+    print("=" * 60)
+    print(f"LongMemEval — {len(cases)} cases")
+    if category:
+        print(f"Category filter: {category}")
+    print("=" * 60)
+
+    results = await _execute_cases(cases)
+    cat_summaries = _summarize_by_category(results)
+
+    total_recall = sum(1 for r in results if r["recall_at_5"]) / max(len(results), 1)
+    total_complete = sum(1 for r in results if r["completeness"] in ("COMPLETE", "PARTIAL")) / max(
+        len(results), 1
+    )
+    total_accurate = sum(1 for r in results if r["accuracy"] == "CORRECT") / max(len(results), 1)
+    overall_pass = total_recall >= RECALL_AT_5_FLOOR and total_complete >= CONTEXT_COMPLETE_FLOOR
+
+    _print_report(cat_summaries, total_recall, total_complete, total_accurate, len(results))
     print(f"Gate: {'PASS' if overall_pass else 'FAIL'}")
 
     report = {

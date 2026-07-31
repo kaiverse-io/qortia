@@ -24,7 +24,7 @@ def log_eval_score(
     """
     # MLflow logging
     try:
-        import mlflow  # type: ignore[import-untyped]
+        import mlflow
 
         with mlflow.start_run(run_name=f"{task_id}_{metric}", nested=True):
             mlflow.log_metric(metric, score)
@@ -46,8 +46,8 @@ def log_eval_score(
             span.set_attribute("eval.task_id", task_id)
             # agent_id as span attribute only — never as a metric label
             span.set_attribute("eval.agent_id", str(agent_id))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug({"event": "otel_span_attr_failed", "error": str(exc)})
 
     logger.info(
         {

@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -97,7 +97,6 @@ async def seed_org_memories(
     agent_id: str,
 ) -> dict[int, str]:
     """Seed org memories. Returns {index: org_memory_id}."""
-    headers = _agent_headers(agent_id, tenant_id)
     org_id_map: dict[int, str] = {}
     for i, om in enumerate(case["setup"].get("org_memories", [])):
         resp = await client.post(
@@ -117,7 +116,6 @@ async def seed_knowledge(
     agent_id: str,
 ) -> list[str]:
     """Seed knowledge entries. Returns list of source_paths (used for content lookup)."""
-    headers = _agent_headers(agent_id, tenant_id)
     source_paths: list[str] = []
     for k in case["setup"].get("knowledge", []):
         resp = await client.post(
@@ -134,4 +132,4 @@ def load_dataset(path: Path) -> list[dict[str, Any]]:
     data = json.loads(path.read_text())
     if isinstance(data, list):
         return data
-    return data["cases"]
+    return cast("list[dict[str, Any]]", data["cases"])
