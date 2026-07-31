@@ -5,13 +5,14 @@ import logging
 from collections import defaultdict
 from uuid import UUID
 
-from app.auth.middleware import require_agent
-from app.auth.models import AgentIdentity
-from app.db import get_main_pool, tenant_transaction
-from app.qortia.common import EMBEDDING_MODEL, get_litellm_client
-from app.qortia.embedding_cache import get_cached_embedding, put_cached_embedding
-from app.qortia.models import RecallRequest, RecallResponse, RecallResult
-from app.qortia.recall_helpers import (
+from fastapi import APIRouter, Depends, Header
+
+from qortia.auth import AgentIdentity, get_litellm_key, require_agent
+from qortia.common import EMBEDDING_MODEL, get_litellm_client
+from qortia.db import get_main_pool, tenant_transaction
+from qortia.embedding_cache import get_cached_embedding, put_cached_embedding
+from qortia.models import RecallRequest, RecallResponse, RecallResult
+from qortia.recall_helpers import (
     KNOWLEDGE_RESULT_LIMIT,
     ORG_RESULT_LIMIT,
     PRIVATE_RESULT_LIMIT,
@@ -27,10 +28,7 @@ from app.qortia.recall_helpers import (
     _to_result,
     _type_filter_clause,
 )
-from app.qortia.recall_rerank import _bfs_entity_traversal, _llm_rerank
-from app.qortia.remember import _fetch_agent_clearance
-from app.vault import get_litellm_key
-from fastapi import APIRouter, Depends, Header
+from qortia.recall_rerank import _bfs_entity_traversal, _llm_rerank
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -60,9 +58,9 @@ async def _embed_query(query: str, tenant_id: UUID, lang: str = "en") -> list[fl
     except Exception as exc:
         logger.warning({"event": "recall_embed_failed", "error": str(exc)})
         try:
-            from app.telemetry.instruments import qortia_recall_degraded
+            from qortia.telemetry import qortia_recall_degraded
 
-            qortia_recall_degraded.add(1, {"reason": "embed_failed", "the platform.tenant_id": tid})
+            qortia_recall_degraded.add(1, {"reason": "embed_failed", "qortia.tenant_id": tid})
         except Exception:  # noqa: S110
             pass
         return None
@@ -321,10 +319,10 @@ async def _bm25_org(
             FROM org_memory
             WHERE tenant_id = $2
               AND content_tsv @@ plainto_tsquery('simple', $1)
-              AND ($3 >= (SELECT level_order FROM tenant_clearance_levels
+              AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
                            WHERE tenant_id = org_memory.tenant_id
                              AND level_name = org_memory.min_clearance)
-                   OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels
+                   OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels
                                   WHERE tenant_id = org_memory.tenant_id))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
               AND (valid_until IS NULL OR valid_until > now())
@@ -367,10 +365,10 @@ async def _vector_org(
             FROM org_memory
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
-              AND ($3 >= (SELECT level_order FROM tenant_clearance_levels
+              AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
                            WHERE tenant_id = org_memory.tenant_id
                              AND level_name = org_memory.min_clearance)
-                   OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels
+                   OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels
                                   WHERE tenant_id = org_memory.tenant_id))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
               AND (valid_until IS NULL OR valid_until > now())
@@ -410,10 +408,10 @@ async def _bm25_knowledge(
             FROM org_knowledge
             WHERE tenant_id = $2
               AND index_tsv @@ plainto_tsquery('simple', $1)
-              AND ($3 >= (SELECT level_order FROM tenant_clearance_levels
+              AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
                            WHERE tenant_id = org_knowledge.tenant_id
                              AND level_name = org_knowledge.min_clearance)
-                   OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels
+                   OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels
                                   WHERE tenant_id = org_knowledge.tenant_id))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
             ORDER BY rank DESC LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
@@ -448,13 +446,14 @@ async def _vector_knowledge(
             FROM org_knowledge
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
-              AND ($3 >= (SELECT level_order FROM tenant_clearance_levels
+              AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
                            WHERE tenant_id = org_knowledge.tenant_id
                              AND level_name = org_knowledge.min_clearance)
-                   OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels
+                   OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels
                                   WHERE tenant_id = org_knowledge.tenant_id))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
-            ORDER BY embedding <=> $1::vector LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
+            ORDER BY embedding <=> $1::vector
+            LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,  # noqa: S608
             str(qe),
             agent.tenant_id,
@@ -515,10 +514,10 @@ async def _record_recall_access(
     except Exception as exc:
         logger.warning({"event": "recall_access_tracking_failed", "error": str(exc)})
         try:
-            from app.telemetry.instruments import qortia_recall_degraded
+            from qortia.telemetry import qortia_recall_degraded
 
             qortia_recall_degraded.add(
-                1, {"reason": "access_failed", "the platform.tenant_id": str(tenant_id)}
+                1, {"reason": "access_failed", "qortia.tenant_id": str(tenant_id)}
             )
         except Exception:  # noqa: S110
             pass
@@ -532,7 +531,10 @@ async def _record_work_order_outcome(
     memory_clearance_order: int = 2,
     agent_division: str = "all",
 ) -> None:
-    """Record WO outcome and decay confidence_multiplier on implicated memories (ADR-125 Phase 2)."""
+    """Record WO outcome and decay confidence_multiplier on implicated memories.
+
+    ADR-125 Phase 2.
+    """
     multipliers = {"SUCCESS": 1.05, "MINOR_FAILURE": 0.85, "CRITICAL_FAILURE": 0.60}
     multiplier = multipliers.get(outcome, 1.0)
 
@@ -546,7 +548,8 @@ async def _record_work_order_outcome(
         ) as conn:
             # Fetch implicated memory IDs from session reads
             rows = await conn.fetch(
-                "SELECT DISTINCT memory_id FROM qortia_session_reads WHERE work_order_id = $1 AND tenant_id = $2",
+                "SELECT DISTINCT memory_id FROM qortia_session_reads "
+                "WHERE work_order_id = $1 AND tenant_id = $2",
                 work_order_id,
                 tenant_id,
             )
@@ -558,7 +561,8 @@ async def _record_work_order_outcome(
                 await conn.execute(
                     """
                     UPDATE hindsight_memories
-                    SET confidence_multiplier = GREATEST(0.10, LEAST(1.0, confidence_multiplier * $1))
+                    SET confidence_multiplier =
+                        GREATEST(0.10, LEAST(1.0, confidence_multiplier * $1))
                     WHERE id = ANY($2::uuid[]) AND tenant_id = $3
                     """,
                     multiplier,
@@ -659,7 +663,7 @@ async def _hybrid_recall_pipeline(  # noqa: C901
         if isinstance(rs, Exception):
             logger.warning({"event": "recall_search_error", "error": str(rs)})
             try:
-                from app.telemetry.instruments import (
+                from qortia.telemetry import (
                     qortia_recall_degraded,
                 )
 
@@ -667,7 +671,7 @@ async def _hybrid_recall_pipeline(  # noqa: C901
                     1,
                     {
                         "reason": "search_error",
-                        "the platform.tenant_id": str(agent.tenant_id),
+                        "qortia.tenant_id": str(agent.tenant_id),
                     },
                 )
             except Exception:  # noqa: S110
@@ -680,7 +684,7 @@ async def _hybrid_recall_pipeline(  # noqa: C901
                 memory_results.append(r)
 
     # ── Entity Graph Boost (The Obsidian Layer) ──
-    from app.qortia.knowledge import extract_entities
+    from qortia.knowledge import extract_entities
 
     try:
         query_entities = extract_entities(body.query)
@@ -754,7 +758,7 @@ async def _hybrid_recall_pipeline(  # noqa: C901
 
     # Cross-memory link expansion (16i) — expand top-5 fused results with linked memories
     if fused_memory and query_embedding:
-        from app.qortia.links import _expand_with_links
+        from qortia.links import _expand_with_links
 
         fused_memory = await _expand_with_links(fused_memory, agent.tenant_id, agent.agent_id)
 
@@ -773,9 +777,9 @@ async def recall(  # noqa: C901
     agent: AgentIdentity = Depends(require_agent),  # noqa: B008
     x_work_order_id: str | None = Header(default=None, alias="X-Work-Order-Id"),
 ) -> RecallResponse:
-    from app.qortia.common import assert_agent_active
+    from qortia.common import assert_agent_active
 
-    clearance_order, agent_division = await _fetch_agent_clearance(agent.agent_id, agent.tenant_id)
+    clearance_order, agent_division = agent.clearance_order, agent.division
 
     async with tenant_transaction(
         get_main_pool(),
@@ -839,7 +843,7 @@ async def recall(  # noqa: C901
         {
             "event": "recall_executed",
             "agent_id": str(agent.agent_id),
-            "the platform.tenant_id": str(agent.tenant_id),
+            "qortia.tenant_id": str(agent.tenant_id),
             "scope": body.scope,
             "result_count": len(results),
             "work_order_id": x_work_order_id if isinstance(x_work_order_id, str) else None,

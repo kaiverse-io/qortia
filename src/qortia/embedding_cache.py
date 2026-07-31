@@ -17,8 +17,9 @@ import hashlib
 import logging
 import threading
 
-from app.config import settings
 from cachetools import TTLCache
+
+from qortia import config
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,8 @@ def _get_tenant_cache(tenant_id: str) -> TTLCache[str, list[float]]:
     """
     if tenant_id not in _tenant_caches:
         _tenant_caches[tenant_id] = TTLCache(
-            maxsize=settings.embedding_cache_max_size,
-            ttl=settings.embedding_cache_ttl_seconds,
+            maxsize=config.settings.embedding_cache_max_size,
+            ttl=config.settings.embedding_cache_ttl_seconds,
         )
     return _tenant_caches[tenant_id]
 

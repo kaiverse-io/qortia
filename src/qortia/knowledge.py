@@ -9,13 +9,13 @@ import re
 from typing import Any
 from uuid import UUID
 
-from app.auth.middleware import require_agent
-from app.auth.models import AgentIdentity
-from app.background.leader import LOCK_KEY_WEEKLY_SUMMARY, try_acquire_leader
-from app.db import get_main_pool, tenant_transaction
-from app.qortia.common import assert_agent_active
-from app.qortia.models import KnowledgeIngestRequest
 from fastapi import APIRouter, Depends, HTTPException
+
+from qortia.auth import AgentIdentity, require_agent
+from qortia.common import assert_agent_active
+from qortia.db import get_main_pool, tenant_transaction
+from qortia.leader import LOCK_KEY_WEEKLY_SUMMARY, try_acquire_leader
+from qortia.models import KnowledgeIngestRequest
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +226,7 @@ async def ingest_knowledge(
     async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
         role = await conn.fetchval(
-            "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
+            "SELECT role FROM qortia_agents WHERE id = $1 AND tenant_id = $2",
             agent.agent_id,
             agent.tenant_id,
         )
@@ -342,7 +342,7 @@ async def delete_knowledge(
     async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
         role = await conn.fetchval(
-            "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
+            "SELECT role FROM qortia_agents WHERE id = $1 AND tenant_id = $2",
             agent.agent_id,
             agent.tenant_id,
         )
@@ -394,7 +394,7 @@ async def run_weekly_summary_task() -> None:
 async def _run_weekly_summary_cycle() -> None:
     async with get_main_pool().acquire() as conn:
         tenants = await conn.fetch(
-            "SELECT id, weekly_summary_last_run_at FROM auth.tenants WHERE status = 'active'"
+            "SELECT id, weekly_summary_last_run_at FROM qortia_tenants WHERE status = 'active'"
         )
 
     import hashlib as _hashlib
@@ -411,7 +411,7 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
     async with get_main_pool().acquire() as conn:
         async with conn.transaction():
             locked = await conn.fetchrow(
-                "SELECT id FROM auth.tenants WHERE id = $1 FOR UPDATE SKIP LOCKED",
+                "SELECT id FROM qortia_tenants WHERE id = $1 FOR UPDATE SKIP LOCKED",
                 tenant_id,
             )
             if not locked:
@@ -430,7 +430,7 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
                 """
                 SELECT om.title, om.content, om.created_at, om.lang, a.name AS agent_name
                 FROM org_memory om
-                LEFT JOIN auth.agents a ON a.id = om.author_id
+                LEFT JOIN qortia_agents a ON a.id = om.author_id
                 WHERE om.tenant_id = $1
                   AND om.type = 'handoff'
                   AND om.created_at > now() - interval '7 days'
@@ -461,6 +461,6 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
             )
 
             await conn.execute(
-                "UPDATE auth.tenants SET weekly_summary_last_run_at = now() WHERE id = $1",
+                "UPDATE qortia_tenants SET weekly_summary_last_run_at = now() WHERE id = $1",
                 tenant_id,
             )

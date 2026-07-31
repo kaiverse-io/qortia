@@ -7,13 +7,11 @@ import json
 import logging
 from uuid import UUID
 
-import yaml
-from app.auth.models import AgentIdentity
-from app.config import settings
-from app.db import get_main_pool, tenant_transaction
-from app.qortia.common import get_litellm_client
-from app.qortia.models import RecallResult
-from app.vault import get_litellm_key
+from qortia import config
+from qortia.auth import AgentIdentity, get_litellm_key
+from qortia.common import get_litellm_client
+from qortia.db import get_main_pool, tenant_transaction
+from qortia.models import RecallResult
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +24,7 @@ async def _llm_rerank(
     if not results:
         return results
     try:
-        async with get_main_pool().acquire() as conn:
-            domain_md_raw = await conn.fetchval(
-                "SELECT domain_md FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-                agent.agent_id,
-                agent.tenant_id,
-            )
-        model = (yaml.safe_load(domain_md_raw or "{}") or {}).get("model") or settings.rerank_model
+        model = config.settings.rerank_model
         litellm_key = await get_litellm_key(str(agent.tenant_id))
 
         numbered = "\n".join(f"{i+1}. [{r.type}] {r.content[:200]}" for i, r in enumerate(results))
@@ -59,7 +51,7 @@ async def _llm_rerank(
         logger.info(
             {
                 "event": "qortia_llm_rerank",
-                "the platform.tenant_id": str(agent.tenant_id),
+                "qortia.tenant_id": str(agent.tenant_id),
                 "model": model,
                 "prompt_tokens": usage.get("prompt_tokens", 0),
                 "completion_tokens": usage.get("completion_tokens", 0),

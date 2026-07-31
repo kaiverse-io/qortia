@@ -5,12 +5,13 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from app.auth.middleware import require_agent
-from app.auth.models import AgentIdentity
-from app.db import get_main_pool, tenant_transaction
-from app.qortia.common import assert_agent_active
-from app.qortia.knowledge import extract_entities_with_types
-from app.qortia.models import (
+from fastapi import APIRouter, Depends, Header, HTTPException
+
+from qortia.auth import AgentIdentity, require_agent
+from qortia.common import assert_agent_active
+from qortia.db import get_main_pool, tenant_transaction
+from qortia.knowledge import extract_entities_with_types
+from qortia.models import (
     IMPORTANCE,
     ContextMemories,
     ContextResponse,
@@ -22,7 +23,6 @@ from app.qortia.models import (
     RememberRequest,
     RememberResponse,
 )
-from fastapi import APIRouter, Depends, Header, HTTPException
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -80,8 +80,8 @@ If the temporal reference is ambiguous or cannot be resolved, store it as-is.
 Do NOT invent dates — only resolve when the reference is unambiguous."""
 
 
-ATTRIBUTION_INSTRUCTION = """When extracting episodic memories from a conversation, prefix each memory with
-the appropriate attribution:
+ATTRIBUTION_INSTRUCTION = """When extracting episodic memories from a conversation, prefix
+each memory with the appropriate attribution:
 
 [User] — something the user explicitly stated or expressed
 [Observed] — something you (the agent) observed about the user or situation
@@ -96,7 +96,8 @@ Use [Observed] when you are inferring from behaviour, not from explicit statemen
 Use [User] only for direct statements or clear expressions of preference."""
 
 
-NEGATIVE_EXTRACTION_INSTRUCTION = """DO NOT extract the following — they produce noise memories with no durable value:
+NEGATIVE_EXTRACTION_INSTRUCTION = """DO NOT extract the following — they produce noise
+memories with no durable value:
 
 - Pronouns or references without clear antecedents ("he said", "she did", "it worked")
 - Abstract concepts without grounding ("success", "progress", "improvement", "things")
@@ -164,14 +165,18 @@ def _extract_valid_from(metadata: dict | None) -> datetime | None:  # type: igno
 
 
 async def _fetch_agent_clearance(agent_id: object, tenant_id: object) -> tuple[int, str]:
-    """Fetch clearance_order and division for an agent. Returns (2, 'all') on failure."""
+    """Fetch clearance_order and division for an agent. Returns (2, 'all') on failure.
+
+    Only used by background tasks (reflect.py's idle-reflection trigger) that
+    have raw agent/tenant UUIDs but no AgentIdentity — HTTP endpoints already
+    get clearance_order/division resolved once at auth time (see qortia.auth).
+    """
     async with get_main_pool().acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT a.clearance_level, a.division, tcl.level_order
-            FROM auth.agents a
-            JOIN tenant_clearance_levels tcl
-              ON tcl.tenant_id = a.tenant_id AND tcl.level_name = a.clearance_level
+            SELECT a.clearance_level, a.division, cl.level_order
+            FROM qortia_agents a
+            JOIN qortia_clearance_levels cl ON cl.level_name = a.clearance_level
             WHERE a.id = $1 AND a.tenant_id = $2
             """,
             agent_id,
@@ -205,7 +210,7 @@ async def remember(
                         {
                             "event": "lang_auto_detected",
                             "detected": detected,
-                            "the platform.tenant_id": str(agent.tenant_id),
+                            "qortia.tenant_id": str(agent.tenant_id),
                         }
                     )
             try:
@@ -276,7 +281,8 @@ async def remember(
             await conn.execute(
                 """
                 INSERT INTO memory_history
-                    (tenant_id, agent_id, operation, target_table, target_id, content_hash, metadata)
+                    (tenant_id, agent_id, operation, target_table, target_id,
+                     content_hash, metadata)
                 VALUES ($1, $2, 'remember', 'hindsight_memories', $3, $4, $5)
             """,
                 agent.tenant_id,
@@ -292,7 +298,7 @@ async def remember(
         if episodic_count > 0:
             await conn.execute(
                 """
-                UPDATE auth.agents
+                UPDATE qortia_agents
                 SET reflection_counter = reflection_counter + $1, updated_at = now()
                 WHERE id = $2
             """,
@@ -304,7 +310,7 @@ async def remember(
         {
             "event": "remember_written",
             "agent_id": str(agent.agent_id),
-            "the platform.tenant_id": str(agent.tenant_id),
+            "qortia.tenant_id": str(agent.tenant_id),
             "memory_count": len(ids),
             "work_order_id": x_work_order_id,
         }
@@ -324,7 +330,7 @@ async def remember_org(
         # Role check fires second (Q80) — enum check already done by Pydantic
         if body.type in ("process", "decision_log"):
             role = await conn.fetchval(
-                "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
+                "SELECT role FROM qortia_agents WHERE id = $1 AND tenant_id = $2",
                 agent.agent_id,
                 agent.tenant_id,
             )
@@ -340,7 +346,9 @@ async def remember_org(
         if body.type == "handoff":
             row_id = await conn.fetchval(
                 """
-                INSERT INTO org_memory (tenant_id, type, title, content, author_id, entities, lang, min_clearance, audience)
+                INSERT INTO org_memory
+                    (tenant_id, type, title, content, author_id, entities, lang,
+                     min_clearance, audience)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
             """,
@@ -358,7 +366,8 @@ async def remember_org(
             row_id = await conn.fetchval(
                 """
                 INSERT INTO org_memory
-                    (tenant_id, type, title, content, author_id, entities, lang, min_clearance, audience, updated_at)
+                    (tenant_id, type, title, content, author_id, entities, lang,
+                     min_clearance, audience, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
                 ON CONFLICT (tenant_id, type, title)
                 WHERE type IN ('process', 'decision_log')
@@ -440,7 +449,7 @@ async def forget(
                 raise HTTPException(403, "Cannot delete another agent's handoff")
             if mem_type in ("process", "decision_log"):
                 role = await conn.fetchval(
-                    "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
+                    "SELECT role FROM qortia_agents WHERE id = $1 AND tenant_id = $2",
                     agent.agent_id,
                     agent.tenant_id,
                 )
@@ -492,7 +501,7 @@ async def forget(
 
 @router.get("/v1/context", response_model=ContextResponse)
 async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextResponse:  # noqa: B008
-    clearance_order, agent_division = await _fetch_agent_clearance(agent.agent_id, agent.tenant_id)
+    clearance_order, agent_division = agent.clearance_order, agent.division
     async with tenant_transaction(
         get_main_pool(),
         agent.tenant_id,
@@ -509,10 +518,12 @@ async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextR
             "SELECT title, content FROM org_memory WHERE type = 'process' ORDER BY created_at ASC"
         )
         handoffs = await conn.fetch(
-            "SELECT title, content FROM org_memory WHERE type = 'handoff' ORDER BY created_at DESC LIMIT 5"
+            "SELECT title, content FROM org_memory WHERE type = 'handoff' "
+            "ORDER BY created_at DESC LIMIT 5"
         )
         ws = await conn.fetchrow(
-            "SELECT title, content FROM org_memory WHERE type = 'weekly_summary' ORDER BY created_at DESC LIMIT 1"
+            "SELECT title, content FROM org_memory WHERE type = 'weekly_summary' "
+            "ORDER BY created_at DESC LIMIT 1"
         )
         mental_models = await conn.fetch(
             """

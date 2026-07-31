@@ -7,10 +7,10 @@ import json
 import logging
 from typing import Any
 
-from app.config import settings
-from app.db import get_main_pool
-from app.qortia.common import get_litellm_client
-from app.vault import get_litellm_key
+from qortia import config
+from qortia.auth import get_litellm_key
+from qortia.common import get_litellm_client
+from qortia.db import get_main_pool
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ async def _maybe_dedup_memory(
         )
         if (
             neighbour
-            and float(neighbour["similarity"]) >= settings.qortia_dedup_similarity_threshold
+            and float(neighbour["similarity"]) >= config.settings.qortia_dedup_similarity_threshold
         ):
             await conn.execute(
                 """
@@ -222,12 +222,15 @@ async def _populate_graph_batch() -> None:
                     for ent_text, ent_type in entity_pairs:
                         await conn.execute(
                             """
-                            INSERT INTO qortia_entities (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
+                            INSERT INTO qortia_entities
+                                (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
                             VALUES ($1, $2, $3, $4, ARRAY[$5::uuid])
-                            ON CONFLICT (tenant_id, agent_id, entity_text) WHERE agent_id IS NOT NULL
+                            ON CONFLICT (tenant_id, agent_id, entity_text)
+                                WHERE agent_id IS NOT NULL
                             DO UPDATE SET
                                 entity_type = EXCLUDED.entity_type,
-                                linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $5),
+                                linked_memory_ids =
+                                    array_append(qortia_entities.linked_memory_ids, $5),
                                 updated_at = now()
                             WHERE NOT ($5 = ANY(qortia_entities.linked_memory_ids))
                         """,
@@ -269,12 +272,14 @@ async def _populate_graph_batch() -> None:
                     for ent_text, ent_type in entity_pairs:
                         await conn.execute(
                             """
-                            INSERT INTO qortia_entities (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
+                            INSERT INTO qortia_entities
+                                (tenant_id, agent_id, entity_text, entity_type, linked_memory_ids)
                             VALUES ($1, NULL, $2, $3, ARRAY[$4::uuid])
                             ON CONFLICT (tenant_id, entity_text) WHERE agent_id IS NULL
                             DO UPDATE SET
                                 entity_type = EXCLUDED.entity_type,
-                                linked_memory_ids = array_append(qortia_entities.linked_memory_ids, $4),
+                                linked_memory_ids =
+                                    array_append(qortia_entities.linked_memory_ids, $4),
                                 updated_at = now()
                             WHERE NOT ($4 = ANY(qortia_entities.linked_memory_ids))
                         """,

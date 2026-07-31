@@ -7,28 +7,26 @@ import logging
 from typing import Any
 from uuid import UUID
 
-import yaml
-from app.auth.middleware import require_agent
-from app.auth.models import AgentIdentity
-from app.config import settings
-from app.db import get_main_pool, tenant_transaction
-from app.qortia.common import (
+from fastapi import APIRouter, Depends, HTTPException
+
+from qortia import config
+from qortia.auth import AgentIdentity, get_litellm_key, require_agent
+from qortia.common import (
     EMBEDDING_MODEL,
     get_litellm_client,
 )
-from app.qortia.entity_graph import (
+from qortia.db import get_main_pool, tenant_transaction
+from qortia.entity_graph import (
     _maybe_dedup_memory,
     _populate_graph_batch,
 )
-from app.qortia.entity_graph import (
+from qortia.entity_graph import (
     _maybe_update_entity_summary as _maybe_update_entity_summary,
 )
-from app.qortia.entity_graph import (
+from qortia.entity_graph import (
     _update_entity_summary as _update_entity_summary,
 )
-from app.qortia.models import ReflectResponse
-from app.vault import get_litellm_key
-from fastapi import APIRouter, Depends, HTTPException
+from qortia.models import ReflectResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -58,7 +56,7 @@ def _compute_stability_scores(
                   embedding (list[float] | None)
     existing_embeddings: {str(id): embedding | None} for existing consolidated rows
     """
-    from app.qortia.recall_helpers import _cosine
+    from qortia.recall_helpers import _cosine
 
     scores: list[float | None] = []
     for mem in new_memories:
@@ -79,13 +77,11 @@ def _compute_stability_scores(
 
 @router.post("/v1/reflect", response_model=ReflectResponse)
 async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectResponse:  # noqa: B008
-    from app.qortia.common import assert_agent_active
-    from app.qortia.remember import _fetch_agent_clearance
+    from qortia.common import assert_agent_active
 
-    clearance_order, agent_division = await _fetch_agent_clearance(agent.agent_id, agent.tenant_id)
+    clearance_order, agent_division = agent.clearance_order, agent.division
 
     # Fetch data outside the write transaction — no DB lock held during LLM call
-    domain_md_raw: str | None = None
     recent: list[dict[str, Any]] = []
     existing: list[dict[str, Any]] = []
     async with tenant_transaction(
@@ -121,16 +117,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
             agent.agent_id,
         )
 
-        domain_md_raw = await conn.fetchval(
-            "SELECT domain_md FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-            agent.agent_id,
-            agent.tenant_id,
-        )
-
-    domain_parsed = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
-    domain = domain_parsed if isinstance(domain_parsed, dict) else {}
-    model = (domain.get("model") if domain else None) or settings.rerank_model
-
+    model = config.settings.rerank_model
     litellm_key = await get_litellm_key(str(agent.tenant_id))
     reflections = await _call_litellm_reflect(
         model=model,
@@ -231,7 +218,8 @@ async def _write_reflections(  # noqa: C901
                         "agent_id": str(agent_id),
                         "existing_consolidated": existing_consolidated_count,
                         "active_ids_count": len(active_ids),
-                        "reason": "LLM returned <50% of existing consolidated rows — skipping prune",
+                        "reason": "LLM returned <50% of existing consolidated rows — "
+                        "skipping prune",
                     }
                 )
                 prune_safe = False
@@ -270,7 +258,7 @@ async def _write_reflections(  # noqa: C901
             if r["action"] == "UPDATE" and r.get("id"):
                 old_emb = existing_embeddings.get(r["id"])
                 if new_emb and old_emb:
-                    from app.qortia.recall_helpers import _cosine
+                    from qortia.recall_helpers import _cosine
 
                     stability = _cosine(new_emb, old_emb)
                     if stability >= STABILITY_THRESHOLD:
@@ -292,7 +280,7 @@ async def _write_reflections(  # noqa: C901
                 )
 
             try:
-                from app.qortia.knowledge import extract_entities_with_types
+                from qortia.knowledge import extract_entities_with_types
 
                 entities = extract_entities_with_types(r["content"], lang=r.get("lang", "en"))
             except Exception:
@@ -319,13 +307,13 @@ async def _write_reflections(  # noqa: C901
 
         new_counter = await conn.fetchval(
             """
-            UPDATE auth.agents
+            UPDATE qortia_agents
             SET reflection_counter = GREATEST(reflection_counter - $1, 0),
                 updated_at = now()
             WHERE id = $2
             RETURNING reflection_counter
             """,
-            settings.reflection_threshold,
+            config.settings.reflection_threshold,
             agent_id,
         )
 
@@ -348,8 +336,8 @@ async def _write_reflections(  # noqa: C901
     logger.info(
         {
             "event": "reflect_incremental",
-            "the platform.agent_id": str(agent_id),
-            "the platform.tenant_id": str(tenant_id),
+            "qortia.agent_id": str(agent_id),
+            "qortia.tenant_id": str(tenant_id),
             "memories_written": len(new_ids),
             "stable_updates": stable_count,
             "unstable_updates": unstable_count,
@@ -389,7 +377,7 @@ async def _call_litellm_reflect(  # noqa: C901
         logger.info(
             {
                 "event": "qortia_llm_reflect",
-                "the platform.tenant_id": str(tenant_id),
+                "qortia.tenant_id": str(tenant_id),
                 "model": model,
                 "prompt_tokens": usage.get("prompt_tokens", 0),
                 "completion_tokens": usage.get("completion_tokens", 0),
@@ -409,7 +397,7 @@ async def _call_litellm_reflect(  # noqa: C901
             if action in ("CREATE", "UPDATE"):
                 if r.get("type") not in ("mental_model", "lesson"):
                     raise ValueError(f"invalid type: {r['type']}")
-                if not isinstance(r.get("importance"), (int, float)):
+                if not isinstance(r.get("importance"), int | float):
                     raise ValueError("importance must be numeric")
                 if not r.get("content"):
                     raise ValueError("content must not be empty")
@@ -421,14 +409,15 @@ async def _call_litellm_reflect(  # noqa: C901
 
 
 def _build_reflect_prompt(recent: list[str], existing: list[dict]) -> str:  # type: ignore[type-arg]
-    from app.qortia.remember import build_temporal_grounding_instruction
+    from qortia.remember import build_temporal_grounding_instruction
 
     recent_block = "\n".join(f"- {m}" for m in recent) or "(none)"
     existing_block = (
         "\n".join(f"- [{m['id']}] [{m['type']}] {m['content']}" for m in existing) or "(none)"
     )
     temporal_instruction = build_temporal_grounding_instruction()
-    return f"""You are synthesising an agent's recent experiences into durable mental models and lessons.
+    return f"""You are synthesising an agent's recent experiences into durable mental models
+and lessons.
 
 {temporal_instruction}
 
@@ -438,13 +427,15 @@ Recent episodic and experiential memories (last 7 days):
 Existing consolidated knowledge (will be superseded by your output):
 {existing_block}
 
-Your task is to refine the agent's knowledge. You can CREATE new models, UPDATE existing ones with more detail, or RETAIN existing ones that are still accurate.
+Your task is to refine the agent's knowledge. You can CREATE new models, UPDATE existing
+ones with more detail, or RETAIN existing ones that are still accurate.
 
 Return a JSON object with this exact schema:
 {{
   "reflections": [
     {{"action": "CREATE", "type": "mental_model", "content": "...", "importance": 0.85}},
-    {{"action": "UPDATE", "id": "uuid-here", "type": "lesson", "content": "updated content", "importance": 0.90}},
+    {{"action": "UPDATE", "id": "uuid-here", "type": "lesson", "content": "updated content",
+      "importance": 0.90}},
     {{"action": "RETAIN", "id": "uuid-here"}}
   ]
 }}
@@ -454,12 +445,16 @@ Rules:
 - type must be "mental_model" or "lesson" only
 - importance is a float between 0.0 and 1.0
 - content must be a non-empty string
-- Return all knowledge items that should remain consolidated. Any existing ID NOT returned will be pruned (deleted).
+- Return all knowledge items that should remain consolidated. Any existing ID NOT returned
+  will be pruned (deleted).
 - Synthesise patterns, not events
 - Preserve named entities (people, systems, organisations) — they are recall anchors
-- When a memory contains a temporal marker ("last quarter", "in March"), preserve it — do not strip temporal context
-- Preserve specific resolved dates from source memories — do NOT convert them back to relative references
-- Attribute observations to their source when relevant: "user reported X", "agent observed Y", "team decided Z"
+- When a memory contains a temporal marker ("last quarter", "in March"), preserve it — do
+  not strip temporal context
+- Preserve specific resolved dates from source memories — do NOT convert them back to
+  relative references
+- Attribute observations to their source when relevant: "user reported X", "agent observed
+  Y", "team decided Z"
 - Preserve [User], [Observed], [Third-party] attribution prefixes from source memories
 
 NEVER include:
@@ -534,7 +529,8 @@ async def _process_embedding_batch() -> None:
         async with conn.transaction():
             hindsight = await conn.fetch(
                 """
-                SELECT id, tenant_id, agent_id, content AS text_to_embed, lang, 'hindsight_memories' AS tbl
+                SELECT id, tenant_id, agent_id, content AS text_to_embed, lang,
+                       'hindsight_memories' AS tbl
                 FROM hindsight_memories
                 WHERE embedding IS NULL AND embedding_attempts < 3
                 ORDER BY tenant_id, created_at ASC
@@ -630,7 +626,7 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
             )
         # Cross-memory linking (16i) — only for hindsight_memories
         if row["tbl"] == "hindsight_memories":
-            from app.qortia.links import _find_similar_memories, _upsert_memory_links
+            from qortia.links import _find_similar_memories, _upsert_memory_links
 
             similar = await _find_similar_memories(
                 memory_id=row["id"],
@@ -647,7 +643,8 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
     except Exception as exc:
         async with get_main_pool().acquire() as conn:
             await conn.execute(
-                f"UPDATE {row['tbl']} SET embedding_attempts = embedding_attempts + 1 WHERE id = $1",  # noqa: S608
+                f"UPDATE {row['tbl']} SET embedding_attempts = embedding_attempts + 1 "  # noqa: S608
+                "WHERE id = $1",
                 row["id"],
             )
             attempts = await conn.fetchval(
@@ -678,7 +675,7 @@ async def _get_embedding(text: str, litellm_key: str) -> list[float]:
 
 
 async def validate_embedding_dimensions() -> None:
-    from app.vault import get_platform_embed_key
+    from qortia.auth import get_platform_embed_key
 
     embed_key = get_platform_embed_key()
 
@@ -708,7 +705,7 @@ async def validate_embedding_dimensions() -> None:
 async def run_background_reflection_trigger() -> None:
     """Supervised background task: triggers reflection for agents idle > window."""
     while True:
-        await asyncio.sleep(settings.idle_reflection_interval_s)
+        await asyncio.sleep(config.settings.idle_reflection_interval_s)
         await _trigger_idle_reflections()
 
 
@@ -718,7 +715,7 @@ async def _trigger_idle_reflections() -> None:
             rows = await conn.fetch(
                 """
                 SELECT a.id AS agent_id, a.tenant_id
-                FROM auth.agents a
+                FROM qortia_agents a
                 WHERE a.status = 'active'
                   AND a.updated_at < now() - ($1 * interval '1 hour')
                   AND EXISTS (
@@ -727,7 +724,7 @@ async def _trigger_idle_reflections() -> None:
                       LIMIT 1
                   )
                 """,
-                settings.idle_reflection_window_h,
+                config.settings.idle_reflection_window_h,
             )
         for row in rows:
             await _reflect_agent(UUID(str(row["agent_id"])), UUID(str(row["tenant_id"])))
@@ -741,13 +738,12 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
     Mirrors the HTTP /v1/reflect endpoint logic but accepts raw UUIDs rather than
     an AgentIdentity so it can be called without an inbound JWT context.
     """
-    from app.qortia.remember import _fetch_agent_clearance
+    from qortia.remember import _fetch_agent_clearance
 
     try:
         clearance_order, agent_division = await _fetch_agent_clearance(agent_id, tenant_id)
         recent: list[dict[str, Any]] = []
         existing: list[dict[str, Any]] = []
-        domain_md_raw: str | None = None
 
         async with tenant_transaction(
             get_main_pool(),
@@ -757,7 +753,7 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
             agent_division=agent_division,
         ) as conn:
             status = await conn.fetchval(
-                "SELECT status FROM auth.agents WHERE id = $1 AND tenant_id = $2",
+                "SELECT status FROM qortia_agents WHERE id = $1 AND tenant_id = $2",
                 agent_id,
                 tenant_id,
             )
@@ -786,18 +782,11 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
                 """,
                 agent_id,
             )
-            domain_md_raw = await conn.fetchval(
-                "SELECT domain_md FROM auth.agents WHERE id = $1 AND tenant_id = $2",
-                agent_id,
-                tenant_id,
-            )
 
         if not recent:
             return  # nothing to reflect on
 
-        domain_parsed = yaml.safe_load(domain_md_raw) if domain_md_raw else {}
-        domain = domain_parsed if isinstance(domain_parsed, dict) else {}
-        model = (domain.get("model") if domain else None) or settings.rerank_model
+        model = config.settings.rerank_model
         litellm_key = await get_litellm_key(str(tenant_id))
 
         reflections = await _call_litellm_reflect(
@@ -837,8 +826,8 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
         logger.warning(
             {
                 "event": "background_reflect_failed",
-                "the platform.agent_id": str(agent_id),
-                "the platform.tenant_id": str(tenant_id),
+                "qortia.agent_id": str(agent_id),
+                "qortia.tenant_id": str(tenant_id),
                 "error": str(exc),
             }
         )

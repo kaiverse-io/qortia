@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from datetime import UTC, datetime
 
-from app.qortia.models import RecallResult
+from qortia.models import RecallResult
 
 RRF_K = 60
 SEARCH_FETCH_MULTIPLIER = 2
@@ -45,7 +45,6 @@ def _entity_filter_clause(
     if not entities:
         return "", []
     # Use a subquery to check for entity text match in nested [text, type] pairs.
-    # This correctly handles the the platform entity structure.
     clause = f"""
         AND EXISTS (
             SELECT 1 FROM jsonb_array_elements(entities) AS e

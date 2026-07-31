@@ -4,8 +4,9 @@ from uuid import UUID
 
 import asyncpg
 import httpx
-from app.config import settings
 from fastapi import HTTPException
+
+from qortia import config
 
 EMBEDDING_MODEL = "bge-m3"
 
@@ -14,7 +15,7 @@ _litellm_client: httpx.AsyncClient | None = None
 
 def init_litellm_client() -> None:
     global _litellm_client
-    _litellm_client = httpx.AsyncClient(base_url=settings.litellm_url, timeout=None)  # noqa: S113
+    _litellm_client = httpx.AsyncClient(base_url=config.settings.litellm_url, timeout=None)  # noqa: S113
 
 
 async def close_litellm_client() -> None:
@@ -29,7 +30,7 @@ def get_litellm_client() -> httpx.AsyncClient:
 
 async def assert_agent_active(agent_id: UUID, tenant_id: UUID, conn: asyncpg.Connection) -> None:
     row = await conn.fetchrow(
-        "SELECT status FROM auth.agents WHERE id = $1 AND tenant_id = $2",
+        "SELECT status FROM qortia_agents WHERE id = $1 AND tenant_id = $2",
         agent_id,
         tenant_id,
     )

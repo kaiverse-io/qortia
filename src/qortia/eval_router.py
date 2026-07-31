@@ -6,13 +6,13 @@ import logging
 from typing import Any, Literal
 from uuid import UUID
 
-from app.auth.models import AgentIdentity
-from app.config import settings
-from app.db import get_main_pool
-from app.qortia.knowledge import extract_entities_with_types
-from app.vault import provision_eval_litellm_key
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from qortia import config
+from qortia.auth import AgentIdentity, provision_eval_litellm_key
+from qortia.db import get_main_pool
+from qortia.knowledge import extract_entities_with_types
 
 logger = logging.getLogger(__name__)
 router: APIRouter = APIRouter(prefix="/v1/internal/eval")
@@ -32,25 +32,25 @@ def _parse_dt(s: str | None) -> datetime.datetime | None:
 
 
 # lint:allow-cross-tenant — ADR-073: eval endpoints seed test data across tenants by design;
-# only reachable when settings.eval_mode is True (never enabled in production).
+# only reachable when config.settings.eval_mode is True (never enabled in production).
 @router.post("/seed-agent")
 async def seed_eval_agent(
     agent_id: UUID, tenant_id: UUID, name: str = "eval_agent", role: str = "custom"
 ) -> dict[str, Any]:
     """Seeds an agent for evaluation purposes. Only works in EVAL_MODE."""
-    if not settings.eval_mode:
+    if not config.settings.eval_mode:
         raise HTTPException(404, "Not found")
 
     async with get_main_pool().acquire() as conn:
         await conn.execute(
-            "INSERT INTO auth.tenants (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO qortia_tenants (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
             tenant_id,
             f"eval-tenant-{str(tenant_id)[:8]}",
         )
         await conn.execute(
             """
-            INSERT INTO auth.agents (id, tenant_id, name, role, status, soul_md, domain_md)
-            VALUES ($1, $2, $3, $4, 'active', 'eval soul', 'eval domain')
+            INSERT INTO qortia_agents (id, tenant_id, name, role, status)
+            VALUES ($1, $2, $3, $4, 'active')
             ON CONFLICT (id) DO UPDATE SET status = 'active'
         """,
             agent_id,
@@ -78,7 +78,7 @@ class SeedMemoryRequest(BaseModel):
 
 @router.post("/seed-memory")
 async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
-    if not settings.eval_mode:
+    if not config.settings.eval_mode:
         raise HTTPException(404, "Not found")
 
     try:
@@ -137,11 +137,11 @@ async def eval_recall(
     scope: Literal["private", "org", "knowledge", "all"] = "private",
     limit: int = 10,
 ) -> dict[str, Any]:
-    if not settings.eval_mode:
+    if not config.settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    from app.qortia.models import RecallRequest
-    from app.qortia.recall import recall
+    from qortia.models import RecallRequest
+    from qortia.recall import recall
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     body = RecallRequest(query=query, scope=scope)
@@ -160,11 +160,11 @@ async def eval_recall_full(
     Used by REH and ALB harnesses to call the production recall pipeline without
     requiring a signed JWT. Only reachable when EVAL_MODE=true.
     """
-    if not settings.eval_mode:
+    if not config.settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    from app.qortia.models import RecallRequest
-    from app.qortia.recall import recall
+    from qortia.models import RecallRequest
+    from qortia.recall import recall
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     req = RecallRequest(
@@ -190,10 +190,10 @@ async def eval_reflect(
     Used by ALB Task B to verify reflection consolidation behaviour.
     Only reachable when EVAL_MODE=true.
     """
-    if not settings.eval_mode:
+    if not config.settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    from app.qortia.reflect import reflect
+    from qortia.reflect import reflect
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     resp = await reflect(agent)
@@ -207,11 +207,11 @@ async def eval_remember_org(
     agent_id: UUID,
 ) -> dict[str, Any]:
     """Seed org memory for eval without JWT. Only reachable when EVAL_MODE=true."""
-    if not settings.eval_mode:
+    if not config.settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    from app.qortia.models import RememberOrgRequest
-    from app.qortia.remember import remember_org
+    from qortia.models import RememberOrgRequest
+    from qortia.remember import remember_org
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     req = RememberOrgRequest(
@@ -288,11 +288,11 @@ async def eval_ingest_knowledge(
     agent_id: UUID,
 ) -> dict[str, Any]:
     """Ingest knowledge for eval without JWT. Only reachable when EVAL_MODE=true."""
-    if not settings.eval_mode:
+    if not config.settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    from app.qortia.knowledge import ingest_knowledge
-    from app.qortia.models import KnowledgeIngestRequest
+    from qortia.knowledge import ingest_knowledge
+    from qortia.models import KnowledgeIngestRequest
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     req = KnowledgeIngestRequest(

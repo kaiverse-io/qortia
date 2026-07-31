@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from app.qortia.knowledge import router as knowledge_router
-from app.qortia.recall import router as recall_router
-from app.qortia.reflect import router as reflect_router
-from app.qortia.remember import router as remember_router
 from fastapi import APIRouter
+
+from qortia.knowledge import router as knowledge_router
+from qortia.recall import router as recall_router
+from qortia.reflect import router as reflect_router
+from qortia.remember import router as remember_router
 
 router = APIRouter(tags=["qortia"])
 router.include_router(remember_router)
