@@ -23,7 +23,7 @@ def _make_recall_result(
     mem_type: str = "episodic",
     content: str = "test content",
 ):
-    from app.qortia.models import RecallResult
+    from qortia.models import RecallResult
 
     return RecallResult(
         id=id,
@@ -64,31 +64,31 @@ def _mock_tx(return_value=None):
 
 class TestKnowledgeFunctions:
     def test_extract_entities_nlp_none_returns_empty(self):
-        from app.qortia.knowledge import extract_entities
+        from qortia.knowledge import extract_entities
 
-        with mock.patch("app.qortia.knowledge.get_nlp", return_value=None):
+        with mock.patch("qortia.knowledge.get_nlp", return_value=None):
             result = extract_entities("Alice met Bob at Google")
         assert result == []
 
     def test_extract_entities_unsupported_lang_falls_through(self):
-        from app.qortia.knowledge import extract_entities
+        from qortia.knowledge import extract_entities
 
         mock_doc = mock.MagicMock()
         mock_doc.ents = []
         mock_nlp = mock.MagicMock(return_value=mock_doc)
-        with mock.patch("app.qortia.knowledge.get_nlp", return_value=mock_nlp):
+        with mock.patch("qortia.knowledge.get_nlp", return_value=mock_nlp):
             result = extract_entities("hello", lang="xx_unknown")
         assert result == []
 
     def test_extract_entities_with_types_nlp_none_raises(self):
-        from app.qortia.knowledge import extract_entities_with_types
+        from qortia.knowledge import extract_entities_with_types
 
-        with mock.patch("app.qortia.knowledge.get_nlp", return_value=None):
+        with mock.patch("qortia.knowledge.get_nlp", return_value=None):
             with pytest.raises(TypeError):
                 extract_entities_with_types("Alice met Bob")
 
     def test_extract_entities_with_types_indic_path(self):
-        from app.qortia.knowledge import extract_entities_with_types
+        from qortia.knowledge import extract_entities_with_types
 
         mock_ent = mock.MagicMock()
         mock_ent.text = "Mumbai"
@@ -97,28 +97,28 @@ class TestKnowledgeFunctions:
         mock_doc.ents = [mock_ent]
         mock_pipeline = mock.MagicMock(return_value=mock_doc)
         with (
-            mock.patch("app.qortia.knowledge._get_indic_pipeline", return_value=mock_pipeline),
-            mock.patch("app.qortia.knowledge._INDIC_LABEL_MAP", {"LOC": "location"}),
+            mock.patch("qortia.knowledge._get_indic_pipeline", return_value=mock_pipeline),
+            mock.patch("qortia.knowledge._INDIC_LABEL_MAP", {"LOC": "location"}),
         ):
             result = extract_entities_with_types("Mumbai is a city", lang="hi")
         assert ("Mumbai", "location") in result
 
     def test_load_spacy_model_sets_global(self):
         pytest.importorskip("spacy")
-        from app.qortia import knowledge
+        from qortia import knowledge
 
         original = knowledge._nlp
         mock_nlp = mock.MagicMock()
         with (
             mock.patch("spacy.load", return_value=mock_nlp),
-            mock.patch("app.qortia.knowledge._get_indic_pipeline", return_value=mock.MagicMock()),
+            mock.patch("qortia.knowledge._get_indic_pipeline", return_value=mock.MagicMock()),
         ):
             knowledge.load_spacy_model()
         assert knowledge._nlp is mock_nlp
         knowledge._nlp = original  # restore
 
     def test_build_weekly_summary_orders_by_date_desc(self):
-        from app.qortia.knowledge import build_weekly_summary
+        from qortia.knowledge import build_weekly_summary
 
         h1 = {"created_at": datetime.datetime(2024, 1, 1), "content": "old", "agent_name": "A"}
         h2 = {"created_at": datetime.datetime(2024, 1, 5), "content": "new", "agent_name": "B"}
@@ -126,12 +126,12 @@ class TestKnowledgeFunctions:
         assert result.index("new") < result.index("old")
 
     def test_build_weekly_summary_empty(self):
-        from app.qortia.knowledge import build_weekly_summary
+        from qortia.knowledge import build_weekly_summary
 
         assert build_weekly_summary([]) == ""
 
     def test_build_weekly_summary_unknown_agent(self):
-        from app.qortia.knowledge import build_weekly_summary
+        from qortia.knowledge import build_weekly_summary
 
         h = {"created_at": datetime.datetime(2024, 1, 1), "content": "stuff", "agent_name": None}
         result = build_weekly_summary([h])
@@ -139,7 +139,7 @@ class TestKnowledgeFunctions:
 
     @pytest.mark.asyncio
     async def test_ingest_knowledge_dedup_identical_hashes(self):
-        from app.qortia.knowledge import KnowledgeIngestRequest, ingest_knowledge
+        from qortia.knowledge import KnowledgeIngestRequest, ingest_knowledge
 
         content = "## Section\n" + ("word " * 60)
         agent = _agent()
@@ -151,7 +151,7 @@ class TestKnowledgeFunctions:
 
         import hashlib
 
-        from app.qortia.knowledge import split_into_sections
+        from qortia.knowledge import split_into_sections
 
         sections = split_into_sections(content)
         hashes = [hashlib.sha256(s["text"].encode()).hexdigest() for s in sections]
@@ -162,10 +162,10 @@ class TestKnowledgeFunctions:
         )
 
         with (
-            mock.patch("app.qortia.knowledge.get_main_pool"),
-            mock.patch("app.qortia.knowledge.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.knowledge.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.knowledge.get_main_pool"),
+            mock.patch("qortia.knowledge.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.knowledge.assert_agent_active", mock.AsyncMock()),
             mock.patch.object(conn, "fetchval", mock.AsyncMock(return_value="chief")),
         ):
             result = await ingest_knowledge(body, agent)
@@ -173,18 +173,19 @@ class TestKnowledgeFunctions:
 
     @pytest.mark.asyncio
     async def test_delete_knowledge_non_chief_raises(self):
-        from app.qortia.knowledge import delete_knowledge
         from fastapi import HTTPException
+
+        from qortia.knowledge import delete_knowledge
 
         agent = _agent()
         ctx, conn = _mock_tx()
         conn.fetchval = mock.AsyncMock(return_value="worker")  # not chief
 
         with (
-            mock.patch("app.qortia.knowledge.get_main_pool"),
-            mock.patch("app.qortia.knowledge.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.knowledge.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.knowledge.get_main_pool"),
+            mock.patch("qortia.knowledge.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.knowledge.assert_agent_active", mock.AsyncMock()),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await delete_knowledge("docs/test.md", agent)
@@ -192,7 +193,7 @@ class TestKnowledgeFunctions:
 
     @pytest.mark.asyncio
     async def test_delete_knowledge_chief_succeeds(self):
-        from app.qortia.knowledge import delete_knowledge
+        from qortia.knowledge import delete_knowledge
 
         agent = _agent()
         ctx, conn = _mock_tx()
@@ -200,17 +201,17 @@ class TestKnowledgeFunctions:
         conn.execute = mock.AsyncMock(return_value="DELETE 3")
 
         with (
-            mock.patch("app.qortia.knowledge.get_main_pool"),
-            mock.patch("app.qortia.knowledge.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.knowledge.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.knowledge.get_main_pool"),
+            mock.patch("qortia.knowledge.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.knowledge.assert_agent_active", mock.AsyncMock()),
         ):
             result = await delete_knowledge("docs/test.md", agent)
         assert result["chunks_deleted"] == 3
 
     @pytest.mark.asyncio
     async def test_summarise_tenant_skips_if_too_recent(self):
-        from app.qortia.knowledge import _summarise_tenant
+        from qortia.knowledge import _summarise_tenant
 
         recent = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)
 
@@ -225,14 +226,14 @@ class TestKnowledgeFunctions:
         pool_mock.acquire.return_value.__aenter__ = mock.AsyncMock(return_value=conn)
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with mock.patch("app.qortia.knowledge.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.knowledge.get_main_pool", return_value=pool_mock):
             # Should return early without writing a summary
             await _summarise_tenant(UUID("00000000-0000-0000-0000-000000000001"), recent)
         conn.execute.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_run_weekly_summary_cycle_wrong_day_skips(self):
-        from app.qortia.knowledge import _run_weekly_summary_cycle
+        from qortia.knowledge import _run_weekly_summary_cycle
 
         tenant_id = UUID("00000000-0000-0000-0000-000000000001")
         pool_mock = mock.MagicMock()
@@ -244,8 +245,8 @@ class TestKnowledgeFunctions:
         )
 
         with (
-            mock.patch("app.qortia.knowledge.get_main_pool", return_value=pool_mock),
-            mock.patch("app.qortia.knowledge._summarise_tenant", mock.AsyncMock()) as mock_summ,
+            mock.patch("qortia.knowledge.get_main_pool", return_value=pool_mock),
+            mock.patch("qortia.knowledge._summarise_tenant", mock.AsyncMock()) as mock_summ,
             mock.patch("datetime.date") as mock_date,
         ):
             mock_date.today.return_value.weekday.return_value = 99  # never matches
@@ -261,8 +262,9 @@ class TestKnowledgeFunctions:
 class TestReflectFunctions:
     @pytest.mark.asyncio
     async def test_call_litellm_reflect_non_200_raises(self):
-        from app.qortia.reflect import _call_litellm_reflect
         from fastapi import HTTPException
+
+        from qortia.reflect import _call_litellm_reflect
 
         mock_resp = mock.MagicMock()
         mock_resp.status_code = 503
@@ -270,8 +272,8 @@ class TestReflectFunctions:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.reflect._build_reflect_prompt", return_value="prompt"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.reflect._build_reflect_prompt", return_value="prompt"),
             mock.patch(
                 "asyncio.timeout",
                 return_value=mock.MagicMock(
@@ -292,8 +294,9 @@ class TestReflectFunctions:
 
     @pytest.mark.asyncio
     async def test_call_litellm_reflect_malformed_json_raises(self):
-        from app.qortia.reflect import _call_litellm_reflect
         from fastapi import HTTPException
+
+        from qortia.reflect import _call_litellm_reflect
 
         mock_resp = mock.MagicMock()
         mock_resp.status_code = 200
@@ -305,8 +308,8 @@ class TestReflectFunctions:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.reflect._build_reflect_prompt", return_value="p"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.reflect._build_reflect_prompt", return_value="p"),
         ):
             with pytest.raises(HTTPException):
                 await _call_litellm_reflect(
@@ -320,8 +323,9 @@ class TestReflectFunctions:
 
     @pytest.mark.asyncio
     async def test_call_litellm_reflect_empty_reflections_raises(self):
-        from app.qortia.reflect import _call_litellm_reflect
         from fastapi import HTTPException
+
+        from qortia.reflect import _call_litellm_reflect
 
         payload = json.dumps({"reflections": []})
         mock_resp = mock.MagicMock()
@@ -334,8 +338,8 @@ class TestReflectFunctions:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.reflect._build_reflect_prompt", return_value="p"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.reflect._build_reflect_prompt", return_value="p"),
         ):
             with pytest.raises(HTTPException):
                 await _call_litellm_reflect(
@@ -349,8 +353,9 @@ class TestReflectFunctions:
 
     @pytest.mark.asyncio
     async def test_call_litellm_reflect_invalid_action_raises(self):
-        from app.qortia.reflect import _call_litellm_reflect
         from fastapi import HTTPException
+
+        from qortia.reflect import _call_litellm_reflect
 
         payload = json.dumps(
             {
@@ -369,8 +374,8 @@ class TestReflectFunctions:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.reflect._build_reflect_prompt", return_value="p"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.reflect._build_reflect_prompt", return_value="p"),
         ):
             with pytest.raises(HTTPException):
                 await _call_litellm_reflect(
@@ -384,7 +389,7 @@ class TestReflectFunctions:
 
     @pytest.mark.asyncio
     async def test_archive_old_episodic_memories_success(self):
-        from app.qortia.reflect import _archive_old_episodic_memories
+        from qortia.reflect import _archive_old_episodic_memories
 
         pool_mock = mock.MagicMock()
         conn = mock.AsyncMock()
@@ -392,23 +397,23 @@ class TestReflectFunctions:
         pool_mock.acquire.return_value.__aenter__ = mock.AsyncMock(return_value=conn)
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock):
             await _archive_old_episodic_memories()
         conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_archive_old_episodic_memories_handles_exception(self):
-        from app.qortia.reflect import _archive_old_episodic_memories
+        from qortia.reflect import _archive_old_episodic_memories
 
         pool_mock = mock.MagicMock()
         pool_mock.acquire.side_effect = Exception("db down")
 
-        with mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock):
             await _archive_old_episodic_memories()  # must not raise
 
     @pytest.mark.asyncio
     async def test_purge_expired_short_term_success(self):
-        from app.qortia.reflect import _purge_expired_short_term_memories
+        from qortia.reflect import _purge_expired_short_term_memories
 
         pool_mock = mock.MagicMock()
         conn = mock.AsyncMock()
@@ -416,23 +421,23 @@ class TestReflectFunctions:
         pool_mock.acquire.return_value.__aenter__ = mock.AsyncMock(return_value=conn)
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock):
             await _purge_expired_short_term_memories()
         conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_purge_expired_short_term_handles_exception(self):
-        from app.qortia.reflect import _purge_expired_short_term_memories
+        from qortia.reflect import _purge_expired_short_term_memories
 
         pool_mock = mock.MagicMock()
         pool_mock.acquire.side_effect = Exception("pool error")
 
-        with mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock):
             await _purge_expired_short_term_memories()  # must not raise
 
     @pytest.mark.asyncio
     async def test_embed_single_row_skips_empty_text(self):
-        from app.qortia.reflect import _embed_single_row
+        from qortia.reflect import _embed_single_row
 
         row = {
             "text_to_embed": "",
@@ -440,13 +445,13 @@ class TestReflectFunctions:
             "tbl": "hindsight_memories",
             "tenant_id": UUID("00000000-0000-0000-0000-000000000001"),
         }
-        with mock.patch("app.qortia.reflect._get_embedding") as mock_get:
+        with mock.patch("qortia.reflect._get_embedding") as mock_get:
             await _embed_single_row(row, "key")
         mock_get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_embed_single_row_handles_failure_increments_attempts(self):
-        from app.qortia.reflect import _embed_single_row
+        from qortia.reflect import _embed_single_row
 
         row = {
             "text_to_embed": "embed this",
@@ -464,17 +469,17 @@ class TestReflectFunctions:
 
         with (
             mock.patch(
-                "app.qortia.reflect._get_embedding",
+                "qortia.reflect._get_embedding",
                 mock.AsyncMock(side_effect=Exception("litellm down")),
             ),
-            mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock),
+            mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock),
         ):
             await _embed_single_row(row, "key")  # must not raise
         conn.execute.assert_called()
 
     @pytest.mark.asyncio
     async def test_trigger_idle_reflections_no_agents(self):
-        from app.qortia.reflect import _trigger_idle_reflections
+        from qortia.reflect import _trigger_idle_reflections
 
         pool_mock = mock.MagicMock()
         conn = mock.AsyncMock()
@@ -482,22 +487,22 @@ class TestReflectFunctions:
         pool_mock.acquire.return_value.__aenter__ = mock.AsyncMock(return_value=conn)
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock):
             await _trigger_idle_reflections()
 
     @pytest.mark.asyncio
     async def test_trigger_idle_reflections_handles_exception(self):
-        from app.qortia.reflect import _trigger_idle_reflections
+        from qortia.reflect import _trigger_idle_reflections
 
         pool_mock = mock.MagicMock()
         pool_mock.acquire.side_effect = Exception("pool gone")
 
-        with mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock):
             await _trigger_idle_reflections()  # must not raise
 
     @pytest.mark.asyncio
     async def test_reflect_agent_no_recent_returns_early(self):
-        from app.qortia.reflect import _reflect_agent
+        from qortia.reflect import _reflect_agent
 
         tenant_id = UUID("00000000-0000-0000-0000-000000000001")
         agent_id = UUID("00000000-0000-0000-0000-000000000002")
@@ -507,29 +512,29 @@ class TestReflectFunctions:
         conn.fetchval = mock.AsyncMock(return_value=None)
 
         with (
-            mock.patch("app.qortia.reflect.get_main_pool"),
-            mock.patch("app.qortia.reflect.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.reflect._call_litellm_reflect") as mock_llm,
+            mock.patch("qortia.reflect.get_main_pool"),
+            mock.patch("qortia.reflect.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.reflect._call_litellm_reflect") as mock_llm,
         ):
             await _reflect_agent(agent_id, tenant_id)
         mock_llm.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_reflect_agent_exception_logged(self):
-        from app.qortia.reflect import _reflect_agent
+        from qortia.reflect import _reflect_agent
 
         tenant_id = UUID("00000000-0000-0000-0000-000000000001")
         agent_id = UUID("00000000-0000-0000-0000-000000000002")
 
         with (
-            mock.patch("app.qortia.reflect.get_main_pool"),
-            mock.patch("app.qortia.reflect.tenant_transaction", side_effect=Exception("db error")),
+            mock.patch("qortia.reflect.get_main_pool"),
+            mock.patch("qortia.reflect.tenant_transaction", side_effect=Exception("db error")),
         ):
             await _reflect_agent(agent_id, tenant_id)  # must not raise
 
     @pytest.mark.asyncio
     async def test_get_embedding_success(self):
-        from app.qortia.reflect import _get_embedding
+        from qortia.reflect import _get_embedding
 
         mock_resp = mock.MagicMock()
         mock_resp.raise_for_status = mock.MagicMock()
@@ -538,15 +543,15 @@ class TestReflectFunctions:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.reflect.EMBEDDING_MODEL", "bge-m3"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.reflect.EMBEDDING_MODEL", "bge-m3"),
         ):
             result = await _get_embedding("hello", "key")
         assert len(result) == 1024
 
     @pytest.mark.asyncio
     async def test_validate_embedding_dimensions_mismatch_raises(self):
-        from app.qortia.reflect import validate_embedding_dimensions
+        from qortia.reflect import validate_embedding_dimensions
 
         mock_resp = mock.MagicMock()
         mock_resp.raise_for_status = mock.MagicMock()
@@ -555,24 +560,24 @@ class TestReflectFunctions:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.vault.get_platform_embed_key", return_value="key"),
-            mock.patch("app.qortia.reflect.EMBEDDING_MODEL", "bge-m3"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.auth.get_platform_embed_key", return_value="key"),
+            mock.patch("qortia.reflect.EMBEDDING_MODEL", "bge-m3"),
         ):
             with pytest.raises(RuntimeError):
                 await validate_embedding_dimensions()
 
     @pytest.mark.asyncio
     async def test_validate_embedding_dimensions_connection_error(self):
-        from app.qortia.reflect import validate_embedding_dimensions
+        from qortia.reflect import validate_embedding_dimensions
 
         mock_client = mock.AsyncMock()
         mock_client.post = mock.AsyncMock(side_effect=Exception("no litellm"))
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.vault.get_platform_embed_key", return_value="key"),
-            mock.patch("app.qortia.reflect.EMBEDDING_MODEL", "bge-m3"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.auth.get_platform_embed_key", return_value="key"),
+            mock.patch("qortia.reflect.EMBEDDING_MODEL", "bge-m3"),
         ):
             with pytest.raises(RuntimeError):
                 await validate_embedding_dimensions()
@@ -585,30 +590,30 @@ class TestReflectFunctions:
 
 class TestRememberFunctions:
     def test_detect_lang_returns_en_on_failure(self):
-        from app.qortia.remember import _detect_lang
+        from qortia.remember import _detect_lang
 
-        with mock.patch("app.qortia.remember.detect", side_effect=Exception("langdetect error")):
+        with mock.patch("qortia.remember.detect", side_effect=Exception("langdetect error")):
             result = _detect_lang("hello world")
         assert result == "en"
 
     def test_detect_lang_returns_split_code(self):
-        from app.qortia.remember import _detect_lang
+        from qortia.remember import _detect_lang
 
         # detect returns e.g. "zh-cn" — _detect_lang splits on '-' and lowercases
-        with mock.patch("app.qortia.remember.detect", return_value="zh-cn"):
+        with mock.patch("qortia.remember.detect", return_value="zh-cn"):
             result = _detect_lang("some text")
         assert result == "zh"
 
     @pytest.mark.asyncio
     async def test_fetch_agent_clearance_returns_defaults_on_none(self):
-        from app.qortia.remember import _fetch_agent_clearance
+        from qortia.remember import _fetch_agent_clearance
 
         ctx, conn = _mock_tx()
         conn.fetchrow = mock.AsyncMock(return_value=None)  # no row
 
         with (
-            mock.patch("app.qortia.remember.get_main_pool"),
-            mock.patch("app.qortia.remember.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.remember.get_main_pool"),
+            mock.patch("qortia.remember.tenant_transaction", return_value=ctx),
         ):
             order, division = await _fetch_agent_clearance(
                 UUID("00000000-0000-0000-0000-000000000001"),
@@ -619,9 +624,10 @@ class TestRememberFunctions:
 
     @pytest.mark.asyncio
     async def test_remember_org_rate_limited_raises(self):
-        from app.qortia.models import RememberOrgRequest
-        from app.qortia.remember import remember_org
         from fastapi import HTTPException
+
+        from qortia.models import RememberOrgRequest
+        from qortia.remember import remember_org
 
         agent = _agent()
 
@@ -636,12 +642,12 @@ class TestRememberFunctions:
         conn.fetchrow = mock.AsyncMock(return_value={"clearance_order": 2, "division": "all"})
 
         with (
-            mock.patch("app.qortia.remember.get_main_pool"),
-            mock.patch("app.qortia.remember.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.remember.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.remember.get_main_pool"),
+            mock.patch("qortia.remember.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.remember.assert_agent_active", mock.AsyncMock()),
             mock.patch(
-                "app.qortia.remember._fetch_agent_clearance",
+                "qortia.remember._fetch_agent_clearance",
                 mock.AsyncMock(return_value=(2, "all")),
             ),
         ):
@@ -661,7 +667,7 @@ class TestRememberFunctions:
 class TestEntityGraphFunctions:
     @pytest.mark.asyncio
     async def test_update_entity_summary_with_mock_litellm(self):
-        from app.qortia.entity_graph import _update_entity_summary
+        from qortia.entity_graph import _update_entity_summary
 
         mock_resp = mock.MagicMock()
         mock_resp.raise_for_status = mock.MagicMock()
@@ -669,7 +675,7 @@ class TestEntityGraphFunctions:
         mock_client = mock.AsyncMock()
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
-        with mock.patch("app.qortia.entity_graph.get_litellm_client", return_value=mock_client):
+        with mock.patch("qortia.entity_graph.get_litellm_client", return_value=mock_client):
             result = await _update_entity_summary(
                 "old summary", "new memory content", "litellm_key"
             )
@@ -677,18 +683,18 @@ class TestEntityGraphFunctions:
 
     @pytest.mark.asyncio
     async def test_update_entity_summary_returns_existing_on_error(self):
-        from app.qortia.entity_graph import _update_entity_summary
+        from qortia.entity_graph import _update_entity_summary
 
         mock_client = mock.AsyncMock()
         mock_client.post = mock.AsyncMock(side_effect=Exception("llm down"))
 
-        with mock.patch("app.qortia.entity_graph.get_litellm_client", return_value=mock_client):
+        with mock.patch("qortia.entity_graph.get_litellm_client", return_value=mock_client):
             result = await _update_entity_summary("old summary", "content", "key")
         assert result == "old summary"
 
     @pytest.mark.asyncio
     async def test_maybe_update_entity_summary_link_count_1(self):
-        from app.qortia.entity_graph import _maybe_update_entity_summary
+        from qortia.entity_graph import _maybe_update_entity_summary
 
         conn = mock.AsyncMock()
         conn.fetchrow = mock.AsyncMock(return_value={"link_count": 1, "summary": None})
@@ -709,7 +715,7 @@ class TestEntityGraphFunctions:
 
     @pytest.mark.asyncio
     async def test_maybe_update_entity_summary_no_row_returns(self):
-        from app.qortia.entity_graph import _maybe_update_entity_summary
+        from qortia.entity_graph import _maybe_update_entity_summary
 
         conn = mock.AsyncMock()
         conn.fetchrow = mock.AsyncMock(return_value=None)  # entity not found
@@ -728,7 +734,7 @@ class TestEntityGraphFunctions:
 
     @pytest.mark.asyncio
     async def test_maybe_update_entity_summary_link_count_not_trigger(self):
-        from app.qortia.entity_graph import _maybe_update_entity_summary
+        from qortia.entity_graph import _maybe_update_entity_summary
 
         conn = mock.AsyncMock()
         conn.fetchrow = mock.AsyncMock(return_value={"link_count": 2, "summary": "existing"})
@@ -747,7 +753,7 @@ class TestEntityGraphFunctions:
 
     @pytest.mark.asyncio
     async def test_maybe_update_entity_summary_org_path(self):
-        from app.qortia.entity_graph import _maybe_update_entity_summary
+        from qortia.entity_graph import _maybe_update_entity_summary
 
         conn = mock.AsyncMock()
         conn.fetchrow = mock.AsyncMock(return_value={"link_count": 1, "summary": None})
@@ -766,7 +772,7 @@ class TestEntityGraphFunctions:
 
     @pytest.mark.asyncio
     async def test_maybe_dedup_memory_no_neighbour_no_archive(self):
-        from app.qortia.entity_graph import _maybe_dedup_memory
+        from qortia.entity_graph import _maybe_dedup_memory
 
         memory_id = UUID("aaaa0000-0000-0000-0000-000000000001")
         pool_mock = mock.MagicMock()
@@ -775,7 +781,7 @@ class TestEntityGraphFunctions:
         pool_mock.acquire.return_value.__aenter__ = mock.AsyncMock(return_value=conn)
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with mock.patch("app.qortia.entity_graph.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.entity_graph.get_main_pool", return_value=pool_mock):
             await _maybe_dedup_memory(
                 memory_id=memory_id,
                 embedding=[0.1] * 1024,
@@ -787,7 +793,7 @@ class TestEntityGraphFunctions:
 
     @pytest.mark.asyncio
     async def test_maybe_dedup_memory_high_similarity_archives(self):
-        from app.qortia.entity_graph import _maybe_dedup_memory
+        from qortia.entity_graph import _maybe_dedup_memory
 
         memory_id = UUID("aaaa0000-0000-0000-0000-000000000001")
         pool_mock = mock.MagicMock()
@@ -800,8 +806,8 @@ class TestEntityGraphFunctions:
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
         with (
-            mock.patch("app.qortia.entity_graph.get_main_pool", return_value=pool_mock),
-            mock.patch("app.qortia.entity_graph.settings") as mock_settings,
+            mock.patch("qortia.entity_graph.get_main_pool", return_value=pool_mock),
+            mock.patch("qortia.config.settings") as mock_settings,
         ):
             mock_settings.qortia_dedup_similarity_threshold = 0.95
             await _maybe_dedup_memory(
@@ -815,7 +821,7 @@ class TestEntityGraphFunctions:
 
     @pytest.mark.asyncio
     async def test_populate_graph_batch_empty_rows(self):
-        from app.qortia.entity_graph import _populate_graph_batch
+        from qortia.entity_graph import _populate_graph_batch
 
         pool_mock = mock.MagicMock()
         conn = mock.AsyncMock()
@@ -829,18 +835,18 @@ class TestEntityGraphFunctions:
         pool_mock.acquire.return_value.__aenter__ = mock.AsyncMock(return_value=conn)
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with mock.patch("app.qortia.entity_graph.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.entity_graph.get_main_pool", return_value=pool_mock):
             await _populate_graph_batch()
         conn.execute.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_populate_graph_batch_exception_logged(self):
-        from app.qortia.entity_graph import _populate_graph_batch
+        from qortia.entity_graph import _populate_graph_batch
 
         pool_mock = mock.MagicMock()
         pool_mock.acquire.side_effect = Exception("pool error")
 
-        with mock.patch("app.qortia.entity_graph.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.entity_graph.get_main_pool", return_value=pool_mock):
             await _populate_graph_batch()  # must not raise
 
 
@@ -852,49 +858,41 @@ class TestEntityGraphFunctions:
 class TestRecallHybridPipeline:
     @pytest.mark.asyncio
     async def test_recall_type_decision_routes_correctly(self):
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="Redis decision", scope="private", type="decision")
         ctx, conn = _mock_tx()
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
             mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch(
-                "app.qortia.recall._recall_decisions",
+                "qortia.recall._recall_decisions",
                 mock.AsyncMock(return_value=[_make_recall_result()]),
-            ) as mock_dec,
-            mock.patch(
-                "app.qortia.recall._safe_record_recall_access", mock.AsyncMock(), create=True
             ),
+            mock.patch("qortia.recall._safe_record_recall_access", mock.AsyncMock(), create=True),
         ):
             resp = await recall(body, agent)
         assert len(resp.results) == 1
 
     @pytest.mark.asyncio
     async def test_recall_type_lesson_routes_correctly(self):
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="debugging lesson", scope="private", type="lesson")
         ctx, conn = _mock_tx()
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
             mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch(
-                "app.qortia.recall._recall_lessons",
+                "qortia.recall._recall_lessons",
                 mock.AsyncMock(return_value=[_make_recall_result()]),
             ),
         ):
@@ -903,22 +901,19 @@ class TestRecallHybridPipeline:
 
     @pytest.mark.asyncio
     async def test_recall_type_short_term_routes_correctly(self):
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="short term", scope="private", type="short_term")
         ctx, conn = _mock_tx()
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
             mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch(
-                "app.qortia.recall._recall_short_term",
+                "qortia.recall._recall_short_term",
                 mock.AsyncMock(return_value=[_make_recall_result()]),
             ),
         ):
@@ -927,8 +922,8 @@ class TestRecallHybridPipeline:
 
     @pytest.mark.asyncio
     async def test_recall_hybrid_org_scope(self):
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="org process", scope="org")
@@ -936,25 +931,22 @@ class TestRecallHybridPipeline:
         org_result = _make_recall_result(scope="org")
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
-            mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.recall._embed_query", mock.AsyncMock(return_value=[0.1] * 1024)),
-            mock.patch("app.qortia.recall._bm25_org", mock.AsyncMock(return_value=[org_result])),
-            mock.patch("app.qortia.recall._vector_org", mock.AsyncMock(return_value=[])),
-            mock.patch("app.qortia.recall._rrf_fuse", return_value=[org_result]),
-            mock.patch("app.qortia.knowledge.extract_entities", return_value=[]),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.recall._embed_query", mock.AsyncMock(return_value=[0.1] * 1024)),
+            mock.patch("qortia.recall._bm25_org", mock.AsyncMock(return_value=[org_result])),
+            mock.patch("qortia.recall._vector_org", mock.AsyncMock(return_value=[])),
+            mock.patch("qortia.recall._rrf_fuse", return_value=[org_result]),
+            mock.patch("qortia.knowledge.extract_entities", return_value=[]),
         ):
             resp = await recall(body, agent)
         assert len(resp.results) >= 0  # may be 0 after MMR — just no crash
 
     @pytest.mark.asyncio
     async def test_recall_hybrid_knowledge_scope(self):
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="knowledge query", scope="knowledge")
@@ -962,53 +954,45 @@ class TestRecallHybridPipeline:
         know_result = _make_recall_result(scope="knowledge", mem_type="knowledge")
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
-            mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.recall._embed_query", mock.AsyncMock(return_value=[0.1] * 1024)),
-            mock.patch(
-                "app.qortia.recall._bm25_knowledge", mock.AsyncMock(return_value=[know_result])
-            ),
-            mock.patch("app.qortia.recall._vector_knowledge", mock.AsyncMock(return_value=[])),
-            mock.patch("app.qortia.recall_helpers._keyword_boost", return_value=[know_result]),
-            mock.patch("app.qortia.knowledge.extract_entities", return_value=[]),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.recall._embed_query", mock.AsyncMock(return_value=[0.1] * 1024)),
+            mock.patch("qortia.recall._bm25_knowledge", mock.AsyncMock(return_value=[know_result])),
+            mock.patch("qortia.recall._vector_knowledge", mock.AsyncMock(return_value=[])),
+            mock.patch("qortia.recall_helpers._keyword_boost", return_value=[know_result]),
+            mock.patch("qortia.knowledge.extract_entities", return_value=[]),
         ):
             resp = await recall(body, agent)
         assert isinstance(resp.results, list)
 
     @pytest.mark.asyncio
     async def test_recall_hybrid_exception_in_search_continues(self):
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="anything", scope="private")
         ctx, conn = _mock_tx()
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.recall._embed_query", mock.AsyncMock(return_value=None)),
             mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.recall._embed_query", mock.AsyncMock(return_value=None)),
-            mock.patch(
-                "app.qortia.recall._bm25_private",
+                "qortia.recall._bm25_private",
                 mock.AsyncMock(side_effect=Exception("bm25 fail")),
             ),
-            mock.patch("app.qortia.knowledge.extract_entities", return_value=[]),
+            mock.patch("qortia.knowledge.extract_entities", return_value=[]),
         ):
             resp = await recall(body, agent)
         assert isinstance(resp.results, list)  # degraded but no crash
 
     @pytest.mark.asyncio
     async def test_recall_with_work_order_id_fires_log_task(self):
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="test", scope="private", type="episodic")
@@ -1016,17 +1000,14 @@ class TestRecallHybridPipeline:
         wo_id = "11110000-0000-0000-0000-000000000001"
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
             mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch(
-                "app.qortia.recall._recall_episodic",
+                "qortia.recall._recall_episodic",
                 mock.AsyncMock(return_value=[_make_recall_result()]),
             ),
-            mock.patch("app.qortia.recall._log_session_reads", mock.AsyncMock()) as mock_log,
+            mock.patch("qortia.recall._log_session_reads", mock.AsyncMock()),
             mock.patch("asyncio.create_task", side_effect=lambda coro: asyncio.ensure_future(coro)),
         ):
             resp = await recall(body, agent, x_work_order_id=wo_id)
@@ -1034,36 +1015,33 @@ class TestRecallHybridPipeline:
 
     @pytest.mark.asyncio
     async def test_recall_invalid_work_order_id_skips_logging(self):
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="test", scope="private", type="episodic")
         ctx, conn = _mock_tx()
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
-            mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.recall._recall_episodic", mock.AsyncMock(return_value=[])),
-            mock.patch("app.qortia.recall._log_session_reads", mock.AsyncMock()) as mock_log,
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.recall._recall_episodic", mock.AsyncMock(return_value=[])),
+            mock.patch("qortia.recall._log_session_reads", mock.AsyncMock()) as mock_log,
         ):
-            resp = await recall(body, agent, x_work_order_id="not-a-uuid")
+            await recall(body, agent, x_work_order_id="not-a-uuid")
         mock_log.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_embed_query_cache_hit(self):
-        from app.qortia.recall import _embed_query
+        from qortia.recall import _embed_query
 
         tenant_id = UUID("00000000-0000-0000-0000-000000000001")
         cached_emb = [0.5] * 1024
 
         with (
-            mock.patch("app.qortia.recall.get_cached_embedding", return_value=cached_emb),
-            mock.patch("app.qortia.recall.get_litellm_client") as mock_client,
+            mock.patch("qortia.recall.get_cached_embedding", return_value=cached_emb),
+            mock.patch("qortia.recall.get_litellm_client") as mock_client,
         ):
             result = await _embed_query("query", tenant_id)
         assert result == cached_emb
@@ -1071,7 +1049,7 @@ class TestRecallHybridPipeline:
 
     @pytest.mark.asyncio
     async def test_embed_query_cache_miss_success(self):
-        from app.qortia.recall import _embed_query
+        from qortia.recall import _embed_query
 
         tenant_id = UUID("00000000-0000-0000-0000-000000000001")
         emb = [0.1] * 1024
@@ -1082,26 +1060,26 @@ class TestRecallHybridPipeline:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.recall.get_cached_embedding", return_value=None),
-            mock.patch("app.qortia.recall.put_cached_embedding"),
-            mock.patch("app.qortia.recall.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.recall.get_litellm_key", mock.AsyncMock(return_value="k")),
+            mock.patch("qortia.recall.get_cached_embedding", return_value=None),
+            mock.patch("qortia.recall.put_cached_embedding"),
+            mock.patch("qortia.recall.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.recall.get_litellm_key", mock.AsyncMock(return_value="k")),
         ):
             result = await _embed_query("query", tenant_id)
         assert result == emb
 
     @pytest.mark.asyncio
     async def test_embed_query_failure_returns_none(self):
-        from app.qortia.recall import _embed_query
+        from qortia.recall import _embed_query
 
         tenant_id = UUID("00000000-0000-0000-0000-000000000001")
         mock_client = mock.AsyncMock()
         mock_client.post = mock.AsyncMock(side_effect=Exception("timeout"))
 
         with (
-            mock.patch("app.qortia.recall.get_cached_embedding", return_value=None),
-            mock.patch("app.qortia.recall.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.recall.get_litellm_key", mock.AsyncMock(return_value="k")),
+            mock.patch("qortia.recall.get_cached_embedding", return_value=None),
+            mock.patch("qortia.recall.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.recall.get_litellm_key", mock.AsyncMock(return_value="k")),
         ):
             result = await _embed_query("query", tenant_id)
         assert result is None
@@ -1117,7 +1095,7 @@ class TestRecallHelpersMissing:
         """confidence_multiplier scales final score (ADR-125 Phase 3)."""
         import inspect
 
-        from app.qortia.recall_helpers import dynamic_importance
+        from qortia.recall_helpers import dynamic_importance
 
         sig = inspect.signature(dynamic_importance)
         if "confidence_multiplier" not in sig.parameters:
@@ -1131,8 +1109,8 @@ class TestRecallHelpersMissing:
         assert degraded < base
 
     def test_sort_by_importance_returns_sorted_desc(self):
-        from app.qortia.models import RecallResult
-        from app.qortia.recall_helpers import _sort_by_importance
+        from qortia.models import RecallResult
+        from qortia.recall_helpers import _sort_by_importance
 
         low = RecallResult(
             id="a",
@@ -1162,7 +1140,7 @@ class TestRecallHelpersMissing:
 class TestRecallOutcomeAndEntityGraph:
     @pytest.mark.asyncio
     async def test_record_work_order_outcome_success_with_memories(self):
-        from app.qortia.recall import _record_work_order_outcome
+        from qortia.recall import _record_work_order_outcome
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         aid = UUID("00000000-0000-0000-0000-000000000002")
@@ -1174,8 +1152,8 @@ class TestRecallOutcomeAndEntityGraph:
         conn.execute = mock.AsyncMock()
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
         ):
             await _record_work_order_outcome(woid, tid, aid, "SUCCESS")
 
@@ -1184,7 +1162,7 @@ class TestRecallOutcomeAndEntityGraph:
 
     @pytest.mark.asyncio
     async def test_record_work_order_outcome_no_memories(self):
-        from app.qortia.recall import _record_work_order_outcome
+        from qortia.recall import _record_work_order_outcome
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         aid = UUID("00000000-0000-0000-0000-000000000002")
@@ -1195,8 +1173,8 @@ class TestRecallOutcomeAndEntityGraph:
         conn.execute = mock.AsyncMock()
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
         ):
             await _record_work_order_outcome(woid, tid, aid, "MINOR_FAILURE")
 
@@ -1205,7 +1183,7 @@ class TestRecallOutcomeAndEntityGraph:
 
     @pytest.mark.asyncio
     async def test_record_work_order_outcome_critical_failure(self):
-        from app.qortia.recall import _record_work_order_outcome
+        from qortia.recall import _record_work_order_outcome
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         aid = UUID("00000000-0000-0000-0000-000000000002")
@@ -1217,8 +1195,8 @@ class TestRecallOutcomeAndEntityGraph:
         conn.execute = mock.AsyncMock()
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
         ):
             await _record_work_order_outcome(woid, tid, aid, "CRITICAL_FAILURE")
 
@@ -1226,23 +1204,23 @@ class TestRecallOutcomeAndEntityGraph:
 
     @pytest.mark.asyncio
     async def test_record_work_order_outcome_db_error_logged(self):
-        from app.qortia.recall import _record_work_order_outcome
+        from qortia.recall import _record_work_order_outcome
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         aid = UUID("00000000-0000-0000-0000-000000000002")
         woid = UUID("00000000-0000-0000-0000-000000000003")
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", side_effect=Exception("pool error")),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", side_effect=Exception("pool error")),
         ):
             await _record_work_order_outcome(woid, tid, aid, "SUCCESS")  # must not raise
 
     @pytest.mark.asyncio
     async def test_recall_hybrid_entity_graph_boost_with_entities(self):
-        """Covers entity graph boost path (lines 743-766) when entities found — no embedding so BFS skipped."""
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        """Entity graph boost path when entities found — no embedding, so BFS is skipped."""
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="Alice in AuthService", scope="private")
@@ -1259,19 +1237,14 @@ class TestRecallOutcomeAndEntityGraph:
         r = _make_recall_result(id="cccc0000-0000-0000-0000-000000000001")
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
-            mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.recall._embed_query", mock.AsyncMock(return_value=None)),
-            mock.patch("app.qortia.recall._bm25_private", mock.AsyncMock(return_value=[r])),
-            mock.patch(
-                "app.qortia.knowledge.extract_entities", return_value=["Alice", "AuthService"]
-            ),
-            mock.patch("app.qortia.recall_helpers._rrf_fuse", return_value=[r]),
-            mock.patch("app.qortia.links._expand_with_links", mock.AsyncMock(return_value=[r])),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.recall._embed_query", mock.AsyncMock(return_value=None)),
+            mock.patch("qortia.recall._bm25_private", mock.AsyncMock(return_value=[r])),
+            mock.patch("qortia.knowledge.extract_entities", return_value=["Alice", "AuthService"]),
+            mock.patch("qortia.recall_helpers._rrf_fuse", return_value=[r]),
+            mock.patch("qortia.links._expand_with_links", mock.AsyncMock(return_value=[r])),
         ):
             resp = await recall(body, agent)
         assert isinstance(resp.results, list)
@@ -1279,8 +1252,8 @@ class TestRecallOutcomeAndEntityGraph:
     @pytest.mark.asyncio
     async def test_recall_hybrid_rerank_path(self):
         """Covers rerank=True path (lines 794-797)."""
-        from app.qortia.models import RecallRequest
-        from app.qortia.recall import recall
+        from qortia.models import RecallRequest
+        from qortia.recall import recall
 
         agent = _agent()
         body = RecallRequest(query="test rerank", scope="private", rerank=True)
@@ -1289,18 +1262,13 @@ class TestRecallOutcomeAndEntityGraph:
         r2 = _make_recall_result(id="bbbb0000-0000-0000-0000-000000000001")
 
         with (
-            mock.patch("app.qortia.recall.get_main_pool"),
-            mock.patch("app.qortia.recall.tenant_transaction", return_value=ctx),
-            mock.patch(
-                "app.qortia.recall._fetch_agent_clearance", mock.AsyncMock(return_value=(2, "all"))
-            ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.recall._embed_query", mock.AsyncMock(return_value=None)),
-            mock.patch("app.qortia.recall._bm25_private", mock.AsyncMock(return_value=[r1, r2])),
-            mock.patch("app.qortia.knowledge.extract_entities", return_value=[]),
-            mock.patch(
-                "app.qortia.recall_rerank._llm_rerank", mock.AsyncMock(return_value=[r2, r1])
-            ),
+            mock.patch("qortia.recall.get_main_pool"),
+            mock.patch("qortia.recall.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.recall._embed_query", mock.AsyncMock(return_value=None)),
+            mock.patch("qortia.recall._bm25_private", mock.AsyncMock(return_value=[r1, r2])),
+            mock.patch("qortia.knowledge.extract_entities", return_value=[]),
+            mock.patch("qortia.recall_rerank._llm_rerank", mock.AsyncMock(return_value=[r2, r1])),
         ):
             resp = await recall(body, agent)
         # rerank reorders — just verify it ran without crash
@@ -1316,7 +1284,7 @@ class TestReflectBatchAndFullCycle:
     @pytest.mark.asyncio
     async def test_process_embedding_batch_with_rows(self):
         """Covers lines 543-621: batch fetch, group by tenant, call _embed_single_row."""
-        from app.qortia.reflect import _process_embedding_batch
+        from qortia.reflect import _process_embedding_batch
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         rows = [
@@ -1341,18 +1309,19 @@ class TestReflectBatchAndFullCycle:
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
         with (
-            mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock),
-            mock.patch("app.qortia.reflect.get_litellm_key", mock.AsyncMock(return_value="key")),
-            mock.patch("app.qortia.reflect._embed_single_row", mock.AsyncMock()) as mock_embed,
+            mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock),
+            mock.patch("qortia.reflect.get_litellm_key", mock.AsyncMock(return_value="key")),
+            mock.patch("qortia.reflect._embed_single_row", mock.AsyncMock()) as mock_embed,
         ):
             await _process_embedding_batch()
 
-        mock_embed.assert_called()  # called once per row (may be multiple due to 4 fetch calls returning rows)
+        # called once per row (may be multiple due to 4 fetch calls returning rows)
+        mock_embed.assert_called()
 
     @pytest.mark.asyncio
     async def test_process_embedding_batch_key_fetch_fails_continues(self):
         """Covers lines 609-619: vault key fetch failure, continues to next tenant."""
-        from app.qortia.reflect import _process_embedding_batch
+        from qortia.reflect import _process_embedding_batch
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         rows = [
@@ -1377,12 +1346,12 @@ class TestReflectBatchAndFullCycle:
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
         with (
-            mock.patch("app.qortia.reflect.get_main_pool", return_value=pool_mock),
+            mock.patch("qortia.reflect.get_main_pool", return_value=pool_mock),
             mock.patch(
-                "app.qortia.reflect.get_litellm_key",
+                "qortia.reflect.get_litellm_key",
                 mock.AsyncMock(side_effect=Exception("vault down")),
             ),
-            mock.patch("app.qortia.reflect._embed_single_row", mock.AsyncMock()) as mock_embed,
+            mock.patch("qortia.reflect._embed_single_row", mock.AsyncMock()) as mock_embed,
         ):
             await _process_embedding_batch()  # must not raise
 
@@ -1391,7 +1360,7 @@ class TestReflectBatchAndFullCycle:
     @pytest.mark.asyncio
     async def test_reflect_agent_with_recent_and_full_cycle(self):
         """Covers lines 813-842: _reflect_agent with recent data, calls LLM and writes."""
-        from app.qortia.reflect import _reflect_agent
+        from qortia.reflect import _reflect_agent
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         aid = UUID("00000000-0000-0000-0000-000000000002")
@@ -1403,8 +1372,7 @@ class TestReflectBatchAndFullCycle:
 
         ctx, conn = _mock_tx()
         conn.fetch = mock.AsyncMock(side_effect=[[recent_row], []])
-        # fetchval: first call = status "active", second = domain_md None
-        conn.fetchval = mock.AsyncMock(side_effect=["active", None])
+        conn.fetchval = mock.AsyncMock(return_value="active")  # status check
 
         reflections = [
             {
@@ -1416,21 +1384,19 @@ class TestReflectBatchAndFullCycle:
         ]
 
         with (
-            mock.patch("app.qortia.reflect.get_main_pool"),
-            mock.patch("app.qortia.reflect.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.reflect.get_litellm_key", mock.AsyncMock(return_value="key")),
+            mock.patch("qortia.reflect.get_main_pool"),
+            mock.patch("qortia.reflect.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.reflect.get_litellm_key", mock.AsyncMock(return_value="key")),
             mock.patch(
-                "app.qortia.reflect._call_litellm_reflect", mock.AsyncMock(return_value=reflections)
+                "qortia.reflect._call_litellm_reflect", mock.AsyncMock(return_value=reflections)
             ),
+            mock.patch("qortia.reflect._get_embedding", mock.AsyncMock(return_value=[0.1] * 1024)),
+            mock.patch("qortia.reflect._write_reflections", mock.AsyncMock()) as mock_write,
             mock.patch(
-                "app.qortia.reflect._get_embedding", mock.AsyncMock(return_value=[0.1] * 1024)
-            ),
-            mock.patch("app.qortia.reflect._write_reflections", mock.AsyncMock()) as mock_write,
-            mock.patch(
-                "app.qortia.remember._fetch_agent_clearance",
+                "qortia.remember._fetch_agent_clearance",
                 mock.AsyncMock(return_value=(2, "all")),
             ),
-            mock.patch("app.qortia.reflect.settings") as mock_settings,
+            mock.patch("qortia.config.settings") as mock_settings,
         ):
             mock_settings.rerank_model = "claude-haiku-4-5"
             mock_settings.reflection_threshold = 10
@@ -1441,7 +1407,7 @@ class TestReflectBatchAndFullCycle:
     @pytest.mark.asyncio
     async def test_reflect_agent_embed_failure_uses_none(self):
         """Covers lines 838-840: embedding failure produces None in new_embeddings."""
-        from app.qortia.reflect import _reflect_agent
+        from qortia.reflect import _reflect_agent
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         aid = UUID("00000000-0000-0000-0000-000000000002")
@@ -1463,22 +1429,22 @@ class TestReflectBatchAndFullCycle:
         ]
 
         with (
-            mock.patch("app.qortia.reflect.get_main_pool"),
-            mock.patch("app.qortia.reflect.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.reflect.get_litellm_key", mock.AsyncMock(return_value="key")),
+            mock.patch("qortia.reflect.get_main_pool"),
+            mock.patch("qortia.reflect.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.reflect.get_litellm_key", mock.AsyncMock(return_value="key")),
             mock.patch(
-                "app.qortia.reflect._call_litellm_reflect", mock.AsyncMock(return_value=reflections)
+                "qortia.reflect._call_litellm_reflect", mock.AsyncMock(return_value=reflections)
             ),
             mock.patch(
-                "app.qortia.reflect._get_embedding",
+                "qortia.reflect._get_embedding",
                 mock.AsyncMock(side_effect=Exception("embed fail")),
             ),
-            mock.patch("app.qortia.reflect._write_reflections", mock.AsyncMock()) as mock_write,
+            mock.patch("qortia.reflect._write_reflections", mock.AsyncMock()) as mock_write,
             mock.patch(
-                "app.qortia.remember._fetch_agent_clearance",
+                "qortia.remember._fetch_agent_clearance",
                 mock.AsyncMock(return_value=(2, "all")),
             ),
-            mock.patch("app.qortia.reflect.settings") as mock_settings,
+            mock.patch("qortia.config.settings") as mock_settings,
         ):
             mock_settings.rerank_model = "claude-haiku-4-5"
             mock_settings.reflection_threshold = 10
@@ -1491,8 +1457,9 @@ class TestReflectBatchAndFullCycle:
     @pytest.mark.asyncio
     async def test_call_litellm_reflect_invalid_importance_raises(self):
         """Covers line 420: non-numeric importance validation."""
-        from app.qortia.reflect import _call_litellm_reflect
         from fastapi import HTTPException
+
+        from qortia.reflect import _call_litellm_reflect
 
         payload = json.dumps(
             {
@@ -1513,8 +1480,8 @@ class TestReflectBatchAndFullCycle:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.reflect._build_reflect_prompt", return_value="p"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.reflect._build_reflect_prompt", return_value="p"),
         ):
             with pytest.raises(HTTPException):
                 await _call_litellm_reflect(
@@ -1529,8 +1496,9 @@ class TestReflectBatchAndFullCycle:
     @pytest.mark.asyncio
     async def test_call_litellm_reflect_empty_content_raises(self):
         """Covers line 422: empty content validation."""
-        from app.qortia.reflect import _call_litellm_reflect
         from fastapi import HTTPException
+
+        from qortia.reflect import _call_litellm_reflect
 
         payload = json.dumps(
             {
@@ -1551,8 +1519,8 @@ class TestReflectBatchAndFullCycle:
         mock_client.post = mock.AsyncMock(return_value=mock_resp)
 
         with (
-            mock.patch("app.qortia.reflect.get_litellm_client", return_value=mock_client),
-            mock.patch("app.qortia.reflect._build_reflect_prompt", return_value="p"),
+            mock.patch("qortia.reflect.get_litellm_client", return_value=mock_client),
+            mock.patch("qortia.reflect._build_reflect_prompt", return_value="p"),
         ):
             with pytest.raises(HTTPException):
                 await _call_litellm_reflect(
@@ -1569,7 +1537,7 @@ class TestReflectBatchAndFullCycle:
         """Covers line 284: unstable UPDATE (cosine < STABILITY_THRESHOLD)."""
         from uuid import uuid4
 
-        from app.qortia.reflect import _write_reflections
+        from qortia.reflect import _write_reflections
 
         aid = UUID("00000000-0000-0000-0000-000000000001")
         tid = UUID("00000000-0000-0000-0000-000000000002")
@@ -1594,9 +1562,9 @@ class TestReflectBatchAndFullCycle:
         conn.fetchval = mock.AsyncMock(return_value=0)  # existing_consolidated_count
 
         with (
-            mock.patch("app.qortia.reflect.get_main_pool"),
-            mock.patch("app.qortia.reflect.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.recall_helpers._cosine", return_value=0.5),
+            mock.patch("qortia.reflect.get_main_pool"),
+            mock.patch("qortia.reflect.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.recall_helpers._cosine", return_value=0.5),
         ):  # below 0.95 threshold
             await _write_reflections(
                 agent_id=aid,
@@ -1620,15 +1588,12 @@ class TestKnowledgeIngestionAndSummary:
     @pytest.mark.asyncio
     async def test_ingest_knowledge_with_existing_deletes_and_reinserts(self):
         """Covers lines 283-356: existing doc → delete → insert → history."""
-        from app.qortia.knowledge import KnowledgeIngestRequest, ingest_knowledge
+        from qortia.knowledge import KnowledgeIngestRequest, ingest_knowledge
 
         content = "## Section A\n" + ("word " * 60)
         agent = _agent()
         body = KnowledgeIngestRequest(source_type="note", source_path="docs/a.md", content=content)
 
-        from app.qortia.knowledge import split_into_sections
-
-        sections = split_into_sections(content)
         # Different hashes → triggers reinsert
         existing = [{"chunk_index": 0, "content_hash": "old_hash_that_differs"}]
 
@@ -1638,12 +1603,12 @@ class TestKnowledgeIngestionAndSummary:
         conn.execute = mock.AsyncMock()
 
         with (
-            mock.patch("app.qortia.knowledge.get_main_pool"),
-            mock.patch("app.qortia.knowledge.tenant_transaction", return_value=ctx),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.knowledge.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.knowledge.get_main_pool"),
+            mock.patch("qortia.knowledge.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.knowledge.assert_agent_active", mock.AsyncMock()),
             mock.patch(
-                "app.qortia.knowledge.extract_index_fields",
+                "qortia.knowledge.extract_index_fields",
                 return_value={
                     "index_summary": "summary",
                     "index_questions": "q",
@@ -1660,7 +1625,7 @@ class TestKnowledgeIngestionAndSummary:
     @pytest.mark.asyncio
     async def test_summarise_tenant_with_enough_handoffs_writes_summary(self):
         """Covers lines 459-495: enough handoffs → write weekly summary."""
-        from app.qortia.knowledge import _summarise_tenant
+        from qortia.knowledge import _summarise_tenant
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         old_run = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)
@@ -1689,8 +1654,8 @@ class TestKnowledgeIngestionAndSummary:
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
         with (
-            mock.patch("app.qortia.knowledge.get_main_pool", return_value=pool_mock),
-            mock.patch("app.qortia.knowledge.build_weekly_summary", return_value="Weekly Summary"),
+            mock.patch("qortia.knowledge.get_main_pool", return_value=pool_mock),
+            mock.patch("qortia.knowledge.build_weekly_summary", return_value="Weekly Summary"),
         ):
             await _summarise_tenant(tid, old_run)
 
@@ -1699,7 +1664,7 @@ class TestKnowledgeIngestionAndSummary:
     @pytest.mark.asyncio
     async def test_summarise_tenant_too_few_handoffs_skips(self):
         """Covers line 472 (len < 3 guard): fewer than 3 handoffs → skip."""
-        from app.qortia.knowledge import _summarise_tenant
+        from qortia.knowledge import _summarise_tenant
 
         tid = UUID("00000000-0000-0000-0000-000000000001")
         old_run = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)
@@ -1716,7 +1681,7 @@ class TestKnowledgeIngestionAndSummary:
         pool_mock.acquire.return_value.__aenter__ = mock.AsyncMock(return_value=conn)
         pool_mock.acquire.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with mock.patch("app.qortia.knowledge.get_main_pool", return_value=pool_mock):
+        with mock.patch("qortia.knowledge.get_main_pool", return_value=pool_mock):
             await _summarise_tenant(tid, old_run)
 
         conn.execute.assert_not_called()  # skipped
@@ -1731,7 +1696,7 @@ class TestRememberEndpoints:
     @pytest.mark.asyncio
     async def test_get_context_returns_structured_response(self):
         """Covers lines 506-555: get_context DB queries."""
-        from app.qortia.remember import get_context
+        from qortia.remember import get_context
 
         agent = _agent()
 
@@ -1741,14 +1706,14 @@ class TestRememberEndpoints:
         conn.fetchrow = mock.AsyncMock(return_value=None)
 
         with (
-            mock.patch("app.qortia.remember.get_main_pool"),
-            mock.patch("app.qortia.remember.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.remember.get_main_pool"),
+            mock.patch("qortia.remember.tenant_transaction", return_value=ctx),
             mock.patch(
-                "app.qortia.remember._fetch_agent_clearance",
+                "qortia.remember._fetch_agent_clearance",
                 mock.AsyncMock(return_value=(2, "all")),
             ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.remember.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.remember.assert_agent_active", mock.AsyncMock()),
         ):
             result = await get_context(agent)
 
@@ -1758,9 +1723,10 @@ class TestRememberEndpoints:
     @pytest.mark.asyncio
     async def test_forget_wrong_agent_raises_403(self):
         """Covers line 441: agent_id mismatch on forget."""
-        from app.qortia.models import ForgetRequest
-        from app.qortia.remember import forget
         from fastapi import HTTPException
+
+        from qortia.models import ForgetRequest
+        from qortia.remember import forget
 
         agent = _agent()
         other_agent_id = UUID("ffffffff-0000-0000-0000-000000000001")
@@ -1775,14 +1741,14 @@ class TestRememberEndpoints:
         )
 
         with (
-            mock.patch("app.qortia.remember.get_main_pool"),
-            mock.patch("app.qortia.remember.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.remember.get_main_pool"),
+            mock.patch("qortia.remember.tenant_transaction", return_value=ctx),
             mock.patch(
-                "app.qortia.remember._fetch_agent_clearance",
+                "qortia.remember._fetch_agent_clearance",
                 mock.AsyncMock(return_value=(2, "all")),
             ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.remember.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.remember.assert_agent_active", mock.AsyncMock()),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await forget(ForgetRequest(id=mem_id), agent)
@@ -1791,9 +1757,10 @@ class TestRememberEndpoints:
     @pytest.mark.asyncio
     async def test_forget_not_found_raises_404(self):
         """Covers line 437: memory not found → 404."""
-        from app.qortia.models import ForgetRequest
-        from app.qortia.remember import forget
         from fastapi import HTTPException
+
+        from qortia.models import ForgetRequest
+        from qortia.remember import forget
 
         agent = _agent()
         mem_id = "aaaaaaaa-0000-0000-0000-000000000001"
@@ -1802,14 +1769,14 @@ class TestRememberEndpoints:
         conn.fetchrow = mock.AsyncMock(return_value=None)
 
         with (
-            mock.patch("app.qortia.remember.get_main_pool"),
-            mock.patch("app.qortia.remember.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.remember.get_main_pool"),
+            mock.patch("qortia.remember.tenant_transaction", return_value=ctx),
             mock.patch(
-                "app.qortia.remember._fetch_agent_clearance",
+                "qortia.remember._fetch_agent_clearance",
                 mock.AsyncMock(return_value=(2, "all")),
             ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.remember.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.remember.assert_agent_active", mock.AsyncMock()),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await forget(ForgetRequest(id=mem_id), agent)
@@ -1818,8 +1785,8 @@ class TestRememberEndpoints:
     @pytest.mark.asyncio
     async def test_lang_auto_detect_non_english(self):
         """Covers lines 208-209: detected lang != 'en' → use detected lang."""
-        from app.qortia.models import MemoryItem, RememberRequest
-        from app.qortia.remember import remember
+        from qortia.models import MemoryItem, RememberRequest
+        from qortia.remember import remember
 
         agent = _agent()
 
@@ -1840,18 +1807,18 @@ class TestRememberEndpoints:
         conn.fetch = mock.AsyncMock(return_value=[])
 
         with (
-            mock.patch("app.qortia.remember.get_main_pool"),
-            mock.patch("app.qortia.remember.tenant_transaction", return_value=ctx),
+            mock.patch("qortia.remember.get_main_pool"),
+            mock.patch("qortia.remember.tenant_transaction", return_value=ctx),
             mock.patch(
-                "app.qortia.remember._fetch_agent_clearance",
+                "qortia.remember._fetch_agent_clearance",
                 mock.AsyncMock(return_value=(2, "all")),
             ),
-            mock.patch("app.qortia.common.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.remember.assert_agent_active", mock.AsyncMock()),
-            mock.patch("app.qortia.remember._detect_lang", return_value="fr"),
-            mock.patch("app.qortia.knowledge.extract_entities_with_types", return_value=[]),
+            mock.patch("qortia.common.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.remember.assert_agent_active", mock.AsyncMock()),
+            mock.patch("qortia.remember._detect_lang", return_value="fr"),
+            mock.patch("qortia.knowledge.extract_entities_with_types", return_value=[]),
             mock.patch(
-                "app.qortia.entity_graph._maybe_dedup_memory", mock.AsyncMock(return_value=None)
+                "qortia.entity_graph._maybe_dedup_memory", mock.AsyncMock(return_value=None)
             ),
         ):
             result = await remember(body, agent)

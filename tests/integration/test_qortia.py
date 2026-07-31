@@ -7,7 +7,6 @@ from datetime import UTC
 from uuid import uuid4
 
 from tests.integration.conftest import (
-    VAULT_TOKEN,
     _call,
     create_active_agent,
     fresh_agent_headers,
@@ -59,15 +58,19 @@ def test_remember_inactive_agent_403(app_client, _session_loop) -> None:
     assert r.status_code == 403
 
 
-def test_remember_empty_batch_422(app_client, _session_loop) -> None:
+def test_remember_empty_batch_422(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
-        app_client.post("/v1/remember", json={"memories": []}, headers=fresh_agent_headers()),
+        app_client.post(
+            "/v1/remember", json={"memories": []}, headers=make_agent_headers(aid, tenant_id)
+        ),
     )
     assert r.status_code == 422
 
 
-def test_remember_invalid_type_422(app_client, _session_loop) -> None:
+def test_remember_invalid_type_422(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
         app_client.post(
@@ -80,7 +83,7 @@ def test_remember_invalid_type_422(app_client, _session_loop) -> None:
                     }
                 ]
             },
-            headers=fresh_agent_headers(),
+            headers=make_agent_headers(aid, tenant_id),
         ),
     )
     assert r.status_code == 422
@@ -123,7 +126,7 @@ def test_remember_batch_atomicity(app_client, _session_loop, committed_conn, ten
     assert count == 3
 
     counter = committed_conn.fetchval(
-        "SELECT reflection_counter FROM auth.agents WHERE id = $1", aid
+        "SELECT reflection_counter FROM qortia_agents WHERE id = $1", aid
     )
     assert counter == 2  # only episodic memories increment counter
 
@@ -194,7 +197,10 @@ def test_remember_org_process_requires_chief(
     assert r.status_code == 403
 
 
-def test_remember_org_invalid_type_422(app_client, _session_loop) -> None:
+def test_remember_org_invalid_type_422(
+    app_client, _session_loop, committed_conn, tenant_id
+) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
         app_client.post(
@@ -204,7 +210,7 @@ def test_remember_org_invalid_type_422(app_client, _session_loop) -> None:
                 "title": "t",
                 "content": "content for the org memory handoff here now",
             },
-            headers=fresh_agent_headers(),
+            headers=make_agent_headers(aid, tenant_id),
         ),
     )
     assert r.status_code == 422
@@ -218,21 +224,25 @@ def test_recall_requires_auth(app_client, _session_loop) -> None:
     assert r.status_code == 401
 
 
-def test_recall_empty_query_422(app_client, _session_loop) -> None:
+def test_recall_empty_query_422(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
-        app_client.post("/v1/recall", json={"query": ""}, headers=fresh_agent_headers()),
+        app_client.post(
+            "/v1/recall", json={"query": ""}, headers=make_agent_headers(aid, tenant_id)
+        ),
     )
     assert r.status_code == 422
 
 
-def test_recall_invalid_scope_422(app_client, _session_loop) -> None:
+def test_recall_invalid_scope_422(app_client, _session_loop, committed_conn, tenant_id) -> None:
+    aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
         app_client.post(
             "/v1/recall",
             json={"query": "test", "scope": "invalid"},
-            headers=fresh_agent_headers(),
+            headers=make_agent_headers(aid, tenant_id),
         ),
     )
     assert r.status_code == 422
@@ -316,11 +326,6 @@ def test_context_requires_agent_auth(app_client, _session_loop) -> None:
     assert r.status_code == 401
 
 
-def test_context_rejects_user_auth(app_client, _session_loop, user_headers) -> None:
-    r = _call(_session_loop, app_client.get("/v1/context", headers=user_headers))
-    assert r.status_code == 403
-
-
 def test_context_structure(app_client, _session_loop, committed_conn, tenant_id) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
@@ -372,17 +377,7 @@ def test_forget_own_memory(app_client, _session_loop, committed_conn, tenant_id)
 # ── reflect ───────────────────────────────────────────────────────────────────
 
 
-def test_reflect_supersede_first(
-    app_client, _session_loop, committed_conn, tenant_id, _vault_addr
-) -> None:
-    # Seed LiteLLM key for this tenant in Vault so reflect can proceed
-    import hvac
-
-    vault = hvac.Client(url=_vault_addr, token=VAULT_TOKEN)
-    vault.secrets.kv.v2.create_or_update_secret(
-        path=f"{tenant_id}/litellm_key", secret={"key": "sk-test-master"}
-    )
-
+def test_reflect_supersede_first(app_client, _session_loop, committed_conn, tenant_id) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
 
@@ -529,14 +524,13 @@ def test_memory_links_rls_tenant_isolation(
     aid_a = _active_agent(_session_loop, committed_conn, tenant_id)
 
     # Tenant B — separate tenant
-    tid_b = str(__import__("uuid").uuid4())
+    tid_b = str(uuid4())
     committed_conn.execute(
-        "INSERT INTO auth.tenants (id, name, tier) VALUES ($1, $2, $3)",
+        "INSERT INTO qortia_tenants (id, name) VALUES ($1, $2)",
         tid_b,
         f"tenant-b-{tid_b[:8]}",
-        "free",
     )
-    committed_conn.track("auth.tenants", tid_b)
+    committed_conn.track("qortia_tenants", tid_b)
     aid_b = _active_agent(_session_loop, committed_conn, tid_b)
 
     # Write a memory for tenant B and manually insert a link
@@ -583,17 +577,8 @@ def test_memory_links_rls_tenant_isolation(
 # ── temporal fact bounds (16j) ────────────────────────────────────────────────
 
 
-def test_valid_until_set_on_supersede(
-    app_client, _session_loop, committed_conn, tenant_id, _vault_addr
-) -> None:
+def test_valid_until_set_on_supersede(app_client, _session_loop, committed_conn, tenant_id) -> None:
     """After reflect(), superseded consolidated memories have valid_until set."""
-    import hvac
-
-    vault = hvac.Client(url=_vault_addr, token=VAULT_TOKEN)
-    vault.secrets.kv.v2.create_or_update_secret(
-        path=f"{tenant_id}/litellm_key", secret={"key": "sk-test-master"}
-    )
-
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
 

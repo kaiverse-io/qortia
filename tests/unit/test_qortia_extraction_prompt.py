@@ -12,8 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from app.qortia.models import MemoryItem, RememberRequest
-from app.qortia.remember import (
+
+from qortia.models import MemoryItem, RememberRequest
+from qortia.remember import (
     ATTRIBUTION_INSTRUCTION,
     NEGATIVE_EXTRACTION_INSTRUCTION,
     _extract_valid_from,
@@ -195,8 +196,8 @@ def _make_identity():
 @pytest.mark.asyncio
 async def test_remember_passes_valid_from_to_insert() -> None:
     """When metadata contains valid_from, it is passed to the INSERT."""
-    from app.auth.models import AgentIdentity
-    from app.qortia.remember import remember
+    from qortia.auth import AgentIdentity
+    from qortia.remember import remember
 
     new_id = uuid4()
     agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
@@ -224,9 +225,9 @@ async def test_remember_passes_valid_from_to_insert() -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx),
-        patch("app.qortia.remember.get_main_pool"),
-        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+        patch("qortia.remember.tenant_transaction", return_value=mock_ctx),
+        patch("qortia.remember.get_main_pool"),
+        patch("qortia.remember.extract_entities_with_types", return_value=[]),
     ):
         result = await remember(body, agent)
 
@@ -248,8 +249,8 @@ async def test_remember_passes_valid_from_to_insert() -> None:
 @pytest.mark.asyncio
 async def test_remember_strips_valid_from_from_stored_metadata() -> None:
     """valid_from should be in its own column, not duplicated in metadata JSON."""
-    from app.auth.models import AgentIdentity
-    from app.qortia.remember import remember
+    from qortia.auth import AgentIdentity
+    from qortia.remember import remember
 
     new_id = uuid4()
     agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
@@ -276,9 +277,9 @@ async def test_remember_strips_valid_from_from_stored_metadata() -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx),
-        patch("app.qortia.remember.get_main_pool"),
-        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+        patch("qortia.remember.tenant_transaction", return_value=mock_ctx),
+        patch("qortia.remember.get_main_pool"),
+        patch("qortia.remember.extract_entities_with_types", return_value=[]),
     ):
         await remember(body, agent)
 
@@ -295,8 +296,8 @@ async def test_remember_strips_valid_from_from_stored_metadata() -> None:
 @pytest.mark.asyncio
 async def test_remember_without_valid_from_uses_db_default() -> None:
     """When no valid_from in metadata, pass None so DB default (now()) applies."""
-    from app.auth.models import AgentIdentity
-    from app.qortia.remember import remember
+    from qortia.auth import AgentIdentity
+    from qortia.remember import remember
 
     new_id = uuid4()
     agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
@@ -319,9 +320,9 @@ async def test_remember_without_valid_from_uses_db_default() -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx),
-        patch("app.qortia.remember.get_main_pool"),
-        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+        patch("qortia.remember.tenant_transaction", return_value=mock_ctx),
+        patch("qortia.remember.get_main_pool"),
+        patch("qortia.remember.extract_entities_with_types", return_value=[]),
     ):
         result = await remember(body, agent)
 
@@ -337,7 +338,7 @@ async def test_remember_without_valid_from_uses_db_default() -> None:
 
 class TestReflectPromptTemporalGrounding:
     def test_reflect_prompt_contains_temporal_instruction(self) -> None:
-        from app.qortia.reflect import _build_reflect_prompt
+        from qortia.reflect import _build_reflect_prompt
 
         result = _build_reflect_prompt(
             recent=["memory one about last Tuesday"],
@@ -347,13 +348,13 @@ class TestReflectPromptTemporalGrounding:
         assert "UTC" in result
 
     def test_reflect_prompt_preserves_resolved_dates_rule(self) -> None:
-        from app.qortia.reflect import _build_reflect_prompt
+        from qortia.reflect import _build_reflect_prompt
 
         result = _build_reflect_prompt(recent=[], existing=[])
         assert "Preserve specific resolved dates from source memories" in result
 
     def test_reflect_prompt_preserves_attribution_prefixes(self) -> None:
-        from app.qortia.reflect import _build_reflect_prompt
+        from qortia.reflect import _build_reflect_prompt
 
         result = _build_reflect_prompt(recent=[], existing=[])
         assert "[User]" in result

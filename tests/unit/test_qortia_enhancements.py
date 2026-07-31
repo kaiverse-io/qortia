@@ -26,7 +26,7 @@ def _make_result(
     importance: float = 0.5,
     content: str = "test",
 ) -> object:
-    from app.qortia.models import RecallResult
+    from qortia.models import RecallResult
 
     r = RecallResult(
         id=str(UUID(int=recall_count + 1)),
@@ -55,7 +55,7 @@ def _patch_tx(conn):
 
 
 def test_sort_by_importance_higher_recall_count_ranks_first() -> None:
-    from app.qortia.recall_helpers import _sort_by_importance
+    from qortia.recall_helpers import _sort_by_importance
 
     low = _make_result(recall_count=0, importance=0.5)
     high = _make_result(recall_count=20, importance=0.5)
@@ -64,7 +64,7 @@ def test_sort_by_importance_higher_recall_count_ranks_first() -> None:
 
 
 def test_sort_by_importance_recent_access_boosts_rank() -> None:
-    from app.qortia.recall_helpers import _sort_by_importance
+    from qortia.recall_helpers import _sort_by_importance
 
     stale = _make_result(
         recall_count=5,
@@ -79,7 +79,7 @@ def test_sort_by_importance_recent_access_boosts_rank() -> None:
 
 
 def test_sort_by_importance_preserves_all_results() -> None:
-    from app.qortia.recall_helpers import _sort_by_importance
+    from qortia.recall_helpers import _sort_by_importance
 
     items = [_make_result(recall_count=i) for i in range(5)]
     result = _sort_by_importance(items)
@@ -87,15 +87,15 @@ def test_sort_by_importance_preserves_all_results() -> None:
 
 
 def test_sort_by_importance_empty_list() -> None:
-    from app.qortia.recall_helpers import _sort_by_importance
+    from qortia.recall_helpers import _sort_by_importance
 
     assert _sort_by_importance([]) == []
 
 
 def test_sort_by_importance_missing_attrs_handled() -> None:
     """Results without _recall_count/_last_recalled_at (e.g. org results) don't crash."""
-    from app.qortia.models import RecallResult
-    from app.qortia.recall_helpers import _sort_by_importance
+    from qortia.models import RecallResult
+    from qortia.recall_helpers import _sort_by_importance
 
     r = RecallResult(
         id="00000000-0000-0000-0000-000000000099",
@@ -115,38 +115,27 @@ def test_sort_by_importance_missing_attrs_handled() -> None:
 
 
 def test_rerank_model_default_in_settings() -> None:
-    from app.config import Settings
+    from qortia.config import Settings
 
     s = Settings()
     assert s.rerank_model == "anthropic/claude-3-haiku-20240307"
 
 
 def test_rerank_model_env_override() -> None:
-    from app.config import Settings
+    from qortia.config import Settings
 
     s = Settings(rerank_model="anthropic/claude-3-5-sonnet-20241022")
     assert s.rerank_model == "anthropic/claude-3-5-sonnet-20241022"
 
 
 @pytest.mark.asyncio
-async def test_llm_rerank_uses_settings_when_domain_md_has_no_model() -> None:
-    """When domain_md is empty/null, _llm_rerank falls back to settings.rerank_model."""
-    from app.auth.models import AgentIdentity
-    from app.qortia.recall_rerank import _llm_rerank
+async def test_llm_rerank_uses_settings_rerank_model() -> None:
+    """_llm_rerank always uses settings.rerank_model — no per-agent override."""
+    from qortia.auth import AgentIdentity
+    from qortia.recall_rerank import _llm_rerank
 
-    agent = AgentIdentity(
-        agent_id=AGENT_ID,
-        tenant_id=TENANT_ID,
-        jti=UUID("00000000-0000-0000-0000-000000000010"),
-    )
+    agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
     results = [_make_result(content=f"mem {i}") for i in range(3)]
-
-    mock_conn = AsyncMock()
-    mock_conn.fetchval = AsyncMock(return_value="")  # empty domain_md
-
-    pool_ctx = MagicMock()
-    pool_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-    pool_ctx.__aexit__ = AsyncMock(return_value=False)
 
     captured_model = {}
 
@@ -160,62 +149,16 @@ async def test_llm_rerank_uses_settings_when_domain_md_has_no_model() -> None:
         return resp
 
     with (
-        patch("app.qortia.recall_rerank.get_main_pool") as mock_pool,
-        patch("app.qortia.recall_rerank.get_litellm_client") as mock_client,
-        patch("app.qortia.recall_rerank.get_litellm_key", return_value="test-key"),
-        patch("app.qortia.recall_rerank.settings") as mock_settings,
+        patch("qortia.recall_rerank.get_litellm_client") as mock_client,
+        patch("qortia.recall_rerank.get_litellm_key", return_value="test-key"),
+        patch("qortia.config.settings") as mock_settings,
     ):
-        mock_pool.return_value.acquire.return_value = pool_ctx
         mock_client.return_value.post = fake_post
         mock_settings.rerank_model = "anthropic/claude-3-haiku-20240307"
 
         await _llm_rerank("test query", results, agent)
 
     assert captured_model.get("model") == "anthropic/claude-3-haiku-20240307"
-
-
-@pytest.mark.asyncio
-async def test_llm_rerank_prefers_domain_md_model_over_settings() -> None:
-    from app.auth.models import AgentIdentity
-    from app.qortia.recall_rerank import _llm_rerank
-
-    agent = AgentIdentity(
-        agent_id=AGENT_ID,
-        tenant_id=TENANT_ID,
-        jti=UUID("00000000-0000-0000-0000-000000000010"),
-    )
-    results = [_make_result(content=f"mem {i}") for i in range(2)]
-
-    mock_conn = AsyncMock()
-    mock_conn.fetchval = AsyncMock(return_value="model: anthropic/claude-opus-4-5\nrole: engineer")
-    pool_ctx = MagicMock()
-    pool_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-    pool_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    captured_model = {}
-
-    async def fake_post(path, headers, json, timeout):
-        captured_model["model"] = json["model"]
-        resp = MagicMock()
-        resp.json.return_value = {
-            "choices": [{"message": {"content": "[1,2]"}}],
-            "usage": {},
-        }
-        return resp
-
-    with (
-        patch("app.qortia.recall_rerank.get_main_pool") as mock_pool,
-        patch("app.qortia.recall_rerank.get_litellm_client") as mock_client,
-        patch("app.qortia.recall_rerank.get_litellm_key", return_value="test-key"),
-        patch("app.qortia.recall_rerank.settings") as mock_settings,
-    ):
-        mock_pool.return_value.acquire.return_value = pool_ctx
-        mock_client.return_value.post = fake_post
-        mock_settings.rerank_model = "anthropic/claude-3-haiku-20240307"
-
-        await _llm_rerank("test query", results, agent)
-
-    assert captured_model.get("model") == "anthropic/claude-opus-4-5"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -226,7 +169,7 @@ async def test_llm_rerank_prefers_domain_md_model_over_settings() -> None:
 def test_run_background_reflection_trigger_is_async() -> None:
     import inspect
 
-    from app.qortia.reflect import run_background_reflection_trigger
+    from qortia.reflect import run_background_reflection_trigger
 
     assert inspect.iscoroutinefunction(run_background_reflection_trigger)
 
@@ -234,14 +177,14 @@ def test_run_background_reflection_trigger_is_async() -> None:
 def test_trigger_idle_reflections_is_async() -> None:
     import inspect
 
-    from app.qortia.reflect import _trigger_idle_reflections
+    from qortia.reflect import _trigger_idle_reflections
 
     assert inspect.iscoroutinefunction(_trigger_idle_reflections)
 
 
 @pytest.mark.asyncio
 async def test_trigger_idle_reflections_calls_reflect_agent_for_each_row() -> None:
-    from app.qortia.reflect import _trigger_idle_reflections
+    from qortia.reflect import _trigger_idle_reflections
 
     rows = [
         {"agent_id": AGENT_ID, "tenant_id": TENANT_ID},
@@ -263,9 +206,9 @@ async def test_trigger_idle_reflections_calls_reflect_agent_for_each_row() -> No
         called_agents.append(agent_id)
 
     with (
-        patch("app.qortia.reflect.get_main_pool") as mock_pool,
-        patch("app.qortia.reflect._reflect_agent", side_effect=fake_reflect_agent),
-        patch("app.qortia.reflect.settings") as mock_settings,
+        patch("qortia.reflect.get_main_pool") as mock_pool,
+        patch("qortia.reflect._reflect_agent", side_effect=fake_reflect_agent),
+        patch("qortia.config.settings") as mock_settings,
     ):
         mock_pool.return_value.acquire.return_value = pool_ctx
         mock_settings.idle_reflection_window_h = 4
@@ -277,7 +220,7 @@ async def test_trigger_idle_reflections_calls_reflect_agent_for_each_row() -> No
 
 @pytest.mark.asyncio
 async def test_trigger_idle_reflections_handles_empty_result() -> None:
-    from app.qortia.reflect import _trigger_idle_reflections
+    from qortia.reflect import _trigger_idle_reflections
 
     mock_conn = AsyncMock()
     mock_conn.fetch = AsyncMock(return_value=[])
@@ -287,9 +230,9 @@ async def test_trigger_idle_reflections_handles_empty_result() -> None:
     pool_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.qortia.reflect.get_main_pool") as mock_pool,
-        patch("app.qortia.reflect._reflect_agent") as mock_reflect,
-        patch("app.qortia.reflect.settings") as mock_settings,
+        patch("qortia.reflect.get_main_pool") as mock_pool,
+        patch("qortia.reflect._reflect_agent") as mock_reflect,
+        patch("qortia.config.settings") as mock_settings,
     ):
         mock_pool.return_value.acquire.return_value = pool_ctx
         mock_settings.idle_reflection_window_h = 4
@@ -301,15 +244,15 @@ async def test_trigger_idle_reflections_handles_empty_result() -> None:
 
 @pytest.mark.asyncio
 async def test_trigger_idle_reflections_logs_on_db_error() -> None:
-    from app.qortia.reflect import _trigger_idle_reflections
+    from qortia.reflect import _trigger_idle_reflections
 
     pool_ctx = MagicMock()
     pool_ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("db down"))
     pool_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.qortia.reflect.get_main_pool") as mock_pool,
-        patch("app.qortia.reflect.settings") as mock_settings,
+        patch("qortia.reflect.get_main_pool") as mock_pool,
+        patch("qortia.config.settings") as mock_settings,
     ):
         mock_pool.return_value.acquire.return_value = pool_ctx
         mock_settings.idle_reflection_window_h = 4
@@ -319,7 +262,7 @@ async def test_trigger_idle_reflections_logs_on_db_error() -> None:
 
 @pytest.mark.asyncio
 async def test_reflect_agent_skips_inactive_agent() -> None:
-    from app.qortia.reflect import _reflect_agent
+    from qortia.reflect import _reflect_agent
 
     mock_conn = AsyncMock()
     # First fetchval: status check → "inactive"
@@ -332,11 +275,11 @@ async def test_reflect_agent_skips_inactive_agent() -> None:
     tx_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.qortia.reflect.tenant_transaction", return_value=tx_ctx),
-        patch("app.qortia.reflect.get_main_pool"),
-        patch("app.qortia.reflect._call_litellm_reflect", new_callable=AsyncMock) as mock_llm,
+        patch("qortia.reflect.tenant_transaction", return_value=tx_ctx),
+        patch("qortia.reflect.get_main_pool"),
+        patch("qortia.reflect._call_litellm_reflect", new_callable=AsyncMock) as mock_llm,
         patch(
-            "app.qortia.remember._fetch_agent_clearance",
+            "qortia.remember._fetch_agent_clearance",
             new_callable=AsyncMock,
             return_value=(1, None),
         ),
@@ -352,7 +295,7 @@ async def test_reflect_agent_skips_inactive_agent() -> None:
 
 
 def test_detect_lang_returns_string() -> None:
-    from app.qortia.remember import _detect_lang
+    from qortia.remember import _detect_lang
 
     result = _detect_lang("The quick brown fox jumps over the lazy dog")
     assert isinstance(result, str)
@@ -361,26 +304,26 @@ def test_detect_lang_returns_string() -> None:
 
 def test_detect_lang_returns_detected_lang() -> None:
     """_detect_lang passes through what langdetect returns (base tag only)."""
-    from app.qortia.remember import _detect_lang
+    from qortia.remember import _detect_lang
 
-    with patch("app.qortia.remember.detect", return_value="hi"):
+    with patch("qortia.remember.detect", return_value="hi"):
         result = _detect_lang("some text")
     assert result == "hi"
 
 
 def test_detect_lang_returns_en_on_failure() -> None:
-    from app.qortia.remember import _detect_lang
+    from qortia.remember import _detect_lang
 
-    with patch("app.qortia.remember.detect", side_effect=Exception("model error")):
+    with patch("qortia.remember.detect", side_effect=Exception("model error")):
         result = _detect_lang("any text at all")
     assert result == "en"
 
 
 def test_detect_lang_normalises_subtag() -> None:
     """zh-cn → zh, en-US → en, etc."""
-    from app.qortia.remember import _detect_lang
+    from qortia.remember import _detect_lang
 
-    with patch("app.qortia.remember.detect", return_value="zh-cn"):
+    with patch("qortia.remember.detect", return_value="zh-cn"):
         result = _detect_lang("some chinese text")
     assert result == "zh"
 
@@ -388,15 +331,11 @@ def test_detect_lang_normalises_subtag() -> None:
 @pytest.mark.asyncio
 async def test_remember_auto_detects_hindi_lang() -> None:
     """When agent passes lang='en' (default) but content is Hindi, lang is auto-detected."""
-    from app.auth.models import AgentIdentity
-    from app.qortia.models import MemoryItem, RememberRequest
-    from app.qortia.remember import remember
+    from qortia.auth import AgentIdentity
+    from qortia.models import MemoryItem, RememberRequest
+    from qortia.remember import remember
 
-    agent = AgentIdentity(
-        agent_id=AGENT_ID,
-        tenant_id=TENANT_ID,
-        jti=UUID("00000000-0000-0000-0000-000000000010"),
-    )
+    agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
     body = RememberRequest(
         memories=[
             MemoryItem(
@@ -417,7 +356,6 @@ async def test_remember_auto_detects_hindi_lang() -> None:
     tx_ctx.__aexit__ = AsyncMock(return_value=False)
 
     written_langs = []
-    original_fetchval = mock_conn.fetchval
 
     async def capture_fetchval(*args, **kwargs):
         sql = args[0] if args else ""
@@ -428,10 +366,10 @@ async def test_remember_auto_detects_hindi_lang() -> None:
     mock_conn.fetchval = capture_fetchval
 
     with (
-        patch("app.qortia.remember.tenant_transaction", return_value=tx_ctx),
-        patch("app.qortia.remember.get_main_pool"),
-        patch("app.qortia.remember.assert_agent_active", new_callable=AsyncMock),
-        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+        patch("qortia.remember.tenant_transaction", return_value=tx_ctx),
+        patch("qortia.remember.get_main_pool"),
+        patch("qortia.remember.assert_agent_active", new_callable=AsyncMock),
+        patch("qortia.remember.extract_entities_with_types", return_value=[]),
     ):
         await remember(body=body, agent=agent)
 
@@ -442,15 +380,11 @@ async def test_remember_auto_detects_hindi_lang() -> None:
 @pytest.mark.asyncio
 async def test_remember_skips_detection_for_short_content() -> None:
     """Content < 20 chars skips auto-detection and keeps lang='en'."""
-    from app.auth.models import AgentIdentity
-    from app.qortia.models import MemoryItem, RememberRequest
-    from app.qortia.remember import remember
+    from qortia.auth import AgentIdentity
+    from qortia.models import MemoryItem, RememberRequest
+    from qortia.remember import remember
 
-    agent = AgentIdentity(
-        agent_id=AGENT_ID,
-        tenant_id=TENANT_ID,
-        jti=UUID("00000000-0000-0000-0000-000000000010"),
-    )
+    agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
     body = RememberRequest(memories=[MemoryItem(type="episodic", content="a b c d e f", lang="en")])
 
     mock_conn = AsyncMock()
@@ -463,11 +397,11 @@ async def test_remember_skips_detection_for_short_content() -> None:
     tx_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.qortia.remember.tenant_transaction", return_value=tx_ctx),
-        patch("app.qortia.remember.get_main_pool"),
-        patch("app.qortia.remember.assert_agent_active", new_callable=AsyncMock),
-        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
-        patch("app.qortia.remember._detect_lang") as mock_detect,
+        patch("qortia.remember.tenant_transaction", return_value=tx_ctx),
+        patch("qortia.remember.get_main_pool"),
+        patch("qortia.remember.assert_agent_active", new_callable=AsyncMock),
+        patch("qortia.remember.extract_entities_with_types", return_value=[]),
+        patch("qortia.remember._detect_lang") as mock_detect,
     ):
         await remember(body=body, agent=agent)
 

@@ -4,13 +4,14 @@ Pure validation, no I/O.
 """
 
 import pytest
-from app.qortia.models import (
+from pydantic import ValidationError
+
+from qortia.models import (
     IMPORTANCE,
     MemoryItem,
     RecallRequest,
     RememberRequest,
 )
-from pydantic import ValidationError
 
 # ── IMPORTANCE dict ──────────────────────────────────────────
 
@@ -225,14 +226,15 @@ def test_memory_item_lang_defaults_to_en() -> None:
 def test_memory_item_lang_preserved() -> None:
     item = MemoryItem(
         type="episodic",
-        content="\u0906\u091c \u0915\u0941\u091b \u0939\u0941\u0906 \u0925\u093e \u0935\u0939\u093e\u0902",
+        content="\u0906\u091c \u0915\u0941\u091b \u0939\u0941\u0906 \u0925\u093e "
+        "\u0935\u0939\u093e\u0902",
         lang="hi",
     )
     assert item.lang == "hi"
 
 
 def test_remember_org_request_lang_defaults_to_en() -> None:
-    from app.qortia.models import RememberOrgRequest
+    from qortia.models import RememberOrgRequest
 
     req = RememberOrgRequest(
         type="handoff",
@@ -243,33 +245,35 @@ def test_remember_org_request_lang_defaults_to_en() -> None:
 
 
 def test_remember_org_request_lang_preserved() -> None:
-    from app.qortia.models import RememberOrgRequest
+    from qortia.models import RememberOrgRequest
 
     req = RememberOrgRequest(
         type="handoff",
         title="done",
-        content="\u0915\u093e\u092e \u092a\u0942\u0930\u093e \u0939\u094b \u0917\u092f\u093e \u0906\u091c \u0938\u092b\u0932\u0924\u093e\u092a\u0942\u0930\u094d\u0935\u0915 \u0938\u092d\u0940 \u0915\u093e\u092e \u0939\u094b \u0917\u090f",
+        content="\u0915\u093e\u092e \u092a\u0942\u0930\u093e \u0939\u094b \u0917\u092f\u093e "
+        "\u0906\u091c \u0938\u092b\u0932\u0924\u093e\u092a\u0942\u0930\u094d\u0935\u0915 "
+        "\u0938\u092d\u0940 \u0915\u093e\u092e \u0939\u094b \u0917\u090f",
         lang="hi",
     )
     assert req.lang == "hi"
 
 
 def test_recall_request_lang_none_by_default() -> None:
-    from app.qortia.models import RecallRequest
+    from qortia.models import RecallRequest
 
     req = RecallRequest(query="what happened")
     assert req.lang is None
 
 
 def test_recall_request_lang_preserved() -> None:
-    from app.qortia.models import RecallRequest
+    from qortia.models import RecallRequest
 
     req = RecallRequest(query="\u0915\u094d\u092f\u093e \u0939\u0941\u0906", lang="hi")
     assert req.lang == "hi"
 
 
 def test_knowledge_ingest_request_lang_defaults_to_en() -> None:
-    from app.qortia.models import KnowledgeIngestRequest
+    from qortia.models import KnowledgeIngestRequest
 
     req = KnowledgeIngestRequest(
         source_type="note",
@@ -280,7 +284,7 @@ def test_knowledge_ingest_request_lang_defaults_to_en() -> None:
 
 
 def test_lang_filter_clause_none_returns_empty() -> None:
-    from app.qortia.recall import _lang_filter_clause
+    from qortia.recall import _lang_filter_clause
 
     clause, params = _lang_filter_clause(None, param=5)
     assert clause == ""
@@ -288,7 +292,7 @@ def test_lang_filter_clause_none_returns_empty() -> None:
 
 
 def test_lang_filter_clause_with_lang_returns_parameterised() -> None:
-    from app.qortia.recall import _lang_filter_clause
+    from qortia.recall import _lang_filter_clause
 
     clause, params = _lang_filter_clause("hi", param=5)
     assert clause == "AND lang = $5"
@@ -322,7 +326,7 @@ def test_extract_entities_english_uses_spacy_path(
     """English lang routes to spaCy, not Stanza."""
     from unittest.mock import MagicMock
 
-    import app.qortia.knowledge as kmod
+    import qortia.knowledge as kmod
 
     mock_doc = MagicMock()
     mock_ent = MagicMock()
@@ -343,7 +347,7 @@ def test_extract_entities_hindi_uses_indic_spacy_path(
     """Hindi lang routes to Indic spaCy pipeline."""
     from unittest.mock import MagicMock
 
-    import app.qortia.knowledge as kmod
+    import qortia.knowledge as kmod
 
     mock_ent = MagicMock()
     mock_ent.text = "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940"
@@ -354,7 +358,8 @@ def test_extract_entities_hindi_uses_indic_spacy_path(
     monkeypatch.setitem(kmod._indic_pipelines, "hi", mock_pipeline)
 
     result = kmod.extract_entities(
-        "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940 \u092e\u0941\u0902\u092c\u0908 \u0917\u090f",
+        "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940 "
+        "\u092e\u0941\u0902\u092c\u0908 \u0917\u090f",
         lang="hi",
     )
     assert "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940" in result
@@ -367,7 +372,7 @@ def test_extract_entities_unsupported_lang_returns_empty(
     """Unsupported lang (kn) returns [] without raising."""
     from unittest.mock import MagicMock
 
-    import app.qortia.knowledge as kmod
+    import qortia.knowledge as kmod
 
     # kn is not in INDIC_NER_LANGS, falls through to spaCy
     mock_doc = MagicMock()
@@ -410,7 +415,7 @@ def test_memory_item_lang_normalised(raw: str | None, expected: str) -> None:
     ],
 )
 def test_remember_org_request_lang_normalised(raw: str | None, expected: str) -> None:
-    from app.qortia.models import RememberOrgRequest
+    from qortia.models import RememberOrgRequest
 
     req = RememberOrgRequest(
         type="handoff",
@@ -447,7 +452,7 @@ def test_recall_request_lang_normalised(raw: str | None, expected: str | None) -
     ],
 )
 def test_knowledge_ingest_request_lang_normalised(raw: str | None, expected: str) -> None:
-    from app.qortia.models import KnowledgeIngestRequest
+    from qortia.models import KnowledgeIngestRequest
 
     req = KnowledgeIngestRequest(
         source_type="note",
