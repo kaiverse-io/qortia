@@ -1,5 +1,5 @@
 _commit: v0.8.7
-_src_path: /tmp/claude-1000/-workspaces-aither/31597a6f-6810-4b2b-b4d5-bb13c844af14/scratchpad/chassis
+_src_path: https://github.com/km2411/chassis.git
 author_email: ''
 author_name: km2411
 description: Portable memory layer for AI agents
