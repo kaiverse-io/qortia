@@ -21,25 +21,27 @@
     // it entirely. Only bites on a true fresh build (cached layers hide it, which is
     // why an existing container can look fine while a new clone fails immediately).
     // Corepack/npm install Yarn fine without touching apt at all.
-    "ghcr.io/devcontainers/features/node:1": { "version": "22", "installYarnUsingApt": false }
-    // Project-specific features — add here as needed:
-    //   Docker-outside-of-docker — sibling containers, not nested: forwards the HOST's
-    //   docker.sock (mount below) rather than running a second Docker daemon in this
-    //   one. Only needed if the project's own docker-compose.yml boots services beyond
-    //   `app` (a database, other backing services). Only works when the host itself
-    //   runs Docker — a no-host-Docker remote devcontainer needs docker-in-docker
-    //   instead, a different feature+mount pair. Pair with the socket mount below and
-    //   see post-create.sh's socket permission-fix step, which activates automatically
-    //   once the mount is present — the socket's host-side ownership rarely matches
-    //   this container's pre-baked docker group, so that step is not optional.
-    //   `"moby": false` is deliberate, not optional either: the feature defaults to
-    //   installing `moby-cli` from packages.microsoft.com, and on a build sandbox that
-    //   only allowlists docker.com (a common corporate VPN/proxy shape), that install
-    //   fails with a bare "exit code: 100" — apt's generic failure code, with the real
-    //   cause hidden unless you rebuild with `--progress=plain`. `moby: false` installs
-    //   `docker-ce-cli` from download.docker.com instead, which is the repo that's
-    //   actually reachable in that shape of network:
-    //     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": { "moby": false }
+    "ghcr.io/devcontainers/features/node:1": { "version": "22", "installYarnUsingApt": false },
+    // Docker-outside-of-docker — sibling containers, not nested: forwards the HOST's
+    // docker.sock (mount below) rather than running a second Docker daemon in this
+    // one. Useful once the project's own docker-compose.yml boots services beyond
+    // `app` (a database, other backing services). Only works when the host itself
+    // runs Docker — a no-host-Docker remote devcontainer needs docker-in-docker
+    // instead, a different feature+mount pair; answer
+    // enable_docker_outside_of_docker: false at stamp time for that shape of host,
+    // or delete this block and the paired mount below by hand afterward. Pair with
+    // the socket mount below and see post-create.sh's socket permission-fix step, which
+    // activates automatically once the mount is present — the socket's host-side
+    // ownership rarely matches this container's pre-baked docker group, so that
+    // step is not optional.
+    // `"moby": false` is deliberate, not optional either: the feature defaults to
+    // installing `moby-cli` from packages.microsoft.com, and on a build sandbox that
+    // only allowlists docker.com (a common corporate VPN/proxy shape), that install
+    // fails with a bare "exit code: 100" — apt's generic failure code, with the real
+    // cause hidden unless you rebuild with `--progress=plain`. `moby: false` installs
+    // `docker-ce-cli` from download.docker.com instead, which is the repo that's
+    // actually reachable in that shape of network.
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": { "moby": false }
   },
 
   // Generate the shadow settings.json (mounted below) as `{}` before the container starts,
@@ -80,11 +82,11 @@
     // GH CLI auth — read-only. The github-cli feature above installs the `gh` binary;
     // without this mount it has nothing to authenticate with (create ~/.config/gh on
     // host via `gh auth login` if missing).
-    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached,readonly"
+    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached,readonly",
+    // Docker socket (pairs with the docker-outside-of-docker feature above):
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
     // Project-specific credentials — add here as needed:
     //   AWS: "source=${localEnv:HOME}/.aws,target=/home/vscode/.aws,type=bind,consistency=cached,readonly"
-    //   Docker socket (pairs with docker-outside-of-docker feature above):
-    //     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
 
   "remoteUser": "vscode",

@@ -1,8 +1,9 @@
-_commit: v0.8.7
+_commit: v0.9.0
 _src_path: https://github.com/km2411/chassis.git
 author_email: ''
 author_name: km2411
 description: Portable memory layer for AI agents
+enable_docker_outside_of_docker: true
 github_owner: km2411
 include_ts: false
 install_ai_coach: false

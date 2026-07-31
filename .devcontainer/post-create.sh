@@ -13,9 +13,10 @@ export PATH="$HOME/.local/bin:$PATH"
 # devcontainer.json), so a full chown is safe.
 sudo chown -R vscode:vscode "$HOME/.cache" 2>/dev/null || true
 
-# ── Docker-outside-of-docker socket permission fix (no-op unless opted in) ────
-# If a project has uncommented the docker-outside-of-docker feature + docker.sock
-# mount in devcontainer.json, the socket's host-side ownership/GID frequently does
+# ── Docker-outside-of-docker socket permission fix (no-op unless enabled) ─────
+# If the project was stamped with enable_docker_outside_of_docker (default: true),
+# devcontainer.json carries the docker-outside-of-docker feature + docker.sock
+# mount, and the socket's host-side ownership/GID frequently does
 # not match this container's pre-baked `docker` group (root:root inside a Docker
 # Desktop/OrbStack VM, or behind a socket proxy, is common) — the feature adds
 # vscode to a `docker` group at a GID that may not be the one the runtime-mounted
