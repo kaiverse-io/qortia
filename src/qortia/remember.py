@@ -3,27 +3,26 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-
-from fastapi import APIRouter, Depends, Header, HTTPException
+from datetime import UTC, datetime, timedelta
 
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
+from app.db import get_main_pool, tenant_transaction
+from app.qortia.common import assert_agent_active
 from app.qortia.knowledge import extract_entities_with_types
 from app.qortia.models import (
-    ContextResponse,
+    IMPORTANCE,
     ContextMemories,
+    ContextResponse,
     ForgetRequest,
     ForgetResponse,
-    IMPORTANCE,
     MemoryEntry,
     RememberOrgRequest,
     RememberOrgResponse,
     RememberRequest,
     RememberResponse,
 )
-from app.db import get_main_pool, tenant_transaction
-from app.qortia.common import assert_agent_active
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -64,7 +63,7 @@ def build_temporal_grounding_instruction(reference_time: datetime | None = None)
 
     If reference_time is None, uses current UTC time.
     """
-    ts = (reference_time or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M UTC")
+    ts = (reference_time or datetime.now(UTC)).strftime("%Y-%m-%d %H:%M UTC")
     return f"""Current date and time: {ts}
 
 When extracting memories, resolve all relative temporal references against this
@@ -164,9 +163,7 @@ def _extract_valid_from(metadata: dict | None) -> datetime | None:  # type: igno
         return None
 
 
-async def _fetch_agent_clearance(
-    agent_id: object, tenant_id: object
-) -> tuple[int, str]:
+async def _fetch_agent_clearance(agent_id: object, tenant_id: object) -> tuple[int, str]:
     """Fetch clearance_order and division for an agent. Returns (2, 'all') on failure."""
     async with get_main_pool().acquire() as conn:
         row = await conn.fetchrow(
@@ -191,9 +188,7 @@ async def remember(
     agent: AgentIdentity = Depends(require_agent),  # noqa: B008
     x_work_order_id: str | None = Header(default=None, alias="X-Work-Order-Id"),
 ) -> RememberResponse:
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
         ids = []
@@ -220,7 +215,7 @@ async def remember(
                 entities = []
 
             expires_at = (
-                datetime.now(timezone.utc) + timedelta(seconds=mem.ttl_seconds)
+                datetime.now(UTC) + timedelta(seconds=mem.ttl_seconds)
                 if mem.type == "short_term" and mem.ttl_seconds
                 else None
             )
@@ -323,9 +318,7 @@ async def remember_org(
     body: RememberOrgRequest,
     agent: AgentIdentity = Depends(require_agent),  # noqa: B008
 ) -> RememberOrgResponse:
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
         # Role check fires second (Q80) — enum check already done by Pydantic
@@ -336,9 +329,7 @@ async def remember_org(
                 agent.tenant_id,
             )
             if role != "chief":
-                raise HTTPException(
-                    403, f"Only chief agent can write type '{body.type}'"
-                )
+                raise HTTPException(403, f"Only chief agent can write type '{body.type}'")
 
         try:
             entities = extract_entities_with_types(body.content, lang=body.lang)
@@ -413,9 +404,7 @@ async def forget(
     body: ForgetRequest,
     agent: AgentIdentity = Depends(require_agent),  # noqa: B008
 ) -> ForgetResponse:
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
 
         hm = await conn.fetchrow(
@@ -503,9 +492,7 @@ async def forget(
 
 @router.get("/v1/context", response_model=ContextResponse)
 async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextResponse:  # noqa: B008
-    clearance_order, agent_division = await _fetch_agent_clearance(
-        agent.agent_id, agent.tenant_id
-    )
+    clearance_order, agent_division = await _fetch_agent_clearance(agent.agent_id, agent.tenant_id)
     async with tenant_transaction(
         get_main_pool(),
         agent.tenant_id,
@@ -553,27 +540,17 @@ async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextR
         )
 
     return ContextResponse(
-        org_chart=[
-            MemoryEntry(title=r["title"], content=r["content"]) for r in org_chart
-        ],
-        processes=[
-            MemoryEntry(title=r["title"], content=r["content"]) for r in processes
-        ],
-        handoffs=[
-            MemoryEntry(title=r["title"], content=r["content"]) for r in handoffs
-        ],
-        weekly_summary=MemoryEntry(title=ws["title"], content=ws["content"])
-        if ws
-        else None,
+        org_chart=[MemoryEntry(title=r["title"], content=r["content"]) for r in org_chart],
+        processes=[MemoryEntry(title=r["title"], content=r["content"]) for r in processes],
+        handoffs=[MemoryEntry(title=r["title"], content=r["content"]) for r in handoffs],
+        weekly_summary=MemoryEntry(title=ws["title"], content=ws["content"]) if ws else None,
         memories=ContextMemories(
             mental_models=[
-                MemoryEntry(content=r["content"], importance=r["importance"])
-                for r in mental_models
+                MemoryEntry(content=r["content"], importance=r["importance"]) for r in mental_models
             ],
             decisions=[MemoryEntry(content=r["content"]) for r in decisions],
             lessons=[
-                MemoryEntry(content=r["content"], importance=r["importance"])
-                for r in lessons
+                MemoryEntry(content=r["content"], importance=r["importance"]) for r in lessons
             ],
         ),
     )

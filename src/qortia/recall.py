@@ -5,41 +5,38 @@ import logging
 from collections import defaultdict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header
-
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
-from app.qortia.models import RecallRequest, RecallResponse, RecallResult
+from app.db import get_main_pool, tenant_transaction
 from app.qortia.common import EMBEDDING_MODEL, get_litellm_client
 from app.qortia.embedding_cache import get_cached_embedding, put_cached_embedding
-from app.db import get_main_pool, tenant_transaction
-from app.vault import get_litellm_key
-from app.qortia.remember import _fetch_agent_clearance
+from app.qortia.models import RecallRequest, RecallResponse, RecallResult
 from app.qortia.recall_helpers import (
-    SEARCH_FETCH_MULTIPLIER,
-    PRIVATE_RESULT_LIMIT,
-    ORG_RESULT_LIMIT,
     KNOWLEDGE_RESULT_LIMIT,
+    ORG_RESULT_LIMIT,
+    PRIVATE_RESULT_LIMIT,
+    SEARCH_FETCH_MULTIPLIER,
     _bm25_normalization,
     _entity_filter_clause,
-    _type_filter_clause,
-    _temporal_filter_clause,
-    _lang_filter_clause,
-    _to_result,
-    _rrf_fuse,
     _keyword_boost,
+    _lang_filter_clause,
     _mmr,
+    _rrf_fuse,
     _sort_by_importance,
+    _temporal_filter_clause,
+    _to_result,
+    _type_filter_clause,
 )
-from app.qortia.recall_rerank import _llm_rerank, _bfs_entity_traversal
+from app.qortia.recall_rerank import _bfs_entity_traversal, _llm_rerank
+from app.qortia.remember import _fetch_agent_clearance
+from app.vault import get_litellm_key
+from fastapi import APIRouter, Depends, Header
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _embed_query(
-    query: str, tenant_id: UUID, lang: str = "en"
-) -> list[float] | None:
+async def _embed_query(query: str, tenant_id: UUID, lang: str = "en") -> list[float] | None:
     tid = str(tenant_id)
     effective_lang = lang or "en"
 
@@ -65,9 +62,7 @@ async def _embed_query(
         try:
             from app.telemetry.instruments import qortia_recall_degraded
 
-            qortia_recall_degraded.add(
-                1, {"reason": "embed_failed", "the platform.tenant_id": tid}
-            )
+            qortia_recall_degraded.add(1, {"reason": "embed_failed", "the platform.tenant_id": tid})
         except Exception:  # noqa: S110
             pass
         return None
@@ -76,18 +71,12 @@ async def _embed_query(
 # ── Type-routed strategies ───────────────────────────────────
 
 
-async def _recall_decisions(
-    body: RecallRequest, agent: AgentIdentity
-) -> list[RecallResult]:
+async def _recall_decisions(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
     if body.scope not in ("private", "all", "archive"):
         return []
-    tier_clause = (
-        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
-    )
+    tier_clause = "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
             f"""
@@ -112,23 +101,15 @@ async def _recall_decisions(
     return _sort_by_importance([_to_result(dict(r), "private") for r in rows])
 
 
-async def _recall_lessons(
-    body: RecallRequest, agent: AgentIdentity
-) -> list[RecallResult]:
+async def _recall_lessons(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
     if body.scope not in ("private", "all", "archive"):
         return []
-    tier_clause = (
-        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
-    )
-    query_embedding = await _embed_query(
-        body.query, agent.tenant_id, lang=body.lang or "en"
-    )
+    tier_clause = "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
+    query_embedding = await _embed_query(body.query, agent.tenant_id, lang=body.lang or "en")
     if query_embedding is None:
         return []
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         rows = await conn.fetch(
             f"""
             SELECT id, content, importance, created_at, recall_count, last_recalled_at,
@@ -154,18 +135,12 @@ async def _recall_lessons(
     )
 
 
-async def _recall_episodic(
-    body: RecallRequest, agent: AgentIdentity
-) -> list[RecallResult]:
+async def _recall_episodic(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
     if body.scope not in ("private", "all", "archive"):
         return []
-    tier_clause = (
-        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
-    )
+    tier_clause = "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
             f"""
@@ -196,18 +171,14 @@ async def _recall_episodic(
     return _sort_by_importance([_to_result(dict(r), "private") for r in rows])
 
 
-async def _recall_short_term(
-    body: RecallRequest, agent: AgentIdentity
-) -> list[RecallResult]:
+async def _recall_short_term(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
     # short_term memories are always in active tier — archive scope is meaningless
     if body.scope == "archive":
         raise ValueError("scope='archive' is not supported for type='short_term'")
     if body.scope not in ("private", "all"):
         return []
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=3)
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
             f"""
@@ -235,12 +206,8 @@ async def _recall_short_term(
 # ── Full hybrid pipeline ─────────────────────────────────────
 
 
-async def _bm25_private(
-    body: RecallRequest, agent: AgentIdentity
-) -> list[RecallResult]:
-    tier_clause = (
-        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
-    )
+async def _bm25_private(body: RecallRequest, agent: AgentIdentity) -> list[RecallResult]:
+    tier_clause = "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
     # type param is $3; entity param shifts to $4 when type filter is active
     type_clause, type_params = _type_filter_clause(body.type, param=3)
     entity_clause, entity_params = _entity_filter_clause(
@@ -253,9 +220,7 @@ async def _bm25_private(
         body.lang,
         param=3 + len(type_params) + len(entity_params) + len(temporal_params),
     )
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
             f"""
@@ -287,9 +252,7 @@ async def _bm25_private(
 async def _vector_private(
     body: RecallRequest, agent: AgentIdentity, qe: list[float]
 ) -> list[RecallResult]:
-    tier_clause = (
-        "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
-    )
+    tier_clause = "AND tier = 'archive'" if body.scope == "archive" else "AND tier = 'active'"
     # type param is $3; entity param shifts to $4 when type filter is active
     type_clause, type_params = _type_filter_clause(body.type, param=3)
     entity_clause, entity_params = _entity_filter_clause(
@@ -302,9 +265,7 @@ async def _vector_private(
         body.lang,
         param=3 + len(type_params) + len(entity_params) + len(temporal_params),
     )
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, importance, created_at, recall_count, last_recalled_at,
@@ -342,9 +303,7 @@ async def _bm25_org(
     # Explicit clearance predicates: RLS tenant_visibility_read is bypassed by the
     # platform_write policy for qortia_platform (ADR-080 §0.8 fix).
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=5)
-    lang_clause, lang_params = _lang_filter_clause(
-        body.lang, param=5 + len(entity_params)
-    )
+    lang_clause, lang_params = _lang_filter_clause(body.lang, param=5 + len(entity_params))
     async with tenant_transaction(
         get_main_pool(),
         agent.tenant_id,
@@ -391,9 +350,7 @@ async def _vector_org(
     agent_division: str,
 ) -> list[RecallResult]:
     entity_clause, entity_params = _entity_filter_clause(body.entities, base_param=5)
-    lang_clause, lang_params = _lang_filter_clause(
-        body.lang, param=5 + len(entity_params)
-    )
+    lang_clause, lang_params = _lang_filter_clause(body.lang, param=5 + len(entity_params))
     async with tenant_transaction(
         get_main_pool(),
         agent.tenant_id,
@@ -673,9 +630,7 @@ async def _hybrid_recall_pipeline(  # noqa: C901
 ) -> list[RecallResult]:
     """Full hybrid search pipeline: BM25+vector across scopes, entity graph
     boost, BFS traversal, MMR/RRF fusion, and cross-memory link expansion."""
-    query_embedding = await _embed_query(
-        body.query, agent.tenant_id, lang=body.lang or "en"
-    )
+    query_embedding = await _embed_query(body.query, agent.tenant_id, lang=body.lang or "en")
     tasks = []
 
     if body.scope in ("private", "all", "archive"):
@@ -686,19 +641,13 @@ async def _hybrid_recall_pipeline(  # noqa: C901
     if body.scope in ("org", "all"):
         tasks.append(_bm25_org(body, agent, clearance_order, agent_division))
         if query_embedding:
-            tasks.append(
-                _vector_org(
-                    body, agent, query_embedding, clearance_order, agent_division
-                )
-            )
+            tasks.append(_vector_org(body, agent, query_embedding, clearance_order, agent_division))
 
     if body.scope in ("knowledge", "all"):
         tasks.append(_bm25_knowledge(body, agent, clearance_order, agent_division))
         if query_embedding:
             tasks.append(
-                _vector_knowledge(
-                    body, agent, query_embedding, clearance_order, agent_division
-                )
+                _vector_knowledge(body, agent, query_embedding, clearance_order, agent_division)
             )
 
     result_sets = await asyncio.gather(*tasks, return_exceptions=True)
@@ -762,17 +711,13 @@ async def _hybrid_recall_pipeline(  # noqa: C901
                 clearance_order,
             )
             entity_links = {str(r["mem_id"]) for r in linked_rows}
-            top_entity_summary = next(
-                (r["summary"] for r in linked_rows if r["summary"]), None
-            )
+            top_entity_summary = next((r["summary"] for r in linked_rows if r["summary"]), None)
 
     fused_memory = _rrf_fuse(memory_results, entity_links=entity_links)
 
     # 2-hop BFS traversal — surfaces memories reachable via entity co-occurrence
     if entity_links and query_embedding:
-        async with tenant_transaction(
-            get_main_pool(), agent.tenant_id, agent.agent_id
-        ) as conn:
+        async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
             seed_rows = await conn.fetch(
                 """
                 SELECT id FROM qortia_entities
@@ -811,9 +756,7 @@ async def _hybrid_recall_pipeline(  # noqa: C901
     if fused_memory and query_embedding:
         from app.qortia.links import _expand_with_links
 
-        fused_memory = await _expand_with_links(
-            fused_memory, agent.tenant_id, agent.agent_id
-        )
+        fused_memory = await _expand_with_links(fused_memory, agent.tenant_id, agent.agent_id)
 
     results = fused_memory + knowledge_results
 
@@ -832,9 +775,7 @@ async def recall(  # noqa: C901
 ) -> RecallResponse:
     from app.qortia.common import assert_agent_active
 
-    clearance_order, agent_division = await _fetch_agent_clearance(
-        agent.agent_id, agent.tenant_id
-    )
+    clearance_order, agent_division = await _fetch_agent_clearance(agent.agent_id, agent.tenant_id)
 
     async with tenant_transaction(
         get_main_pool(),
@@ -856,9 +797,7 @@ async def recall(  # noqa: C901
     elif body.type == "short_term":
         results = await _recall_short_term(body, agent)
     else:
-        results = await _hybrid_recall_pipeline(
-            body, agent, clearance_order, agent_division
-        )
+        results = await _hybrid_recall_pipeline(body, agent, clearance_order, agent_division)
 
     if body.rerank and len(results) >= 2:
         results = await _llm_rerank(body.query, results, agent)
@@ -903,9 +842,7 @@ async def recall(  # noqa: C901
             "the platform.tenant_id": str(agent.tenant_id),
             "scope": body.scope,
             "result_count": len(results),
-            "work_order_id": x_work_order_id
-            if isinstance(x_work_order_id, str)
-            else None,
+            "work_order_id": x_work_order_id if isinstance(x_work_order_id, str) else None,
         }
     )
 

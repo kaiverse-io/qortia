@@ -43,6 +43,7 @@ Usage:
 
 Report: evals/results/longmemeval_latest.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -70,12 +71,17 @@ DATASET_URLS = [
 DATASET_PATH = Path("evals/datasets/longmemeval_oracle.json")
 
 # Regression floors (match Mem0 published scores as baseline target)
-RECALL_AT_5_FLOOR = 0.60       # ≥60% of questions answered with gt in top-5
+RECALL_AT_5_FLOOR = 0.60  # ≥60% of questions answered with gt in top-5
 CONTEXT_COMPLETE_FLOOR = 0.55  # ≥55% context completeness (COMPLETE or PARTIAL)
-ANSWER_ACCURACY_FLOOR = 0.50   # ≥50% string-match answer accuracy
+ANSWER_ACCURACY_FLOOR = 0.50  # ≥50% string-match answer accuracy
 
-CATEGORIES = ["single-session-user", "single-session-assistant",
-               "multi-session-user", "multi-session-assistant", "temporal"]
+CATEGORIES = [
+    "single-session-user",
+    "single-session-assistant",
+    "multi-session-user",
+    "multi-session-assistant",
+    "temporal",
+]
 
 
 # ── Dataset download ───────────────────────────────────────────────────────
@@ -94,7 +100,7 @@ def download_dataset() -> None:
         except Exception as exc:
             last_exc = exc
             print(f"  Failed: {exc}")
-    print(f"\nAll download attempts failed.")
+    print("\nAll download attempts failed.")
     print("Manual download options:")
     print("  huggingface-cli download xiaowu0162/LongMemEval longmemeval_oracle.json")
     print("  Place the file at: evals/datasets/longmemeval_oracle.json")
@@ -137,11 +143,13 @@ def _conversation_to_memories(
                 if assistant_content:
                     memory_content += f" Assistant replied: {assistant_content}"
 
-                memories.append({
-                    "content": memory_content,
-                    "type": "episodic",
-                    "scope": "private",
-                })
+                memories.append(
+                    {
+                        "content": memory_content,
+                        "type": "episodic",
+                        "scope": "private",
+                    }
+                )
             i += 1
 
     return memories
@@ -229,10 +237,11 @@ async def _run_lme_case(
         expected = [expected]
 
     completeness, accuracy = _check_answer(results, expected)
-    recall_at_5 = any(
-        any(e.lower() in r["content"].lower() for e in expected)
-        for r in results[:5]
-    ) if expected else bool(results)
+    recall_at_5 = (
+        any(any(e.lower() in r["content"].lower() for e in expected) for r in results[:5])
+        if expected
+        else bool(results)
+    )
 
     passed = recall_at_5 and completeness in ("COMPLETE", "PARTIAL")
 
@@ -290,9 +299,11 @@ async def run_longmemeval(category: str | None, max_cases: int) -> int:
             results.append(result)
             status = "PASS" if result["pass"] else "FAIL"
             if (i + 1) % 10 == 0 or not result["pass"]:
-                print(f"  [{i+1:3d}/{len(cases)}] [{status}] "
-                      f"{result['category']}/{result['id']} "
-                      f"complete={result['completeness']} acc={result['accuracy']}")
+                print(
+                    f"  [{i+1:3d}/{len(cases)}] [{status}] "
+                    f"{result['category']}/{result['id']} "
+                    f"complete={result['completeness']} acc={result['accuracy']}"
+                )
 
     # Aggregate by category
     cat_summaries: dict[str, dict[str, Any]] = {}
@@ -301,7 +312,9 @@ async def run_longmemeval(category: str | None, max_cases: int) -> int:
         if not cat_results:
             continue
         recall = sum(1 for r in cat_results if r["recall_at_5"]) / len(cat_results)
-        complete = sum(1 for r in cat_results if r["completeness"] in ("COMPLETE", "PARTIAL")) / len(cat_results)
+        complete = sum(
+            1 for r in cat_results if r["completeness"] in ("COMPLETE", "PARTIAL")
+        ) / len(cat_results)
         accurate = sum(1 for r in cat_results if r["accuracy"] == "CORRECT") / len(cat_results)
         cat_summaries[cat] = {
             "cases": len(cat_results),
@@ -311,12 +324,11 @@ async def run_longmemeval(category: str | None, max_cases: int) -> int:
         }
 
     total_recall = sum(1 for r in results if r["recall_at_5"]) / max(len(results), 1)
-    total_complete = sum(1 for r in results if r["completeness"] in ("COMPLETE", "PARTIAL")) / max(len(results), 1)
-    total_accurate = sum(1 for r in results if r["accuracy"] == "CORRECT") / max(len(results), 1)
-    overall_pass = (
-        total_recall >= RECALL_AT_5_FLOOR
-        and total_complete >= CONTEXT_COMPLETE_FLOOR
+    total_complete = sum(1 for r in results if r["completeness"] in ("COMPLETE", "PARTIAL")) / max(
+        len(results), 1
     )
+    total_accurate = sum(1 for r in results if r["accuracy"] == "CORRECT") / max(len(results), 1)
+    overall_pass = total_recall >= RECALL_AT_5_FLOOR and total_complete >= CONTEXT_COMPLETE_FLOOR
 
     print(f"\n{'='*72}")
     print("LONGMEMEVAL RESULTS")
@@ -324,10 +336,14 @@ async def run_longmemeval(category: str | None, max_cases: int) -> int:
     print(f"\n{'Category':<32} {'Recall@5':>9} {'Complete':>9} {'Accurate':>9} {'Cases':>6}")
     print("-" * 72)
     for cat, s in cat_summaries.items():
-        print(f"  {cat:<30} {s['recall_at_5']:>9.1%} {s['context_completeness']:>9.1%} "
-              f"{s['answer_accuracy']:>9.1%} {s['cases']:>6}")
+        print(
+            f"  {cat:<30} {s['recall_at_5']:>9.1%} {s['context_completeness']:>9.1%} "
+            f"{s['answer_accuracy']:>9.1%} {s['cases']:>6}"
+        )
     print("-" * 72)
-    print(f"  {'TOTAL':<30} {total_recall:>9.1%} {total_complete:>9.1%} {total_accurate:>9.1%} {len(results):>6}")
+    print(
+        f"  {'TOTAL':<30} {total_recall:>9.1%} {total_complete:>9.1%} {total_accurate:>9.1%} {len(results):>6}"
+    )
 
     print(f"\nFloors: Recall@5≥{RECALL_AT_5_FLOOR:.0%}  Complete≥{CONTEXT_COMPLETE_FLOOR:.0%}")
     print(f"Gate: {'PASS' if overall_pass else 'FAIL'}")

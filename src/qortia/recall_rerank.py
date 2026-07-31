@@ -8,12 +8,11 @@ import logging
 from uuid import UUID
 
 import yaml
-
 from app.auth.models import AgentIdentity
 from app.config import settings
+from app.db import get_main_pool, tenant_transaction
 from app.qortia.common import get_litellm_client
 from app.qortia.models import RecallResult
-from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
 
 logger = logging.getLogger(__name__)
@@ -33,14 +32,10 @@ async def _llm_rerank(
                 agent.agent_id,
                 agent.tenant_id,
             )
-        model = (yaml.safe_load(domain_md_raw or "{}") or {}).get(
-            "model"
-        ) or settings.rerank_model
+        model = (yaml.safe_load(domain_md_raw or "{}") or {}).get("model") or settings.rerank_model
         litellm_key = await get_litellm_key(str(agent.tenant_id))
 
-        numbered = "\n".join(
-            f"{i+1}. [{r.type}] {r.content[:200]}" for i, r in enumerate(results)
-        )
+        numbered = "\n".join(f"{i+1}. [{r.type}] {r.content[:200]}" for i, r in enumerate(results))
         prompt = (
             f"Query: {query}\n\nResults:\n{numbered}\n\n"
             f"Return a JSON array of result numbers in order of relevance. "

@@ -12,8 +12,8 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from app.qortia.models import RecallResult
 from app.db import get_main_pool, tenant_transaction
+from app.qortia.models import RecallResult
 
 logger = logging.getLogger(__name__)
 

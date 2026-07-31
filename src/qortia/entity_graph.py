@@ -8,8 +8,8 @@ import logging
 from typing import Any
 
 from app.config import settings
-from app.qortia.common import get_litellm_client
 from app.db import get_main_pool
+from app.qortia.common import get_litellm_client
 from app.vault import get_litellm_key
 
 logger = logging.getLogger(__name__)
@@ -88,8 +88,7 @@ async def _maybe_dedup_memory(
         )
         if (
             neighbour
-            and float(neighbour["similarity"])
-            >= settings.qortia_dedup_similarity_threshold
+            and float(neighbour["similarity"]) >= settings.qortia_dedup_similarity_threshold
         ):
             await conn.execute(
                 """
@@ -159,9 +158,7 @@ async def _maybe_update_entity_summary(
             try:
                 litellm_key = await get_litellm_key(str(tenant_id))
             except Exception as exc:
-                logger.warning(
-                    {"event": "entity_summary_key_fetch_failed", "error": str(exc)}
-                )
+                logger.warning({"event": "entity_summary_key_fetch_failed", "error": str(exc)})
                 return
             new_summary = await _update_entity_summary(
                 existing_summary, memory_content, litellm_key
@@ -266,9 +263,7 @@ async def _populate_graph_batch() -> None:
             for row in rows:
                 async with conn.transaction():
                     try:
-                        entity_pairs = [
-                            (e[0], e[1]) for e in json.loads(row["entities"])
-                        ]
+                        entity_pairs = [(e[0], e[1]) for e in json.loads(row["entities"])]
                     except Exception:
                         entity_pairs = []
                     for ent_text, ent_type in entity_pairs:

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from app.qortia.models import RecallResult
 
 RRF_K = 60
@@ -31,7 +32,7 @@ def dynamic_importance(
     frequency_boost = math.log1p(recall_count) / 10.0
     recency_boost = 0.0
     if last_recalled_at:
-        days_since = (datetime.now(timezone.utc) - last_recalled_at).days
+        days_since = (datetime.now(UTC) - last_recalled_at).days
         recency_boost = max(0.0, 1.0 - (days_since / 30.0)) * 0.2
     raw = min(1.0, base_importance + frequency_boost + recency_boost)
     return max(0.0, min(1.0, raw * confidence_multiplier))
@@ -217,11 +218,7 @@ def _mmr(
                 continue
             relevance = _cosine(query_embedding, candidate._embedding)
             redundancy = (
-                max(
-                    _cosine(candidate._embedding, s._embedding)
-                    for s in selected
-                    if s._embedding
-                )
+                max(_cosine(candidate._embedding, s._embedding) for s in selected if s._embedding)
                 if selected
                 else 0.0
             )

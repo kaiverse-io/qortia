@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from uuid import uuid4
 
-
 from tests.integration.conftest import (
-    make_agent_headers,
-    fresh_agent_headers,
     VAULT_TOKEN,
-    create_active_agent,
     _call,
+    create_active_agent,
+    fresh_agent_headers,
+    make_agent_headers,
 )
 
 
@@ -62,9 +62,7 @@ def test_remember_inactive_agent_403(app_client, _session_loop) -> None:
 def test_remember_empty_batch_422(app_client, _session_loop) -> None:
     r = _call(
         _session_loop,
-        app_client.post(
-            "/v1/remember", json={"memories": []}, headers=fresh_agent_headers()
-        ),
+        app_client.post("/v1/remember", json={"memories": []}, headers=fresh_agent_headers()),
     )
     assert r.status_code == 422
 
@@ -88,9 +86,7 @@ def test_remember_invalid_type_422(app_client, _session_loop) -> None:
     assert r.status_code == 422
 
 
-def test_remember_batch_atomicity(
-    app_client, _session_loop, committed_conn, tenant_id
-) -> None:
+def test_remember_batch_atomicity(app_client, _session_loop, committed_conn, tenant_id) -> None:
     """All inserts + counter increment in one transaction."""
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
@@ -132,9 +128,7 @@ def test_remember_batch_atomicity(
     assert counter == 2  # only episodic memories increment counter
 
 
-def test_remember_entities_extracted(
-    app_client, _session_loop, committed_conn, tenant_id
-) -> None:
+def test_remember_entities_extracted(app_client, _session_loop, committed_conn, tenant_id) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
@@ -163,9 +157,7 @@ def test_remember_entities_extracted(
 # ── remember-org ──────────────────────────────────────────────────────────────
 
 
-def test_remember_org_handoff(
-    app_client, _session_loop, committed_conn, tenant_id
-) -> None:
+def test_remember_org_handoff(app_client, _session_loop, committed_conn, tenant_id) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
@@ -229,9 +221,7 @@ def test_recall_requires_auth(app_client, _session_loop) -> None:
 def test_recall_empty_query_422(app_client, _session_loop) -> None:
     r = _call(
         _session_loop,
-        app_client.post(
-            "/v1/recall", json={"query": ""}, headers=fresh_agent_headers()
-        ),
+        app_client.post("/v1/recall", json={"query": ""}, headers=fresh_agent_headers()),
     )
     assert r.status_code == 422
 
@@ -248,9 +238,7 @@ def test_recall_invalid_scope_422(app_client, _session_loop) -> None:
     assert r.status_code == 422
 
 
-def test_recall_returns_results(
-    app_client, _session_loop, committed_conn, tenant_id
-) -> None:
+def test_recall_returns_results(app_client, _session_loop, committed_conn, tenant_id) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
 
@@ -285,9 +273,7 @@ def test_recall_returns_results(
     assert "results" in r.json()
 
 
-def test_recall_entities_filter(
-    app_client, _session_loop, committed_conn, tenant_id
-) -> None:
+def test_recall_entities_filter(app_client, _session_loop, committed_conn, tenant_id) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
 
@@ -335,9 +321,7 @@ def test_context_rejects_user_auth(app_client, _session_loop, user_headers) -> N
     assert r.status_code == 403
 
 
-def test_context_structure(
-    app_client, _session_loop, committed_conn, tenant_id
-) -> None:
+def test_context_structure(app_client, _session_loop, committed_conn, tenant_id) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     r = _call(
         _session_loop,
@@ -354,9 +338,7 @@ def test_context_structure(
 # ── forget ────────────────────────────────────────────────────────────────────
 
 
-def test_forget_own_memory(
-    app_client, _session_loop, committed_conn, tenant_id
-) -> None:
+def test_forget_own_memory(app_client, _session_loop, committed_conn, tenant_id) -> None:
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
 
@@ -383,9 +365,7 @@ def test_forget_own_memory(
     )
     assert r.status_code == 200
 
-    count = committed_conn.fetchval(
-        "SELECT COUNT(*) FROM hindsight_memories WHERE id = $1", mem_id
-    )
+    count = committed_conn.fetchval("SELECT COUNT(*) FROM hindsight_memories WHERE id = $1", mem_id)
     assert count == 0
 
 
@@ -663,7 +643,7 @@ def test_superseded_memory_excluded_from_default_recall(
     app_client, _session_loop, committed_conn, tenant_id
 ) -> None:
     """A memory with valid_until set must not appear in default recall."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
 
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
@@ -682,8 +662,8 @@ def test_superseded_memory_excluded_from_default_recall(
         "mental_model",
         "superseded unique content xq9z",
         0.8,
-        datetime.now(timezone.utc) - timedelta(days=10),
-        datetime.now(timezone.utc) - timedelta(days=1),  # superseded yesterday
+        datetime.now(UTC) - timedelta(days=10),
+        datetime.now(UTC) - timedelta(days=1),  # superseded yesterday
     )
     committed_conn.track("hindsight_memories", mem_id)
 
@@ -704,14 +684,14 @@ def test_as_of_returns_superseded_memory(
     app_client, _session_loop, committed_conn, tenant_id
 ) -> None:
     """as_of set to when the memory was valid must return it."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
 
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
 
-    valid_start = datetime.now(timezone.utc) - timedelta(days=30)
-    valid_end = datetime.now(timezone.utc) - timedelta(days=1)
-    as_of = datetime.now(timezone.utc) - timedelta(days=15)  # within the valid window
+    valid_start = datetime.now(UTC) - timedelta(days=30)
+    valid_end = datetime.now(UTC) - timedelta(days=1)
+    as_of = datetime.now(UTC) - timedelta(days=15)  # within the valid window
 
     mem_id = str(uuid4())
     committed_conn.execute(
@@ -753,13 +733,13 @@ def test_as_of_excludes_memory_not_yet_written(
     app_client, _session_loop, committed_conn, tenant_id
 ) -> None:
     """as_of set before valid_from must not return the memory."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
 
     aid = _active_agent(_session_loop, committed_conn, tenant_id)
     headers = make_agent_headers(aid, tenant_id)
 
-    valid_start = datetime.now(timezone.utc) - timedelta(days=1)
-    as_of = datetime.now(timezone.utc) - timedelta(days=10)  # before valid_from
+    valid_start = datetime.now(UTC) - timedelta(days=1)
+    as_of = datetime.now(UTC) - timedelta(days=10)  # before valid_from
 
     mem_id = str(uuid4())
     committed_conn.execute(

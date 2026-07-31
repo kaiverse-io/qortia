@@ -8,24 +8,27 @@ from typing import Any
 from uuid import UUID
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
-
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
+from app.config import settings
+from app.db import get_main_pool, tenant_transaction
 from app.qortia.common import (
     EMBEDDING_MODEL,
     get_litellm_client,
 )
 from app.qortia.entity_graph import (
     _maybe_dedup_memory,
-    _maybe_update_entity_summary as _maybe_update_entity_summary,
     _populate_graph_batch,
+)
+from app.qortia.entity_graph import (
+    _maybe_update_entity_summary as _maybe_update_entity_summary,
+)
+from app.qortia.entity_graph import (
     _update_entity_summary as _update_entity_summary,
 )
 from app.qortia.models import ReflectResponse
-from app.config import settings
-from app.db import get_main_pool, tenant_transaction
 from app.vault import get_litellm_key
+from fastapi import APIRouter, Depends, HTTPException
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,7 +36,9 @@ router = APIRouter()
 REFLECTION_THRESHOLD = 10  # overridden by settings.reflection_threshold at call site
 EMBEDDING_BATCH_SIZE = 50
 STABILITY_THRESHOLD = 0.95
-DEDUP_SIMILARITY_THRESHOLD = 0.95  # calibrated for BGE-M3 1024-dim; ADR-105; see settings.qortia_dedup_similarity_threshold
+DEDUP_SIMILARITY_THRESHOLD = (
+    0.95  # calibrated for BGE-M3 1024-dim; ADR-105; see settings.qortia_dedup_similarity_threshold
+)
 DEDUP_LOOKBACK_DAYS = 7  # see settings.qortia_dedup_lookback_days
 
 
@@ -77,9 +82,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
     from app.qortia.common import assert_agent_active
     from app.qortia.remember import _fetch_agent_clearance
 
-    clearance_order, agent_division = await _fetch_agent_clearance(
-        agent.agent_id, agent.tenant_id
-    )
+    clearance_order, agent_division = await _fetch_agent_clearance(agent.agent_id, agent.tenant_id)
 
     # Fetch data outside the write transaction — no DB lock held during LLM call
     domain_md_raw: str | None = None
@@ -133,8 +136,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
         model=model,
         recent=[r["content"] for r in recent],
         existing=[
-            {"id": str(r["id"]), "type": r["type"], "content": r["content"]}
-            for r in existing
+            {"id": str(r["id"]), "type": r["type"], "content": r["content"]} for r in existing
         ],
         litellm_key=litellm_key,
         agent_id=agent.agent_id,
@@ -143,8 +145,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
 
     # Build existing embedding index keyed by id for stability computation
     existing_embeddings: dict[str, list[float] | None] = {
-        str(r["id"]): list(r["embedding"]) if r.get("embedding") else None
-        for r in existing
+        str(r["id"]): list(r["embedding"]) if r.get("embedding") else None for r in existing
     }
 
     # Embed CREATE and UPDATE content before the write transaction.
@@ -171,9 +172,7 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
         agent_division=agent_division,
     )
 
-    return ReflectResponse(
-        memories_written=memories_written, reflection_counter=new_counter
-    )
+    return ReflectResponse(memories_written=memories_written, reflection_counter=new_counter)
 
 
 async def _write_reflections(  # noqa: C901
@@ -260,9 +259,7 @@ async def _write_reflections(  # noqa: C901
             if r["action"] == "RETAIN":
                 continue
 
-            content_hash = hashlib.sha256(
-                r["content"].lower().strip().encode()
-            ).hexdigest()
+            content_hash = hashlib.sha256(r["content"].lower().strip().encode()).hexdigest()
             if content_hash in seen_hashes:
                 logger.info({"event": "reflect_dedup_skipped", "hash": content_hash})
                 continue
@@ -297,9 +294,7 @@ async def _write_reflections(  # noqa: C901
             try:
                 from app.qortia.knowledge import extract_entities_with_types
 
-                entities = extract_entities_with_types(
-                    r["content"], lang=r.get("lang", "en")
-                )
+                entities = extract_entities_with_types(r["content"], lang=r.get("lang", "en"))
             except Exception:
                 entities = []
 
@@ -430,8 +425,7 @@ def _build_reflect_prompt(recent: list[str], existing: list[dict]) -> str:  # ty
 
     recent_block = "\n".join(f"- {m}" for m in recent) or "(none)"
     existing_block = (
-        "\n".join(f"- [{m['id']}] [{m['type']}] {m['content']}" for m in existing)
-        or "(none)"
+        "\n".join(f"- [{m['id']}] [{m['type']}] {m['content']}" for m in existing) or "(none)"
     )
     temporal_instruction = build_temporal_grounding_instruction()
     return f"""You are synthesising an agent's recent experiences into durable mental models and lessons.
@@ -587,11 +581,7 @@ async def _process_embedding_batch() -> None:
             )
 
             rows = [
-                dict(r)
-                for r in list(hindsight)
-                + list(org_mem)
-                + list(org_know)
-                + list(entities)
+                dict(r) for r in list(hindsight) + list(org_mem) + list(org_know) + list(entities)
             ]
 
     # Group by tenant_id to minimise Vault round-trips (one key fetch per tenant per batch)
@@ -740,9 +730,7 @@ async def _trigger_idle_reflections() -> None:
                 settings.idle_reflection_window_h,
             )
         for row in rows:
-            await _reflect_agent(
-                UUID(str(row["agent_id"])), UUID(str(row["tenant_id"]))
-            )
+            await _reflect_agent(UUID(str(row["agent_id"])), UUID(str(row["tenant_id"])))
     except Exception as exc:
         logger.warning({"event": "idle_reflection_trigger_failed", "error": str(exc)})
 
@@ -756,9 +744,7 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
     from app.qortia.remember import _fetch_agent_clearance
 
     try:
-        clearance_order, agent_division = await _fetch_agent_clearance(
-            agent_id, tenant_id
-        )
+        clearance_order, agent_division = await _fetch_agent_clearance(agent_id, tenant_id)
         recent: list[dict[str, Any]] = []
         existing: list[dict[str, Any]] = []
         domain_md_raw: str | None = None
@@ -818,8 +804,7 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
             model=model,
             recent=[r["content"] for r in recent],
             existing=[
-                {"id": str(r["id"]), "type": r["type"], "content": r["content"]}
-                for r in existing
+                {"id": str(r["id"]), "type": r["type"], "content": r["content"]} for r in existing
             ],
             litellm_key=litellm_key,
             agent_id=agent_id,
@@ -827,8 +812,7 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
         )
 
         existing_embeddings: dict[str, list[float] | None] = {
-            str(r["id"]): list(r["embedding"]) if r.get("embedding") else None
-            for r in existing
+            str(r["id"]): list(r["embedding"]) if r.get("embedding") else None for r in existing
         }
         new_embeddings: dict[int, list[float] | None] = {}
         for i, r in enumerate(reflections):

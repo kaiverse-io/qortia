@@ -32,7 +32,6 @@ import httpx
 from evals.dataset_loader import (
     EMBEDDING_WAIT_SECONDS,
     PLATFORM_URL,
-    _agent_headers,
     load_dataset,
     provision_eval_agent,
     seed_case,
@@ -72,9 +71,7 @@ async def run_reh(dataset_path: Path) -> int:
     recall_at_10 = sum(1 for r in case_results if r["recall_at_10"]) / len(case_results)
     mrr = sum(r["mrr"] for r in case_results) / len(case_results)
     drift_gaps = [
-        r["semantic_drift_gap"]
-        for r in case_results
-        if r["semantic_drift_gap"] is not None
+        r["semantic_drift_gap"] for r in case_results if r["semantic_drift_gap"] is not None
     ]
     avg_drift = sum(drift_gaps) / len(drift_gaps) if drift_gaps else 0.0
 
@@ -90,8 +87,10 @@ async def run_reh(dataset_path: Path) -> int:
     _print_metric("MRR", mrr, MRR_TARGET)
     _print_metric("Semantic Drift gap", avg_drift, SEMANTIC_DRIFT_TARGET)
     if avg_tokens > 0:
-        print(f"  {'Avg tokens retrieved':<23} {avg_tokens:>8.0f}  {TOKEN_TARGET:>8.0f}  "
-              f"{'✓' if avg_tokens <= TOKEN_TARGET else '✗'}")
+        print(
+            f"  {'Avg tokens retrieved':<23} {avg_tokens:>8.0f}  {TOKEN_TARGET:>8.0f}  "
+            f"{'✓' if avg_tokens <= TOKEN_TARGET else '✗'}"
+        )
 
     report = {
         "recall_at_5": recall_at_5,
@@ -160,9 +159,7 @@ async def _run_reh_case(
 
         sections = split_into_sections(ground_truth_content)
         fingerprint = (
-            sections[0]["text"][:40].lower()
-            if sections
-            else ground_truth_content[:40].lower()
+            sections[0]["text"][:40].lower() if sections else ground_truth_content[:40].lower()
         )
         for i, content in enumerate(result_contents):
             if fingerprint in content.lower():
@@ -189,11 +186,7 @@ async def _run_reh_case(
     semantic_drift_gap = None
     if ground_truth_id and hard_negative_count > 0 and ground_truth_id in result_ids:
         gt_rank = result_ids.index(ground_truth_id)
-        hn_ranks = [
-            result_ids.index(hid)
-            for hid in hard_negative_result_ids
-            if hid in result_ids
-        ]
+        hn_ranks = [result_ids.index(hid) for hid in hard_negative_result_ids if hid in result_ids]
         if hn_ranks:
             best_hn_rank = min(hn_ranks)
             semantic_drift_gap = (best_hn_rank - gt_rank) / max(len(result_ids), 1)
@@ -241,9 +234,5 @@ def _failed(case_id: str, reason: str) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    dataset = (
-        Path(sys.argv[1])
-        if len(sys.argv) > 1
-        else Path("evals/datasets/recall_v1.json")
-    )
+    dataset = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("evals/datasets/recall_v1.json")
     sys.exit(asyncio.run(run_reh(dataset)))

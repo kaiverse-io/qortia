@@ -9,14 +9,13 @@ import re
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
-
 from app.auth.middleware import require_agent
 from app.auth.models import AgentIdentity
 from app.background.leader import LOCK_KEY_WEEKLY_SUMMARY, try_acquire_leader
-from app.qortia.models import KnowledgeIngestRequest
 from app.db import get_main_pool, tenant_transaction
 from app.qortia.common import assert_agent_active
+from app.qortia.models import KnowledgeIngestRequest
+from fastapi import APIRouter, Depends, HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +24,7 @@ logger = logging.getLogger(__name__)
 _nlp = None
 
 # Single canonical label set for English NER — used by all extraction functions.
-EN_ENTITY_LABELS = frozenset(
-    {"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"}
-)
+EN_ENTITY_LABELS = frozenset({"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"})
 HEADING_PATTERN = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
 
 # ── Indic NER routing (spaCy) ────────────────────────────────
@@ -93,24 +90,18 @@ def extract_entities(text: str, lang: str = "en") -> list[str]:
     Returns text only (label stripped) for backward-compatible callers.
     """
     if lang not in _SUPPORTED_LANGS:
-        logger.warning(
-            {"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"}
-        )
+        logger.warning({"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"})
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
-        return list(
-            dict.fromkeys(
-                ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP
-            )
-        )[:20]
+        return list(dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP))[
+            :20
+        ]
     nlp = get_nlp()
     if nlp is None:
         logger.warning({"event": "ner_model_not_loaded", "lang": lang})
         return []
     doc = nlp(text)  # type: ignore[operator]
-    return list(
-        dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS)
-    )[:20]
+    return list(dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS))[:20]
 
 
 def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, str]]:
@@ -119,9 +110,7 @@ def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, 
     Returns list of (entity_text, label). Best-effort — caller wraps in try/except.
     """
     if lang not in _SUPPORTED_LANGS:
-        logger.warning(
-            {"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"}
-        )
+        logger.warning({"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"})
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
         seen: dict[str, str] = {}
@@ -197,9 +186,7 @@ def extract_index_fields(heading: str, text: str, lang: str = "en") -> dict[str,
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
         entities = list(
-            dict.fromkeys(
-                ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP
-            )
+            dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP)
         )[:10]
         sentences = list(doc.sents)
         noun_chunks: list[str] = []
@@ -207,16 +194,12 @@ def extract_index_fields(heading: str, text: str, lang: str = "en") -> dict[str,
         nlp = get_nlp()
         doc = nlp(text)  # type: ignore[operator]
         entities = list(
-            dict.fromkeys(
-                ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS
-            )
+            dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS)
         )[:10]
         sentences = list(doc.sents)
         noun_chunks = list(
             dict.fromkeys(
-                chunk.text.lower()
-                for chunk in doc.noun_chunks
-                if len(chunk.text.split()) <= 4
+                chunk.text.lower() for chunk in doc.noun_chunks if len(chunk.text.split()) <= 4
             )
         )[:10]
 
@@ -240,9 +223,7 @@ async def ingest_knowledge(
     body: KnowledgeIngestRequest,
     agent: AgentIdentity = Depends(require_agent),  # noqa: B008
 ) -> dict:  # type: ignore[type-arg]
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
         role = await conn.fetchval(
             "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
@@ -255,9 +236,7 @@ async def ingest_knowledge(
     sections = split_into_sections(body.content)
     incoming_hashes = [hashlib.sha256(s["text"].encode()).hexdigest() for s in sections]
 
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         existing = await conn.fetch(
             """
             SELECT chunk_index, content_hash FROM org_knowledge
@@ -270,10 +249,7 @@ async def ingest_knowledge(
 
         existing_hashes = [r["content_hash"] for r in existing]
 
-        if (
-            len(existing_hashes) == len(incoming_hashes)
-            and existing_hashes == incoming_hashes
-        ):
+        if len(existing_hashes) == len(incoming_hashes) and existing_hashes == incoming_hashes:
             return {
                 "sections_created": 0,
                 "sections_deduped": len(sections),
@@ -291,9 +267,7 @@ async def ingest_knowledge(
         sections_deduped = 0
 
         for idx, (section, content_hash) in enumerate(zip(sections, incoming_hashes)):  # noqa: B905
-            index_fields = extract_index_fields(
-                section["heading"], section["text"], lang=body.lang
-            )
+            index_fields = extract_index_fields(section["heading"], section["text"], lang=body.lang)
 
             existing_embedding = await conn.fetchval(
                 """
@@ -365,9 +339,7 @@ async def delete_knowledge(
     source_path: str,
     agent: AgentIdentity = Depends(require_agent),  # noqa: B008
 ) -> dict:  # type: ignore[type-arg]
-    async with tenant_transaction(
-        get_main_pool(), agent.tenant_id, agent.agent_id
-    ) as conn:
+    async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
         role = await conn.fetchval(
             "SELECT role FROM auth.agents WHERE id = $1 AND tenant_id = $2",
@@ -414,9 +386,7 @@ def build_weekly_summary(handoffs: list[dict]) -> str:  # type: ignore[type-arg]
 async def run_weekly_summary_task() -> None:
     while True:
         await asyncio.sleep(86400)
-        async with try_acquire_leader(
-            get_main_pool(), LOCK_KEY_WEEKLY_SUMMARY
-        ) as is_leader:
+        async with try_acquire_leader(get_main_pool(), LOCK_KEY_WEEKLY_SUMMARY) as is_leader:
             if is_leader:
                 await _run_weekly_summary_cycle()
 
@@ -450,7 +420,7 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
             if (
                 last_run_at
                 and (
-                    datetime.datetime.now(datetime.timezone.utc) - last_run_at  # type: ignore[operator]
+                    datetime.datetime.now(datetime.UTC) - last_run_at  # type: ignore[operator]
                 ).days
                 < 7
             ):
@@ -476,9 +446,7 @@ async def _summarise_tenant(tenant_id: UUID, last_run_at: object) -> None:
 
             from collections import Counter
 
-            lang_counts: Counter[str] = Counter(
-                h["lang"] for h in handoffs if h.get("lang")
-            )
+            lang_counts: Counter[str] = Counter(h["lang"] for h in handoffs if h.get("lang"))
             dominant_lang = lang_counts.most_common(1)[0][0] if lang_counts else "en"
 
             await conn.execute(

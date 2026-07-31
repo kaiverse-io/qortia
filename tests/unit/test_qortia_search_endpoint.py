@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -30,7 +31,7 @@ def _patch_tx(conn):
 
 
 def _make_memory_row(content: str = "test memory") -> dict:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     return {
         "id": UUID("00000000-0000-0000-0000-000000000010"),
@@ -38,7 +39,7 @@ def _make_memory_row(content: str = "test memory") -> dict:
         "content": content,
         "importance": 0.8,
         "tier": "active",
-        "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
         "last_recalled_at": None,
         "recall_count": 3,
         "is_consolidated": False,
@@ -57,9 +58,10 @@ async def test_search_returns_matching_memories() -> None:
     conn.fetchval = AsyncMock(side_effect=[1, 1])  # exists check, then count
     conn.fetch = AsyncMock(return_value=[row])
 
-    with patch(
-        "app.auth.router.tenant_transaction", return_value=_patch_tx(conn)
-    ), patch("app.auth.router.get_main_pool"):
+    with (
+        patch("app.auth.router.tenant_transaction", return_value=_patch_tx(conn)),
+        patch("app.auth.router.get_main_pool"),
+    ):
         result = await search_agent_memories(
             agent_id=AGENT_ID,
             query="billing",
@@ -79,9 +81,10 @@ async def test_search_returns_empty_on_no_match() -> None:
     conn.fetchval = AsyncMock(side_effect=[1, 0])  # exists, count=0
     conn.fetch = AsyncMock(return_value=[])
 
-    with patch(
-        "app.auth.router.tenant_transaction", return_value=_patch_tx(conn)
-    ), patch("app.auth.router.get_main_pool"):
+    with (
+        patch("app.auth.router.tenant_transaction", return_value=_patch_tx(conn)),
+        patch("app.auth.router.get_main_pool"),
+    ):
         result = await search_agent_memories(
             agent_id=AGENT_ID,
             query="zzznomatch",
@@ -100,9 +103,10 @@ async def test_search_empty_query_returns_empty() -> None:
     conn = AsyncMock()
     conn.fetchval = AsyncMock(return_value=1)  # agent exists
 
-    with patch(
-        "app.auth.router.tenant_transaction", return_value=_patch_tx(conn)
-    ), patch("app.auth.router.get_main_pool"):
+    with (
+        patch("app.auth.router.tenant_transaction", return_value=_patch_tx(conn)),
+        patch("app.auth.router.get_main_pool"),
+    ):
         result = await search_agent_memories(
             agent_id=AGENT_ID,
             query="   ",
@@ -123,9 +127,10 @@ async def test_search_respects_limit() -> None:
     conn.fetchval = AsyncMock(side_effect=[1, 5])
     conn.fetch = AsyncMock(return_value=rows)
 
-    with patch(
-        "app.auth.router.tenant_transaction", return_value=_patch_tx(conn)
-    ), patch("app.auth.router.get_main_pool"):
+    with (
+        patch("app.auth.router.tenant_transaction", return_value=_patch_tx(conn)),
+        patch("app.auth.router.get_main_pool"),
+    ):
         result = await search_agent_memories(
             agent_id=AGENT_ID,
             query="memory",
@@ -146,9 +151,10 @@ async def test_search_result_shape() -> None:
     conn.fetchval = AsyncMock(side_effect=[1, 1])
     conn.fetch = AsyncMock(return_value=[_make_memory_row()])
 
-    with patch(
-        "app.auth.router.tenant_transaction", return_value=_patch_tx(conn)
-    ), patch("app.auth.router.get_main_pool"):
+    with (
+        patch("app.auth.router.tenant_transaction", return_value=_patch_tx(conn)),
+        patch("app.auth.router.get_main_pool"),
+    ):
         result = await search_agent_memories(
             agent_id=AGENT_ID,
             query="test",
@@ -176,9 +182,10 @@ async def test_search_404_when_agent_not_in_tenant() -> None:
     conn = AsyncMock()
     conn.fetchval = AsyncMock(return_value=None)  # agent not found
 
-    with patch(
-        "app.auth.router.tenant_transaction", return_value=_patch_tx(conn)
-    ), patch("app.auth.router.get_main_pool"):
+    with (
+        patch("app.auth.router.tenant_transaction", return_value=_patch_tx(conn)),
+        patch("app.auth.router.get_main_pool"),
+    ):
         with pytest.raises(HTTPException) as exc:
             await search_agent_memories(
                 agent_id=AGENT_ID,
@@ -198,9 +205,10 @@ async def test_search_limit_capped_at_100() -> None:
     conn.fetchval = AsyncMock(side_effect=[1, 0])
     conn.fetch = AsyncMock(return_value=[])
 
-    with patch(
-        "app.auth.router.tenant_transaction", return_value=_patch_tx(conn)
-    ), patch("app.auth.router.get_main_pool"):
+    with (
+        patch("app.auth.router.tenant_transaction", return_value=_patch_tx(conn)),
+        patch("app.auth.router.get_main_pool"),
+    ):
         # limit=200 should be capped — FastAPI Query(le=100) raises before function body
         # so test that a valid limit works and the query param flows through
         result = await search_agent_memories(

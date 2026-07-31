@@ -17,9 +17,8 @@ import hashlib
 import logging
 import threading
 
-from cachetools import TTLCache
-
 from app.config import settings
+from cachetools import TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +62,7 @@ def get_cached_embedding(query: str, tenant_id: str, lang: str) -> list[float] |
     return result
 
 
-def put_cached_embedding(
-    query: str, tenant_id: str, lang: str, embedding: list[float]
-) -> None:
+def put_cached_embedding(query: str, tenant_id: str, lang: str, embedding: list[float]) -> None:
     """Store an embedding in the tenant cache."""
     key = _make_cache_key(query, tenant_id, lang)
     with _cache_lock:

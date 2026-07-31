@@ -12,7 +12,6 @@ from pydantic import (
     model_validator,
 )
 
-
 # ── remember ────────────────────────────────────────────────
 
 IMPORTANCE: dict[str, float] = {
@@ -35,9 +34,7 @@ def _normalise_lang(v: str | None) -> str:
 class MemoryItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal[
-        "episodic", "experiential", "mental_model", "decision", "lesson", "short_term"
-    ]
+    type: Literal["episodic", "experiential", "mental_model", "decision", "lesson", "short_term"]
     content: str
     source_task_id: UUID | None = None
     metadata: dict | None = None  # type: ignore[type-arg]
@@ -66,12 +63,10 @@ class MemoryItem(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def validate_ttl(self) -> "MemoryItem":
+    def validate_ttl(self) -> MemoryItem:
         if self.ttl_seconds is not None and self.type != "short_term":
             raise ValueError("ttl_seconds is only valid for short_term memories")
-        if self.type == "short_term" and (
-            self.ttl_seconds is None or self.ttl_seconds <= 0
-        ):
+        if self.type == "short_term" and (self.ttl_seconds is None or self.ttl_seconds <= 0):
             raise ValueError("short_term memories require a positive ttl_seconds")
         return self
 
@@ -99,9 +94,7 @@ class RememberOrgRequest(BaseModel):
     title: str
     content: str
     lang: str = "en"  # BCP-47 language tag
-    min_clearance: str = (
-        "internal"  # validated against tenant_clearance_levels at write time
-    )
+    min_clearance: str = "internal"  # validated against tenant_clearance_levels at write time
     audience: list[str] = ["all"]  # validated against tenant_divisions at write time
 
     @field_validator("lang", mode="before")
@@ -223,13 +216,9 @@ class RecallResult(BaseModel):
     importance: float | None = None
     created_at: str
     entity_summary: str | None = None
-    linked_via: str | None = (
-        None  # ID of the result that surfaced this via cross-link (16i)
-    )
+    linked_via: str | None = None  # ID of the result that surfaced this via cross-link (16i)
     valid_from: str | None = None  # when this fact became true (16j)
-    valid_until: str | None = (
-        None  # when this fact was superseded; None = currently valid (16j)
-    )
+    valid_until: str | None = None  # when this fact was superseded; None = currently valid (16j)
 
     # Internal ranking signals — never serialised (Q95)
     _recall_count: int = PrivateAttr(default=0)
@@ -252,9 +241,7 @@ class KnowledgeIngestRequest(BaseModel):
     content: str
     metadata: dict | None = None  # type: ignore[type-arg]
     lang: str = "en"  # BCP-47 language tag
-    min_clearance: str = (
-        "internal"  # validated against tenant_clearance_levels at write time
-    )
+    min_clearance: str = "internal"  # validated against tenant_clearance_levels at write time
     audience: list[str] = ["all"]  # validated against tenant_divisions at write time
 
     @field_validator("lang", mode="before")

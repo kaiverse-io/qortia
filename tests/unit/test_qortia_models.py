@@ -4,15 +4,13 @@ Pure validation, no I/O.
 """
 
 import pytest
-from pydantic import ValidationError
-
 from app.qortia.models import (
     IMPORTANCE,
     MemoryItem,
     RecallRequest,
     RememberRequest,
 )
-
+from pydantic import ValidationError
 
 # ── IMPORTANCE dict ──────────────────────────────────────────
 
@@ -100,12 +98,8 @@ def test_remember_request_empty_array_rejected() -> None:
 def test_remember_request_valid_batch() -> None:
     req = RememberRequest(
         memories=[
-            MemoryItem(
-                type="episodic", content="something happened today in the system"
-            ),
-            MemoryItem(
-                type="lesson", content="learned that this approach works better"
-            ),
+            MemoryItem(type="episodic", content="something happened today in the system"),
+            MemoryItem(type="lesson", content="learned that this approach works better"),
         ]
     )
     assert len(req.memories) == 2
@@ -203,9 +197,7 @@ def test_short_term_memory_negative_ttl_rejected() -> None:
 
 
 def test_short_term_memory_valid() -> None:
-    item = MemoryItem(
-        type="short_term", content="user is on payment flow", ttl_seconds=3600
-    )
+    item = MemoryItem(type="short_term", content="user is on payment flow", ttl_seconds=3600)
     assert item.ttl_seconds == 3600
 
 
@@ -329,6 +321,7 @@ def test_extract_entities_english_uses_spacy_path(
 ) -> None:
     """English lang routes to spaCy, not Stanza."""
     from unittest.mock import MagicMock
+
     import app.qortia.knowledge as kmod
 
     mock_doc = MagicMock()
@@ -349,12 +342,11 @@ def test_extract_entities_hindi_uses_indic_spacy_path(
 ) -> None:
     """Hindi lang routes to Indic spaCy pipeline."""
     from unittest.mock import MagicMock
+
     import app.qortia.knowledge as kmod
 
     mock_ent = MagicMock()
-    mock_ent.text = (
-        "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940"
-    )
+    mock_ent.text = "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940"
     mock_ent.label_ = "PER"
     mock_doc = MagicMock()
     mock_doc.ents = [mock_ent]
@@ -365,9 +357,7 @@ def test_extract_entities_hindi_uses_indic_spacy_path(
         "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940 \u092e\u0941\u0902\u092c\u0908 \u0917\u090f",
         lang="hi",
     )
-    assert (
-        "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940" in result
-    )
+    assert "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940" in result
     mock_pipeline.assert_called_once()
 
 
@@ -376,6 +366,7 @@ def test_extract_entities_unsupported_lang_returns_empty(
 ) -> None:
     """Unsupported lang (kn) returns [] without raising."""
     from unittest.mock import MagicMock
+
     import app.qortia.knowledge as kmod
 
     # kn is not in INDIC_NER_LANGS, falls through to spaCy
@@ -404,9 +395,7 @@ def test_extract_entities_unsupported_lang_returns_empty(
     ],
 )
 def test_memory_item_lang_normalised(raw: str | None, expected: str) -> None:
-    item = MemoryItem(
-        type="episodic", content="something happened today in the system", lang=raw
-    )  # type: ignore[arg-type]
+    item = MemoryItem(type="episodic", content="something happened today in the system", lang=raw)  # type: ignore[arg-type]
     assert item.lang == expected
 
 
@@ -457,9 +446,7 @@ def test_recall_request_lang_normalised(raw: str | None, expected: str | None) -
         (None, "en"),
     ],
 )
-def test_knowledge_ingest_request_lang_normalised(
-    raw: str | None, expected: str
-) -> None:
+def test_knowledge_ingest_request_lang_normalised(raw: str | None, expected: str) -> None:
     from app.qortia.models import KnowledgeIngestRequest
 
     req = KnowledgeIngestRequest(

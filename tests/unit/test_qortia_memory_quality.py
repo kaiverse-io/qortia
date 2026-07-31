@@ -10,9 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
 from app.qortia.models import MemoryItem, RememberOrgRequest
-
 
 # ── G2: Content length floor ─────────────────────────────────
 
@@ -62,9 +60,7 @@ async def test_maybe_dedup_archives_when_similarity_above_threshold() -> None:
     embedding = [0.1] * 1024
 
     mock_conn = AsyncMock()
-    mock_conn.fetchrow = AsyncMock(
-        return_value={"id": neighbour_id, "similarity": 0.96}
-    )
+    mock_conn.fetchrow = AsyncMock(return_value={"id": neighbour_id, "similarity": 0.96})
     mock_conn.execute = AsyncMock()
 
     mock_pool = MagicMock()
@@ -157,11 +153,13 @@ async def test_episodic_calls_maybe_dedup_after_embedding() -> None:
     mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.reflect._get_embedding", return_value=fake_embedding), patch(
-        "app.qortia.reflect.get_main_pool", return_value=mock_pool
-    ), patch("app.qortia.links._find_similar_memories", return_value=[]), patch(
-        "app.qortia.links._upsert_memory_links"
-    ), patch("app.qortia.reflect._maybe_dedup_memory") as mock_dedup:
+    with (
+        patch("app.qortia.reflect._get_embedding", return_value=fake_embedding),
+        patch("app.qortia.reflect.get_main_pool", return_value=mock_pool),
+        patch("app.qortia.links._find_similar_memories", return_value=[]),
+        patch("app.qortia.links._upsert_memory_links"),
+        patch("app.qortia.reflect._maybe_dedup_memory") as mock_dedup,
+    ):
         await _embed_single_row(row, "fake-key")
         mock_dedup.assert_called_once()
 
@@ -185,11 +183,13 @@ async def test_decision_does_not_call_maybe_dedup() -> None:
     mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.reflect._get_embedding", return_value=fake_embedding), patch(
-        "app.qortia.reflect.get_main_pool", return_value=mock_pool
-    ), patch("app.qortia.links._find_similar_memories", return_value=[]), patch(
-        "app.qortia.links._upsert_memory_links"
-    ), patch("app.qortia.reflect._maybe_dedup_memory") as mock_dedup:
+    with (
+        patch("app.qortia.reflect._get_embedding", return_value=fake_embedding),
+        patch("app.qortia.reflect.get_main_pool", return_value=mock_pool),
+        patch("app.qortia.links._find_similar_memories", return_value=[]),
+        patch("app.qortia.links._upsert_memory_links"),
+        patch("app.qortia.reflect._maybe_dedup_memory") as mock_dedup,
+    ):
         await _embed_single_row(row, "fake-key")
         mock_dedup.assert_not_called()
 
@@ -200,9 +200,9 @@ async def test_decision_does_not_call_maybe_dedup() -> None:
 @pytest.mark.asyncio
 async def test_content_hash_dedup_returns_existing_id() -> None:
     """Same content within 24h returns existing id, no new insert."""
-    from app.qortia.remember import remember
-    from app.qortia.models import RememberRequest
     from app.auth.models import AgentIdentity
+    from app.qortia.models import RememberRequest
+    from app.qortia.remember import remember
 
     existing_id = uuid4()
     agent = AgentIdentity(
@@ -210,11 +210,7 @@ async def test_content_hash_dedup_returns_existing_id() -> None:
         tenant_id=uuid4(),
     )
     body = RememberRequest(
-        memories=[
-            MemoryItem(
-                type="episodic", content="this is a test episodic memory content"
-            )
-        ]
+        memories=[MemoryItem(type="episodic", content="this is a test episodic memory content")]
     )
 
     mock_conn = AsyncMock()
@@ -227,9 +223,11 @@ async def test_content_hash_dedup_returns_existing_id() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx), patch(
-        "app.qortia.remember.get_main_pool"
-    ), patch("app.qortia.remember.extract_entities_with_types", return_value=[]):
+    with (
+        patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx),
+        patch("app.qortia.remember.get_main_pool"),
+        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+    ):
         result = await remember(body, agent)
 
     assert str(existing_id) in result.ids
@@ -239,9 +237,9 @@ async def test_content_hash_dedup_returns_existing_id() -> None:
 @pytest.mark.asyncio
 async def test_content_hash_dedup_inserts_when_no_existing() -> None:
     """No existing hash → proceeds with insert."""
-    from app.qortia.remember import remember
-    from app.qortia.models import RememberRequest
     from app.auth.models import AgentIdentity
+    from app.qortia.models import RememberRequest
+    from app.qortia.remember import remember
 
     new_id = uuid4()
     agent = AgentIdentity(
@@ -249,11 +247,7 @@ async def test_content_hash_dedup_inserts_when_no_existing() -> None:
         tenant_id=uuid4(),
     )
     body = RememberRequest(
-        memories=[
-            MemoryItem(
-                type="episodic", content="this is a unique episodic memory content"
-            )
-        ]
+        memories=[MemoryItem(type="episodic", content="this is a unique episodic memory content")]
     )
 
     mock_conn = AsyncMock()
@@ -266,9 +260,11 @@ async def test_content_hash_dedup_inserts_when_no_existing() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx), patch(
-        "app.qortia.remember.get_main_pool"
-    ), patch("app.qortia.remember.extract_entities_with_types", return_value=[]):
+    with (
+        patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx),
+        patch("app.qortia.remember.get_main_pool"),
+        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+    ):
         result = await remember(body, agent)
 
     assert str(new_id) in result.ids

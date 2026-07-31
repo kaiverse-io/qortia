@@ -3,17 +3,16 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+from typing import Any, Literal
 from uuid import UUID
 
-from typing import Literal, Any
-from fastapi import APIRouter, HTTPException
-
 from app.auth.models import AgentIdentity
-from app.qortia.knowledge import extract_entities_with_types
-from app.db import get_main_pool
-from app.vault import provision_eval_litellm_key
-from pydantic import BaseModel
 from app.config import settings
+from app.db import get_main_pool
+from app.qortia.knowledge import extract_entities_with_types
+from app.vault import provision_eval_litellm_key
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router: APIRouter = APIRouter(prefix="/v1/internal/eval")
@@ -26,7 +25,7 @@ def _parse_dt(s: str | None) -> datetime.datetime | None:
     try:
         dt = datetime.datetime.fromisoformat(s)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=datetime.timezone.utc)
+            dt = dt.replace(tzinfo=datetime.UTC)
         return dt
     except ValueError:
         return None
@@ -141,8 +140,8 @@ async def eval_recall(
     if not settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    from app.qortia.recall import recall
     from app.qortia.models import RecallRequest
+    from app.qortia.recall import recall
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     body = RecallRequest(query=query, scope=scope)
@@ -152,7 +151,7 @@ async def eval_recall(
 
 @router.post("/recall-full")
 async def eval_recall_full(
-    body: "RecallRequestFull",
+    body: RecallRequestFull,
     tenant_id: UUID,
     agent_id: UUID,
 ) -> dict[str, Any]:
@@ -164,8 +163,8 @@ async def eval_recall_full(
     if not settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    from app.qortia.recall import recall
     from app.qortia.models import RecallRequest
+    from app.qortia.recall import recall
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     req = RecallRequest(
@@ -203,7 +202,7 @@ async def eval_reflect(
 
 @router.post("/remember-org")
 async def eval_remember_org(
-    body: "RememberOrgRequestBody",
+    body: RememberOrgRequestBody,
     tenant_id: UUID,
     agent_id: UUID,
 ) -> dict[str, Any]:
@@ -211,8 +210,8 @@ async def eval_remember_org(
     if not settings.eval_mode:
         raise HTTPException(404, "Not found")
 
-    from app.qortia.remember import remember_org
     from app.qortia.models import RememberOrgRequest
+    from app.qortia.remember import remember_org
 
     agent = AgentIdentity(agent_id=agent_id, tenant_id=tenant_id)
     req = RememberOrgRequest(
@@ -284,7 +283,7 @@ class RememberOrgRequestBody(_BaseModel):
 
 @router.post("/knowledge")
 async def eval_ingest_knowledge(
-    body: "KnowledgeIngestBody",
+    body: KnowledgeIngestBody,
     tenant_id: UUID,
     agent_id: UUID,
 ) -> dict[str, Any]:

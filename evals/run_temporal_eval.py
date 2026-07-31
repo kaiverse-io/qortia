@@ -23,6 +23,7 @@ Usage:
 Runs both datasets. Exits 0 if all gates pass, 1 otherwise.
 Report: evals/results/teh_latest.json
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,7 +48,7 @@ DATASETS = [
 ]
 
 # Regression floors
-PASS_RATE_FLOOR = 0.50       # ≥50% of cases must pass (some semantic cases need warm embeddings)
+PASS_RATE_FLOOR = 0.50  # ≥50% of cases must pass (some semantic cases need warm embeddings)
 EXPIRED_EXCLUSION_FLOOR = 1.0  # expired memories must NEVER appear (100%) — hard gate
 
 
@@ -61,11 +62,11 @@ def _resolve_relative_date(value: str | None) -> str | None:
     value = value.strip()
     if value.startswith("-") and "day" in value:
         days = int(value.split()[0])
-        dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days)
+        dt = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=days)
         return dt.isoformat()
     if value.startswith("+") and "day" in value:
         days = int(value.split()[0])
-        dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days)
+        dt = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=days)
         return dt.isoformat()
     return value  # already an ISO string
 
@@ -125,9 +126,7 @@ async def _seed_temporal_org_memory(
 # ── Per-case runner ────────────────────────────────────────────────────────
 
 
-async def _run_case(
-    client: httpx.AsyncClient, case: dict[str, Any]
-) -> dict[str, Any]:
+async def _run_case(client: httpx.AsyncClient, case: dict[str, Any]) -> dict[str, Any]:
     tenant_id, agent_id = await provision_eval_agent(client)
 
     setup = case["setup"]
@@ -224,19 +223,21 @@ async def _run_case(
         "expired_leaked": expired_leaked,
         "expired_ids": list(expired_ids),
         "leaked_ids": list(expired_ids & top5_ids),
-        "reason": (
-            None if passed else
-            f"gt_in_top5={gt_in_top5} expired_leaked={expired_leaked}"
-        ),
+        "reason": (None if passed else f"gt_in_top5={gt_in_top5} expired_leaked={expired_leaked}"),
         "top3": [{"id": r["id"], "content": r["content"][:100]} for r in results[:3]],
     }
 
 
 def _failed(case_id: str, reason: str) -> dict[str, Any]:
     return {
-        "id": case_id, "pass": False, "gt_in_top5": False,
-        "expired_leaked": False, "expired_ids": [], "leaked_ids": [],
-        "reason": reason, "top3": [],
+        "id": case_id,
+        "pass": False,
+        "gt_in_top5": False,
+        "expired_leaked": False,
+        "expired_ids": [],
+        "leaked_ids": [],
+        "reason": reason,
+        "top3": [],
     }
 
 
@@ -270,15 +271,19 @@ async def run_teh() -> int:
                     print(f"         reason: {result['reason']}")
 
             pass_rate = sum(1 for r in dataset_results if r["pass"]) / len(dataset_results)
-            leak_rate = sum(1 for r in dataset_results if r["expired_leaked"]) / len(dataset_results)
-            dataset_summaries.append({
-                "dataset": dataset_path.name,
-                "cases": len(dataset_results),
-                "pass_rate": pass_rate,
-                "expired_leak_rate": leak_rate,
-                "pass_gate": pass_rate >= PASS_RATE_FLOOR,
-                "leak_gate": leak_rate == 0.0,
-            })
+            leak_rate = sum(1 for r in dataset_results if r["expired_leaked"]) / len(
+                dataset_results
+            )
+            dataset_summaries.append(
+                {
+                    "dataset": dataset_path.name,
+                    "cases": len(dataset_results),
+                    "pass_rate": pass_rate,
+                    "expired_leak_rate": leak_rate,
+                    "pass_gate": pass_rate >= PASS_RATE_FLOOR,
+                    "leak_gate": leak_rate == 0.0,
+                }
+            )
 
     # Print summary
     print(f"\n{'='*60}")

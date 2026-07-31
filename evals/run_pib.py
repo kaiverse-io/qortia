@@ -7,6 +7,7 @@ HNSW index overhead against a seeded corpus of synthetic memories.
 Usage:
     python3 evals/run_pib.py <platform_url> <tenant_id> <agent_id> [--corpus-size 100] [--iterations 10]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,7 +17,6 @@ import time
 from uuid import UUID
 
 import httpx
-
 
 # ── Synthetic corpus ────────────────────────────────────────────
 
@@ -125,6 +125,7 @@ async def _measure_embedding_throughput(
     wait_seconds: int = 15,
 ) -> dict[str, object]:
     """Query pending_embedding count, wait, then query again to derive throughput."""
+
     async def _pending_count() -> int:
         resp = await client.get(
             f"{platform_url}/v1/internal/eval/pending-embeddings",
@@ -240,9 +241,7 @@ async def run_pib(
         print(f"\n{'=' * 50}")
         print("PIB: Measuring recall latency")
         print("=" * 50)
-        latencies = await _measure_recall_latencies(
-            client, platform_url, tid, aid, iterations
-        )
+        latencies = await _measure_recall_latencies(client, platform_url, tid, aid, iterations)
         sorted_lat = sorted(latencies)
         avg = sum(latencies) / len(latencies) if latencies else 0.0
         p50 = _percentile(sorted_lat, 50)
@@ -253,18 +252,14 @@ async def run_pib(
         print(f"\n{'=' * 50}")
         print("PIB: Measuring embedding throughput")
         print("=" * 50)
-        emb_throughput = await _measure_embedding_throughput(
-            client, platform_url, tid, aid
-        )
+        emb_throughput = await _measure_embedding_throughput(client, platform_url, tid, aid)
 
         # 4. Cost per recall
         print(f"\n{'=' * 50}")
         print("PIB: Measuring cost per recall")
         print("=" * 50)
         recall_count = len(latencies)
-        cost = await _measure_cost_per_recall(
-            client, platform_url, tid, aid, recall_count
-        )
+        cost = await _measure_cost_per_recall(client, platform_url, tid, aid, recall_count)
 
         # 5. HNSW index overhead
         print(f"\n{'=' * 50}")
@@ -310,8 +305,15 @@ if __name__ == "__main__":
     parser.add_argument("platform_url", help="Platform base URL (e.g. http://localhost:8080)")
     parser.add_argument("tenant_id", type=UUID, help="Tenant UUID")
     parser.add_argument("agent_id", type=UUID, help="Agent UUID")
-    parser.add_argument("--iterations", type=int, default=10, help="Recall iterations (default: 10)")
-    parser.add_argument("--corpus-size", type=int, default=100, help="Synthetic memories to seed (default: 100, full: 1000)")
+    parser.add_argument(
+        "--iterations", type=int, default=10, help="Recall iterations (default: 10)"
+    )
+    parser.add_argument(
+        "--corpus-size",
+        type=int,
+        default=100,
+        help="Synthetic memories to seed (default: 100, full: 1000)",
+    )
 
     args = parser.parse_args()
     asyncio.run(

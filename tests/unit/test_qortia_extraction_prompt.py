@@ -7,12 +7,11 @@ Covers: temporal grounding, attribution instruction, negative-example checklist,
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
 from app.qortia.models import MemoryItem, RememberRequest
 from app.qortia.remember import (
     ATTRIBUTION_INSTRUCTION,
@@ -22,13 +21,12 @@ from app.qortia.remember import (
     build_temporal_grounding_instruction,
 )
 
-
 # ── Temporal grounding instruction ───────────────────────��──────
 
 
 class TestTemporalGroundingInstruction:
     def test_contains_reference_time(self) -> None:
-        ts = datetime(2026, 5, 20, 14, 30, tzinfo=timezone.utc)
+        ts = datetime(2026, 5, 20, 14, 30, tzinfo=UTC)
         result = build_temporal_grounding_instruction(ts)
         assert "2026-05-20 14:30 UTC" in result
 
@@ -72,10 +70,7 @@ class TestAttributionInstruction:
 
 class TestNegativeExtractionInstruction:
     def test_rejects_pronouns_without_antecedents(self) -> None:
-        assert (
-            "Pronouns or references without clear antecedents"
-            in NEGATIVE_EXTRACTION_INSTRUCTION
-        )
+        assert "Pronouns or references without clear antecedents" in NEGATIVE_EXTRACTION_INSTRUCTION
 
     def test_rejects_abstract_concepts(self) -> None:
         assert "Abstract concepts without grounding" in NEGATIVE_EXTRACTION_INSTRUCTION
@@ -93,8 +88,7 @@ class TestNegativeExtractionInstruction:
 
     def test_rejects_task_instructions(self) -> None:
         assert (
-            "Task instructions that do not reveal a durable fact"
-            in NEGATIVE_EXTRACTION_INSTRUCTION
+            "Task instructions that do not reveal a durable fact" in NEGATIVE_EXTRACTION_INSTRUCTION
         )
 
     def test_rejects_generic_action_nouns(self) -> None:
@@ -106,7 +100,7 @@ class TestNegativeExtractionInstruction:
 
 class TestBuildExtractionPrompt:
     def test_episodic_includes_all_three_sections(self) -> None:
-        ts = datetime(2026, 5, 20, 10, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 5, 20, 10, 0, tzinfo=UTC)
         result = build_extraction_prompt("episodic", reference_time=ts)
         assert "2026-05-20 10:00 UTC" in result
         assert "[User]" in result
@@ -167,7 +161,7 @@ class TestExtractValidFrom:
         assert result.year == 2026
 
     def test_datetime_object_passes_through(self) -> None:
-        dt = datetime(2026, 3, 15, 9, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 3, 15, 9, 0, tzinfo=UTC)
         result = _extract_valid_from({"valid_from": dt})
         assert result is dt
 
@@ -229,9 +223,11 @@ async def test_remember_passes_valid_from_to_insert() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx), patch(
-        "app.qortia.remember.get_main_pool"
-    ), patch("app.qortia.remember.extract_entities_with_types", return_value=[]):
+    with (
+        patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx),
+        patch("app.qortia.remember.get_main_pool"),
+        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+    ):
         result = await remember(body, agent)
 
     assert str(new_id) in result.ids
@@ -279,9 +275,11 @@ async def test_remember_strips_valid_from_from_stored_metadata() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx), patch(
-        "app.qortia.remember.get_main_pool"
-    ), patch("app.qortia.remember.extract_entities_with_types", return_value=[]):
+    with (
+        patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx),
+        patch("app.qortia.remember.get_main_pool"),
+        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+    ):
         await remember(body, agent)
 
     # The 7th positional arg (index 7) in the INSERT is the metadata JSON
@@ -320,9 +318,11 @@ async def test_remember_without_valid_from_uses_db_default() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx), patch(
-        "app.qortia.remember.get_main_pool"
-    ), patch("app.qortia.remember.extract_entities_with_types", return_value=[]):
+    with (
+        patch("app.qortia.remember.tenant_transaction", return_value=mock_ctx),
+        patch("app.qortia.remember.get_main_pool"),
+        patch("app.qortia.remember.extract_entities_with_types", return_value=[]),
+    ):
         result = await remember(body, agent)
 
     assert str(new_id) in result.ids
