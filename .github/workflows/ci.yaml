@@ -35,3 +35,6 @@ jobs:
 
       - name: Docs
         run: just ci-docs
+
+      - name: Architecture coverage
+        run: just ci-arch

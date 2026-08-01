@@ -8,7 +8,7 @@ default:
 
 # ── CI gates (called by .github/workflows/ci.yaml) ───────────────────────────
 
-ci: ci-lint ci-test ci-docs
+ci: ci-lint ci-test ci-docs ci-arch
 
 ci-lint:
     uv run ruff check .
@@ -22,6 +22,48 @@ ci-test:
 # Advisory in v1 — install linkchecker to activate
 ci-docs:
     @echo "doc link-check: install linkchecker and replace this stub"
+
+# Architecture coverage: every top-level src/qortia/ component must have a
+# matching ARCHITECTURE.md section (see AGENTS.md "Architecture documentation"). Mechanical
+# presence check only — semantic accuracy is the /arch-review skill's job, not this gate's.
+ci-arch:
+    #!/usr/bin/env python3
+    import pathlib, re, sys
+
+    pkg_dir = pathlib.Path("src/qortia")
+    arch_doc = pathlib.Path("ARCHITECTURE.md")
+    excluded = {"__init__.py", "__pycache__", "py.typed"}
+
+    def normalize(name: str) -> str:
+        return re.sub(r"[-_\s]+", " ", name).strip().lower()
+
+    components = [
+        item.stem if item.suffix == ".py" else item.name
+        for item in sorted(pkg_dir.iterdir())
+        if item.name not in excluded and not item.name.startswith(".")
+        and (item.is_dir() or item.suffix == ".py")
+    ]
+
+    if not components:
+        print("Architecture coverage: no top-level components under src/qortia/ yet — nothing to check.")
+        sys.exit(0)
+
+    if not arch_doc.exists():
+        print(f"::error::ARCHITECTURE.md is missing but src/qortia/ has {len(components)} component(s): {', '.join(components)}", file=sys.stderr)
+        sys.exit(1)
+
+    headings = {
+        normalize(m.group(1))
+        for m in re.finditer(r"^#{2,3}\s+(.+)$", arch_doc.read_text(), re.MULTILINE)
+    }
+
+    missing = [c for c in components if normalize(c) not in headings]
+    if missing:
+        print("::error::ARCHITECTURE.md is missing a section for: " + ", ".join(missing), file=sys.stderr)
+        print("::error::Add a '## <Name>' section (purpose, dependencies, ASCII diagram if non-trivial) — see AGENTS.md.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Architecture coverage: all {len(components)} component(s) documented in ARCHITECTURE.md.")
 
 # ── Dev helpers ───────────────────────────────────────────────────────────────
 

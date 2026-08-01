@@ -14,6 +14,7 @@ Portable memory layer for AI agents
 ## Project structure
 
 ```
+ARCHITECTURE.md                  — component docs; just ci-arch enforces coverage (see below)
 src/qortia/   — application source (see import contracts in .importlinter)
 tests/                           — pytest suite
 prompts/                         — versioned prompt artifacts (never inline — see prompts/README.md)
@@ -38,12 +39,26 @@ docs/decisions/adrs/             — MADR decision records
 
 ## How to work here
 
-- `just ci` before every push — runs lint, type-check, import boundaries, tests, docs.
+- `just ci` before every push — runs lint, type-check, import boundaries, tests, docs, architecture coverage.
 - `just fmt` to auto-format (ruff format + ruff check --fix).
 - `just sync` after changing `pyproject.toml`.
 - Conventional commits enforced: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
 - All significant decisions → MADR ADR in `docs/decisions/adrs/` first.
 - Coverage ratchet: `fail_under` in `[tool.coverage.report]` — only ever increase it.
+
+## Architecture documentation
+
+Every top-level module or package directly under `src/qortia/` needs a
+matching `## <Name>` section in `ARCHITECTURE.md`: purpose, public interface, dependencies, and
+— if its internal flow isn't obvious from the name — a small ASCII/Unicode box diagram in a
+plain (untagged) fenced code block. Hand-drawn, not Mermaid: a diagram you redraw in the same PR
+as the code change, not a separate rendering step.
+
+- `just ci-arch` blocks CI if a component has no section — mechanical presence only.
+- It does **not** verify the content still matches the code. Run `/arch-review`
+  (`.agents/skills/arch-review/SKILL.md`) periodically, or after a PR that changes a documented
+  component's behavior, to catch drift the coverage check can't see.
+- Add the component's section in the **same PR** that adds the component — don't defer it.
 
 ## Agent-memory convention
 
