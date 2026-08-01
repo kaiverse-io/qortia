@@ -22,11 +22,11 @@ Metrics:
                              post-consolidation (higher = better synthesis)
 
 Usage:
-    cd platform
-    EVAL_MODE=true python3 evals/run_longitudinal_eval.py
+    QORTIA_EVAL_MODE=true python3 evals/run_longitudinal_eval.py
 
 Report: evals/results/leh_latest.json
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,14 +39,14 @@ import httpx
 
 from evals.dataset_loader import (
     EMBEDDING_WAIT_SECONDS,
-    PLATFORM_URL,
+    QORTIA_URL,
     provision_eval_agent,
 )
 
-CONSOLIDATION_RATE_FLOOR = 0.75    # ≥75% of scenarios produce consolidated memories
-RANK_IMPROVEMENT_FLOOR = 0.30      # ≥30% show rank improvement (leh-001 always passes;
-                                   # leh-002/003 need warm embedding environment)
-CONTEXT_HYGIENE_FLOOR = 0.30       # ≥30% of top-5 results should be consolidated type
+CONSOLIDATION_RATE_FLOOR = 0.75  # ≥75% of scenarios produce consolidated memories
+RANK_IMPROVEMENT_FLOOR = 0.30  # ≥30% show rank improvement (leh-001 always passes;
+# leh-002/003 need warm embedding environment)
+CONTEXT_HYGIENE_FLOOR = 0.30  # ≥30% of top-5 results should be consolidated type
 
 
 # ── Longitudinal scenarios ─────────────────────────────────────────────────
@@ -83,16 +83,25 @@ SCENARIOS: list[dict[str, Any]] = [
         "id": "leh-002",
         "name": "Deployment incident pattern synthesis",
         "episodic_batch": [
-            "Incident 2026-01-15: Redis OOM during peak traffic. Caused 12-minute outage. Added memory limits.",
-            "Incident 2026-02-03: Flyway migration timed out under load. Set statement_timeout=300s.",
-            "Incident 2026-02-28: Vault token expired during deploy. Pre-deploy token renewal added to runbook.",
-            "Incident 2026-03-10: Embedding worker stalled after 500 concurrent requests. Batch size reduced.",
-            "Incident 2026-03-22: Platform pod OOM-killed at 90% memory. Vertical pod autoscaler enabled.",
-            "Incident 2026-04-05: LiteLLM gateway returned 502 under 300+ requests/s. Rate limiter added.",
-            "Incident 2026-04-18: DB connection pool exhausted during traffic spike. Pool size increased.",
-            "Incident 2026-04-30: Pyroscope agent caused 15% CPU overhead in staging. Sampling rate reduced.",
+            "Incident 2026-01-15: Redis OOM during peak traffic. "
+            "Caused 12-minute outage. Added memory limits.",
+            "Incident 2026-02-03: Flyway migration timed out under load. "
+            "Set statement_timeout=300s.",
+            "Incident 2026-02-28: Vault token expired during deploy. "
+            "Pre-deploy token renewal added to runbook.",
+            "Incident 2026-03-10: Embedding worker stalled after 500 concurrent "
+            "requests. Batch size reduced.",
+            "Incident 2026-03-22: Platform pod OOM-killed at 90% memory. "
+            "Vertical pod autoscaler enabled.",
+            "Incident 2026-04-05: LiteLLM gateway returned 502 under 300+ "
+            "requests/s. Rate limiter added.",
+            "Incident 2026-04-18: DB connection pool exhausted during traffic "
+            "spike. Pool size increased.",
+            "Incident 2026-04-30: Pyroscope agent caused 15% CPU overhead in "
+            "staging. Sampling rate reduced.",
             "Incident 2026-05-12: JWT validation failed after secret rotation without app restart.",
-            "Incident 2026-05-20: Tenant isolation query missing WHERE clause caused data leak in test env.",
+            "Incident 2026-05-20: Tenant isolation query missing WHERE clause "
+            "caused data leak in test env.",
         ],
         "consolidated_memory": {
             "content": (
@@ -114,19 +123,24 @@ SCENARIOS: list[dict[str, Any]] = [
         "episodic_batch": [
             "Chose asyncpg over SQLAlchemy — sync model blocked event loop.",
             "Chose pgvector over Pinecone — no external dependency, RLS applies natively.",
-            "Chose LiteLLM over direct Anthropic client — model routing and cost tracking built in.",
+            "Chose LiteLLM over direct Anthropic client — "
+            "model routing and cost tracking built in.",
             "Chose FastAPI over Flask — native async support and Pydantic integration.",
             "Chose OpenBao over HashiCorp Vault — OSS license, drop-in compatible.",
-            "Chose BGE-M3 over text-embedding-3-large — multilingual, local deployment, no API cost.",
-            "Chose Flyway over Alembic — schema version control is simpler with SQL-first approach.",
+            "Chose BGE-M3 over text-embedding-3-large — "
+            "multilingual, local deployment, no API cost.",
+            "Chose Flyway over Alembic — "
+            "schema version control is simpler with SQL-first approach.",
             "Chose NDJSON for work order inbox — streaming-friendly, newline-delimited records.",
             "Chose spaCy for NER — deterministic, local, no LLM call for entity extraction.",
-            "Chose OTel SDK over direct Prometheus — unified traces, metrics, logs; collector handles routing.",
+            "Chose OTel SDK over direct Prometheus — "
+            "unified traces, metrics, logs; collector handles routing.",
         ],
         "consolidated_memory": {
             "content": (
-                "the platform architecture selection principles: "
-                "Always prefer local/self-hosted over SaaS (pgvector vs Pinecone, BGE-M3 vs OpenAI). "
+                "Architecture selection principles: "
+                "Always prefer local/self-hosted over SaaS "
+                "(pgvector vs Pinecone, BGE-M3 vs OpenAI). "
                 "Prefer async-native libraries (asyncpg, FastAPI). "
                 "Prefer OSS/compatible licenses (OpenBao, Flyway). "
                 "Prefer unified observability (OTel over Prometheus). "
@@ -143,9 +157,7 @@ SCENARIOS: list[dict[str, Any]] = [
 # ── Runner ────────────────────────────────────────────────────────────────
 
 
-async def _run_scenario(
-    client: httpx.AsyncClient, scenario: dict[str, Any]
-) -> dict[str, Any]:
+async def _run_scenario(client: httpx.AsyncClient, scenario: dict[str, Any]) -> dict[str, Any]:
     tenant_id, agent_id = await provision_eval_agent(client)
     query = scenario["recall_query"]
     params = {"tenant_id": tenant_id, "agent_id": agent_id}
@@ -155,8 +167,12 @@ async def _run_scenario(
     for content in scenario["episodic_batch"]:
         r = await client.post(
             "/v1/internal/eval/seed-memory",
-            json={"agent_id": agent_id, "tenant_id": tenant_id,
-                  "content": content, "mem_type": "episodic"},
+            json={
+                "agent_id": agent_id,
+                "tenant_id": tenant_id,
+                "content": content,
+                "mem_type": "episodic",
+            },
         )
         if r.status_code == 200:
             episodic_ids.append(r.json()["memory_id"])
@@ -179,9 +195,12 @@ async def _run_scenario(
     r = await client.post(
         "/v1/internal/eval/seed-memory",
         json={
-            "agent_id": agent_id, "tenant_id": tenant_id,
-            "content": con["content"], "mem_type": con["type"],
-            "importance": 0.85, "is_consolidated": True,
+            "agent_id": agent_id,
+            "tenant_id": tenant_id,
+            "content": con["content"],
+            "mem_type": con["type"],
+            "importance": 0.85,
+            "is_consolidated": True,
         },
     )
     consolidated_id = r.json()["memory_id"] if r.status_code == 200 else None
@@ -203,7 +222,8 @@ async def _run_scenario(
 
     consolidated_in_top5 = consolidated_id in post_ids[:5] if consolidated_id else False
     # rank_improved: consolidated memory appears in post-recall and wasn't there pre-consolidation
-    # Use ID-based check (type field varies by image version — old image returns "knowledge" for lesson)
+    # Use ID-based check (type field varies by image version —
+    # old image returns "knowledge" for lesson)
     pre_ids = [r["id"] for r in pre_results]
     consolidated_was_absent_pre = consolidated_id not in pre_ids if consolidated_id else True
     rank_improved = consolidated_in_top5 and consolidated_was_absent_pre
@@ -229,8 +249,12 @@ async def _run_scenario(
         "expected_terms_found": len(terms_found),
         "expected_terms_total": len(expected_terms),
         "reason": (
-            None if passed else
-            f"seeded={consolidated_seeded} in_top5={consolidated_in_top5} rank_improved={rank_improved}"
+            None
+            if passed
+            else (
+                f"seeded={consolidated_seeded} in_top5={consolidated_in_top5} "
+                f"rank_improved={rank_improved}"
+            )
         ),
     }
 
@@ -238,7 +262,7 @@ async def _run_scenario(
 async def run_leh() -> int:
     results: list[dict[str, Any]] = []
 
-    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=600.0) as client:
+    async with httpx.AsyncClient(base_url=QORTIA_URL, timeout=600.0) as client:
         print("=" * 60)
         print(f"LONGITUDINAL EVAL HARNESS — {len(SCENARIOS)} scenarios")
         print("=" * 60)
@@ -248,9 +272,11 @@ async def run_leh() -> int:
             result = await _run_scenario(client, scenario)
             results.append(result)
             status = "PASS" if result["pass"] else "FAIL"
-            print(f"  [{status}] in_top5={result['consolidated_in_top5']} "
-                  f"rank_improved={result['rank_improved']} "
-                  f"hygiene={result['hygiene_score']:.2f}")
+            print(
+                f"  [{status}] in_top5={result['consolidated_in_top5']} "
+                f"rank_improved={result['rank_improved']} "
+                f"hygiene={result['hygiene_score']:.2f}"
+            )
             if not result["pass"]:
                 print(f"         reason: {result['reason']}")
 

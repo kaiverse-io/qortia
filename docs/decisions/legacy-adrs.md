@@ -244,7 +244,7 @@ Reflection failures in `mcp_bridge.py` are swallowed to prevent crashing the age
 Without a structured log, failures accumulate invisibly — an agent that has stopped
 reflecting for days produces no signal. The platform-side 500 is logged server-side
 but cannot be correlated to a specific agent's reflection cadence without querying
-`auth.agents.reflection_counter` directly.
+`qortia_agents.reflection_counter` directly.
 
 Fix: emit `{event: reflection_failed, agent_id, tenant_id, error}` before the
 except block swallows the exception. Alertmanager threshold: >3 failures for the
@@ -1220,14 +1220,14 @@ layer. Both axes must pass for a row to be readable.
 
 **Axis 1 — Clearance level (hierarchical, inclusive):** Tenants define ordered levels.
 Higher order includes all lower. Platform seeds three defaults on tenant creation:
-`external=1`, `internal=2`, `restricted=3`. Stored in `tenant_clearance_levels`.
-Agent assignment in `auth.agents.clearance_level`. RLS compares integer orders via
+`external=1`, `internal=2`, `restricted=3`. Stored in `qortia_clearance_levels`.
+Agent assignment in `qortia_agents.clearance_level`. RLS compares integer orders via
 `app.memory_clearance_order` session variable.
 
 **Axis 2 — Division / audience (set membership):** Tenants define divisions. Memory
 rows carry `audience TEXT[]`. Agent must be in the audience or audience must include
 `all`. Platform seeds one default division (`all`). Stored in `tenant_divisions`.
-Agent assignment in `auth.agents.division`. RLS checks via `app.agent_division`
+Agent assignment in `qortia_agents.division`. RLS checks via `app.agent_division`
 session variable.
 
 **Combined access rule (enforced by RLS):**
@@ -1270,8 +1270,8 @@ layer.
 ## Consequences
 
 **Schema changes (V4 migration):**
-- New tables: `tenant_clearance_levels`, `tenant_divisions` (both RLS-enabled)
-- `auth.agents`: `clearance_level TEXT DEFAULT 'internal'`, `division TEXT DEFAULT 'all'`
+- New tables: `qortia_clearance_levels`, `tenant_divisions` (both RLS-enabled)
+- `qortia_agents`: `clearance_level TEXT DEFAULT 'internal'`, `division TEXT DEFAULT 'all'`
 - `org_memory`: `min_clearance TEXT DEFAULT 'internal'`, `audience TEXT[] DEFAULT '{all}'`
 - `org_knowledge`: same two columns
 - `qortia_entities`: `max_clearance_order INTEGER DEFAULT 2` (G8 side-channel fix)
@@ -1293,12 +1293,12 @@ layer.
 - `provisioning.py`: org_chart inserts hardcode `min_clearance='external'`, `audience='{all}'`
   (G9). `ProvisionAgentRequest` gains `clearance_level` and `division` fields.
 - `knowledge.py`: `KnowledgeIngestRequest` gains `min_clearance` and `audience` fields.
-- `audit_rls.py`: `tenant_clearance_levels` and `tenant_divisions` added to
+- `audit_rls.py`: `qortia_clearance_levels` and `tenant_divisions` added to
   `EXPECTED_RLS_TABLES`; `tenant_read` replaced by `tenant_visibility_read` for
   `org_memory` and `org_knowledge`.
 
 **Performance:** One JOIN query per Qortia request to resolve clearance order. Primary
-key lookup on `auth.agents` + index lookup on `tenant_clearance_levels`. ~0.5ms. Not
+key lookup on `qortia_agents` + index lookup on `qortia_clearance_levels`. ~0.5ms. Not
 cacheable in-process — clearance can change via tenant admin action without agent restart.
 
 **Known remaining gaps:** LLM inference leakage across clearance boundaries via work
@@ -1307,7 +1307,7 @@ tenants that do not configure divisions. These are architectural properties that
 be solved at the memory layer alone.
 
 **Deferred:** `platform/app/vault.py` public function for writing `clearance_level` and
-`division` to the agent's Vault path at provisioning time. Currently `auth.agents` is
+`division` to the agent's Vault path at provisioning time. Currently `qortia_agents` is
 the source of truth; agents do not yet read clearance from Vault at boot. Required
 before the MCP bridge can include `X-Agent-Clearance` / `X-Agent-Division` headers
 without a DB lookup on every request.

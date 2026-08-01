@@ -12,7 +12,7 @@ from typing import Any, cast
 
 import httpx
 
-PLATFORM_URL = "http://localhost:8080"
+QORTIA_URL = "http://localhost:8080"
 EMBEDDING_WAIT_SECONDS = 15  # embedding worker runs every 10s; 15s gives one full cycle
 
 

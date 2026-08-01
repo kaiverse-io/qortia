@@ -18,13 +18,12 @@ Human-scored metrics (annotate in output report):
   Hallucination Rate  — % steps claiming a memory not present in Qortia
 
 Prerequisites:
-  - Full stack running (just up)
-  - EVAL_MODE=true
+  - qortia.app running (e.g. `uvicorn qortia.app:app`) against a live Postgres+pgvector
+  - QORTIA_EVAL_MODE=true
   - LiteLLM gateway reachable (required by Task B reflect call)
 
 Usage:
-    cd platform
-    EVAL_MODE=true python3 evals/run_alb.py
+    QORTIA_EVAL_MODE=true python3 evals/run_alb.py
 
 Report: evals/results/alb_latest.json
 """
@@ -41,8 +40,7 @@ import httpx
 
 from evals.dataset_loader import (
     EMBEDDING_WAIT_SECONDS,
-    PLATFORM_URL,
-    _agent_headers,
+    QORTIA_URL,
     provision_eval_agent,
 )
 
@@ -51,7 +49,9 @@ REFLECT_WAIT_SECONDS = 30
 
 # ── Task A seed data ───────────────────────────────────────────────────────────
 
-_TASK_A_OLDER = "The primary button color was set to red during the initial design review on Monday."
+_TASK_A_OLDER = (
+    "The primary button color was set to red during the initial design review on Monday."
+)
 _TASK_A_NEWER = (
     "Updated the primary button color to blue following user testing feedback on Tuesday. "
     "This supersedes the Monday red decision."
@@ -101,7 +101,7 @@ _TASK_C_QUERY = "Project Orion owner weekly status"
 async def run_alb() -> int:
     results: list[dict[str, Any]] = []
 
-    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=120.0) as client:
+    async with httpx.AsyncClient(base_url=QORTIA_URL, timeout=120.0) as client:
         print("Task A — Temporal recency ...")
         results.append(await _run_task_a(client))
 
@@ -122,7 +122,6 @@ async def run_alb() -> int:
 
 async def _run_task_a(client: httpx.AsyncClient) -> dict[str, Any]:
     tenant_id, agent_id = await provision_eval_agent(client)
-    headers = _agent_headers(agent_id, tenant_id)
 
     # Seed older memory first (lower created_at)
     resp = await client.post(
@@ -174,9 +173,7 @@ async def _run_task_a(client: httpx.AsyncClient) -> dict[str, Any]:
     newer_rank = result_ids.index(newer_id) if newer_id in result_ids else None
     older_rank = result_ids.index(older_id) if older_id in result_ids else None
 
-    auto_pass = (
-        newer_rank is not None and older_rank is not None and newer_rank < older_rank
-    )
+    auto_pass = newer_rank is not None and older_rank is not None and newer_rank < older_rank
 
     return {
         "task": "A",
@@ -184,9 +181,7 @@ async def _run_task_a(client: httpx.AsyncClient) -> dict[str, Any]:
         "auto_pass": auto_pass,
         "newer_rank": newer_rank,
         "older_rank": older_rank,
-        "reason": None
-        if auto_pass
-        else f"newer_rank={newer_rank} older_rank={older_rank}",
+        "reason": None if auto_pass else f"newer_rank={newer_rank} older_rank={older_rank}",
         "recalled": _summarise_results(results, 5),
         "human_scoring": {"memory_utilization": None, "hallucination_rate": None},
     }
@@ -244,9 +239,7 @@ async def _run_task_b(client: httpx.AsyncClient) -> dict[str, Any]:
         params={"tenant_id": tenant_id, "agent_id": agent_id},
     )
     if resp.status_code != 200:
-        return _failed(
-            "B", "Reflection consolidation", f"recall HTTP {resp.status_code}"
-        )
+        return _failed("B", "Reflection consolidation", f"recall HTTP {resp.status_code}")
 
     results = resp.json().get("results", [])
     result_ids = [r["id"] for r in results]
@@ -266,7 +259,10 @@ async def _run_task_b(client: httpx.AsyncClient) -> dict[str, Any]:
         "reason": (
             None
             if auto_pass
-            else f"consolidated_in_top5={consolidated_in_top5}, types={len(consolidated)}/{len(results)}"
+            else (
+                f"consolidated_in_top5={consolidated_in_top5}, "
+                f"types={len(consolidated)}/{len(results)}"
+            )
         ),
         "recalled": _summarise_results(results, 5),
         "human_scoring": {"memory_utilization": None, "hallucination_rate": None},
@@ -278,7 +274,6 @@ async def _run_task_b(client: httpx.AsyncClient) -> dict[str, Any]:
 
 async def _run_task_c(client: httpx.AsyncClient) -> dict[str, Any]:
     tenant_id, agent_id = await provision_eval_agent(client)
-    headers = _agent_headers(agent_id, tenant_id)
 
     # Seed org handoff via eval endpoint (no JWT required)
     resp = await client.post(
@@ -373,9 +368,7 @@ def _print_summary(results: list[dict[str, Any]]) -> None:
     for r in results:
         status = "PASS" if r["auto_pass"] else "FAIL"
         if r["task"] == "A" and r["auto_pass"]:
-            details = (
-                f"newer_rank={r.get('newer_rank')} older_rank={r.get('older_rank')}"
-            )
+            details = f"newer_rank={r.get('newer_rank')} older_rank={r.get('older_rank')}"
         elif r["task"] == "B" and r["auto_pass"]:
             details = (
                 f"consolidated_in_top5=True "

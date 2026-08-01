@@ -83,7 +83,7 @@ async def _llm_rerank(
 ```
 
 The `domain_md` fetch inside `_llm_rerank` is removed entirely. The function no
-longer needs a DB round-trip to `auth.agents` — it only needs the LiteLLM key.
+longer needs a DB round-trip to `qortia_agents` — it only needs the LiteLLM key.
 
 ---
 
@@ -96,7 +96,7 @@ longer needs a DB round-trip to `auth.agents` — it only needs the LiteLLM key.
   using that model for reranking. After this change they use `settings.rerank_model`.
   This is a deliberate trade-off: platform consistency over per-agent model
   inheritance. The operator can set `rerank_model` to a stronger model if needed.
-- Removes one DB query per rerank call (the `auth.agents` fetch for `domain_md`).
+- Removes one DB query per rerank call (the `qortia_agents` fetch for `domain_md`).
   Minor latency improvement.
 - No schema change. No migration. No API contract change.
 

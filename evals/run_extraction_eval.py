@@ -20,11 +20,11 @@ Gold labels are hand-curated: each input has a list of expected_facts
 expected_types (acceptable memory types for each fact).
 
 Usage:
-    cd platform
-    EVAL_MODE=true python3 evals/run_extraction_eval.py
+    QORTIA_EVAL_MODE=true python3 evals/run_extraction_eval.py
 
 Report: evals/results/eqe_latest.json
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,13 +37,13 @@ import httpx
 
 from evals.dataset_loader import (
     EMBEDDING_WAIT_SECONDS,
-    PLATFORM_URL,
+    QORTIA_URL,
     provision_eval_agent,
 )
 
-EXTRACTION_FLOOR_RECALL = 0.70     # ≥70% of expected facts extracted
+EXTRACTION_FLOOR_RECALL = 0.70  # ≥70% of expected facts extracted
 EXTRACTION_FLOOR_PRECISION = 0.75  # ≥75% of extracted memories are non-noise
-NOISE_REJECTION_FLOOR = 0.80       # ≥80% of noise inputs produce 0 high-signal memories
+NOISE_REJECTION_FLOOR = 0.80  # ≥80% of noise inputs produce 0 high-signal memories
 
 
 # ── Gold evaluation cases ──────────────────────────────────────────────────
@@ -136,7 +136,8 @@ EXTRACTION_CASES: list[dict[str, Any]] = [
                     "content": (
                         "Bob and Alice agreed to use BGE-M3 as the embedding model for "
                         "Qortia. Compared against text-embedding-3-large and bge-large-en-v1.5. "
-                        "BGE-M3 wins on multilingual support and 1024-dim vectors. Hosted via LiteLLM."
+                        "BGE-M3 wins on multilingual support and 1024-dim vectors. "
+                        "Hosted via LiteLLM."
                     ),
                 }
             ]
@@ -155,7 +156,7 @@ EXTRACTION_CASES: list[dict[str, Any]] = [
                     "title": "AuthService ownership transfer",
                     "content": (
                         "AuthService is now owned by the Platform team (was: Security team). "
-                        "Primary contact: diana@the platform.internal. "
+                        "Primary contact: diana@example.internal. "
                         "All OIDC and JWKS changes require Platform team approval. "
                         "Next planned work: multi-tenant token issuance (Q3 2026)."
                     ),
@@ -233,15 +234,24 @@ EXTRACTION_CASES: list[dict[str, Any]] = [
             "memories": [
                 {
                     "type": "decision",
-                    "content": "Decided to enable Pyroscope profiling in all production services. CPU flame graphs revealed 40% time in JSON serialization.",
+                    "content": (
+                        "Decided to enable Pyroscope profiling in all production services. "
+                        "CPU flame graphs revealed 40% time in JSON serialization."
+                    ),
                 },
                 {
                     "type": "lesson",
-                    "content": "Never commit Vault tokens to git. One leaked token caused a 2-hour incident requiring full rotation of all secrets.",
+                    "content": (
+                        "Never commit Vault tokens to git. One leaked token caused a 2-hour "
+                        "incident requiring full rotation of all secrets."
+                    ),
                 },
                 {
                     "type": "episodic",
-                    "content": "Completed ADR-125 causal tracking implementation. All unit tests green. Ready for staging.",
+                    "content": (
+                        "Completed ADR-125 causal tracking implementation. "
+                        "All unit tests green. Ready for staging."
+                    ),
                 },
             ]
         },
@@ -255,11 +265,8 @@ EXTRACTION_CASES: list[dict[str, Any]] = [
 # ── Eval runner ────────────────────────────────────────────────────────────
 
 
-async def _run_extraction_case(
-    client: httpx.AsyncClient, case: dict[str, Any]
-) -> dict[str, Any]:
+async def _run_extraction_case(client: httpx.AsyncClient, case: dict[str, Any]) -> dict[str, Any]:
     tenant_id, agent_id = await provision_eval_agent(client)
-    headers = {"X-Agent-ID": agent_id, "X-Tenant-ID": tenant_id}
     inp = case["input"]
 
     seeded_memory_ids: list[str] = []
@@ -310,7 +317,9 @@ async def _run_extraction_case(
             "is_noise": True,
             "high_signal_memories": len(high_signal),
             "total_results": len(results),
-            "reason": None if noise_rejected else f"{len(high_signal)} high-signal memories from noise input",
+            "reason": None
+            if noise_rejected
+            else f"{len(high_signal)} high-signal memories from noise input",
         }
 
     # For signal cases: recall and check expected facts appear
@@ -324,8 +333,11 @@ async def _run_extraction_case(
     )
     if resp.status_code != 200:
         return {
-            "id": case["id"], "pass": False, "is_noise": False,
-            "facts_found": [], "facts_missing": case["expected_facts"],
+            "id": case["id"],
+            "pass": False,
+            "is_noise": False,
+            "facts_found": [],
+            "facts_missing": case["expected_facts"],
             "reason": f"recall HTTP {resp.status_code}",
         }
 
@@ -354,7 +366,7 @@ async def _run_extraction_case(
 async def run_eqe() -> int:
     results: list[dict[str, Any]] = []
 
-    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=QORTIA_URL, timeout=60.0) as client:
         print("=" * 60)
         print(f"EXTRACTION QUALITY EVAL — {len(EXTRACTION_CASES)} cases")
         print("=" * 60)
@@ -375,8 +387,8 @@ async def run_eqe() -> int:
 
     signal_pass_rate = sum(1 for r in signal_cases if r["pass"]) / max(len(signal_cases), 1)
     noise_rejection_rate = sum(1 for r in noise_cases if r["pass"]) / max(len(noise_cases), 1)
-    avg_extraction_recall = (
-        sum(r.get("extraction_recall", 0.0) for r in signal_cases) / max(len(signal_cases), 1)
+    avg_extraction_recall = sum(r.get("extraction_recall", 0.0) for r in signal_cases) / max(
+        len(signal_cases), 1
     )
 
     overall_pass = (

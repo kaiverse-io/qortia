@@ -1,11 +1,12 @@
 """
-Infrastructure Performance Benchmark (PIB) for the the platform recall pipeline.
+Infrastructure Performance Benchmark (PIB) for the Qortia recall pipeline.
 
 Measures latency percentiles, embedding throughput, cost-per-recall, and
 HNSW index overhead against a seeded corpus of synthetic memories.
 
 Usage:
-    python3 evals/run_pib.py <platform_url> <tenant_id> <agent_id> [--corpus-size 100] [--iterations 10]
+    python3 evals/run_pib.py <qortia_url> <tenant_id> <agent_id> \
+        [--corpus-size 100] [--iterations 10]
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ def _generate_synthetic_memories(count: int) -> list[dict[str, object]]:
                 "content": (
                     f"Synthetic memory #{i}: this is a benchmark memory used for "
                     f"PIB infrastructure performance testing of recall latency and "
-                    f"embedding throughput for the the platform qortia pipeline agent"
+                    f"embedding throughput for the Qortia recall pipeline"
                 ),
             }
         )
@@ -300,7 +301,7 @@ async def run_pib(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="the platform Infrastructure Performance Benchmark (PIB)"
+        description="Qortia Infrastructure Performance Benchmark (PIB)"
     )
     parser.add_argument("platform_url", help="Platform base URL (e.g. http://localhost:8080)")
     parser.add_argument("tenant_id", type=UUID, help="Tenant UUID")

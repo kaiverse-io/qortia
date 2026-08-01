@@ -82,7 +82,7 @@ async def _trigger_pending_reflections() -> None:
             agents = await conn.fetch(
                 """
                 SELECT id, tenant_id
-                FROM auth.agents
+                FROM qortia_agents
                 WHERE status = 'active'
                   AND reflection_counter >= $1
                   AND (
@@ -132,8 +132,8 @@ start_supervised_tasks([
 
 ### 2.3 Idle Detection Logic
 
-The `updated_at` column on `auth.agents` is bumped on every `reflect()` call
-(via `UPDATE auth.agents SET reflection_counter = ..., updated_at = now()`).
+The `updated_at` column on `qortia_agents` is bumped on every `reflect()` call
+(via `UPDATE qortia_agents SET reflection_counter = ..., updated_at = now()`).
 This makes it a reliable proxy for "last reflected at" without adding a new column.
 
 The condition `updated_at < now() - interval '1 hour' * REFLECTION_IDLE_HOURS`
@@ -148,7 +148,7 @@ increases LiteLLM cost. 24 hours is the minimum meaningful interval.
 ### 2.4 Tenant Isolation
 
 The query uses `get_main_pool().acquire()` (not `tenant_transaction`) because it
-reads from `auth.agents` — an `auth.*` table that is explicitly excluded from RLS
+reads from `qortia_agents` — an `auth.*` table that is explicitly excluded from RLS
 (per `agent-maintenance-rule.md` Invariant #4). The subsequent `reflect()` call
 uses `tenant_transaction` internally, which enforces tenant isolation at the
 memory write level.
@@ -215,7 +215,7 @@ that are `inactive`, `provisioning`, or `error` are skipped. This is correct: ca
 `reflect()` for an inactive agent would fail `assert_agent_active`.
 
 **`updated_at` as a proxy for last-reflected-at.** `updated_at` is bumped by any
-`auth.agents` write, not just reflection. An agent that was updated for a different
+`qortia_agents` write, not just reflection. An agent that was updated for a different
 reason (e.g. a status change) within the idle window will not be triggered even if
 it hasn't reflected. This is acceptable — the false-negative rate is low and the
 consequence is a delayed reflection, not a missed one.

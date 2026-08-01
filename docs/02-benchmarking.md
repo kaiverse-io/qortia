@@ -311,10 +311,10 @@ Expired memories no longer surface in any recall path:
 
 ### Clearance NULL-Safety (correctness fix)
 
-Eval tenants (and any tenant with no rows in `tenant_clearance_levels`) previously received
+Eval tenants (and any tenant with no rows in `qortia_clearance_levels`) previously received
 zero recall results from all org and knowledge paths. The clearance subquery `$3 >= (SELECT level_order ...)` evaluates to NULL when the subquery returns no rows — NULL is not TRUE.
 
-Fixed by adding `OR NOT EXISTS (SELECT 1 FROM tenant_clearance_levels WHERE tenant_id = ...)` 
+Fixed by adding `OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels WHERE tenant_id = ...)` 
 to all 4 affected queries: `_bm25_org`, `_vector_org`, `_bm25_knowledge`, `_vector_knowledge`.
 
 ### Eval Infrastructure — Internal Eval Router (`eval_router.py`)
@@ -422,7 +422,7 @@ All 6 harnesses verified on live Docker stack (commit `f3ca394`).
 
 1. `valid_until` not filtered in any of the 10 recall paths → expired facts leaked (all paths now filtered)
 2. `valid_until` missing from `org_memory` entirely → V28 migration added, filter applied
-3. Clearance subquery returned NULL (not TRUE) for eval tenants with no `tenant_clearance_levels` rows → `OR NOT EXISTS` guard added to all 4 org/knowledge paths
+3. Clearance subquery returned NULL (not TRUE) for eval tenants with no `qortia_clearance_levels` rows → `OR NOT EXISTS` guard added to all 4 org/knowledge paths
 4. `_expand_with_links` fetched linked memories without `valid_until` filter → primary expired-fact leak path closed
 5. `_parse_dt` nested inside eval endpoint function → NameError when called from sibling function (moved to module level)
 6. `valid_until` filter applied to `org_knowledge` which has no such column → SQL error on reh-036/041 (removed)

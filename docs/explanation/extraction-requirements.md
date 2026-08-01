@@ -23,7 +23,7 @@ is the regression safety net for everything below.
 ## What required rebuilding, and why
 
 **Auth / tenancy.** Every recall/remember/reflect/knowledge call inline-joined the host
-platform's own `agents`/`tenants`/`tenant_clearance_levels`/`tenant_divisions` tables,
+platform's own `agents`/`tenants`/`qortia_clearance_levels`/`tenant_divisions` tables,
 and every router endpoint depended on the host's JWT/JWKS verification middleware. None
 of this was behind an interface — it was direct SQL and direct dependency injection
 against tables this package doesn't own. Qortia needed its own minimal identity + RBAC

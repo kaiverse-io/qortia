@@ -5,10 +5,9 @@ Measures recall.py pipeline in isolation. Outputs Recall@5, Recall@10, MRR, and
 Semantic Drift gap. Exits 0 if regression floors are met, 1 otherwise.
 
 Usage:
-    cd platform
-    EVAL_MODE=true python3 evals/run_reh.py [--dataset evals/datasets/recall_v1.json]
+    QORTIA_EVAL_MODE=true python3 evals/run_reh.py [--dataset evals/datasets/recall_v1.json]
 
-North star targets (docs/platform/05-memory-benchmarking.md §2.2):
+North star targets (docs/02-benchmarking.md §2.2):
     Recall@5            > 0.85
     Recall@10           > 0.95
     MRR                 > 0.75
@@ -31,7 +30,7 @@ import httpx
 
 from evals.dataset_loader import (
     EMBEDDING_WAIT_SECONDS,
-    PLATFORM_URL,
+    QORTIA_URL,
     load_dataset,
     provision_eval_agent,
     seed_case,
@@ -54,7 +53,7 @@ async def run_reh(dataset_path: Path) -> int:
     cases = load_dataset(dataset_path)
     case_results: list[dict[str, Any]] = []
 
-    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=QORTIA_URL, timeout=60.0) as client:
         for case in cases:
             result = await _run_reh_case(client, case)
             case_results.append(result)
@@ -78,7 +77,7 @@ async def run_reh(dataset_path: Path) -> int:
     # Token efficiency: avg tokens retrieved per query (Mem0 target: <7k)
     token_counts = [r.get("tokens_retrieved", 0) for r in case_results if r.get("tokens_retrieved")]
     avg_tokens = sum(token_counts) / len(token_counts) if token_counts else 0.0
-    TOKEN_TARGET = 7000.0
+    token_target = 7000.0
 
     print(f"\n{'Metric':<25} {'Score':>8}  {'Target':>8}  Status")
     print("-" * 55)
@@ -88,8 +87,8 @@ async def run_reh(dataset_path: Path) -> int:
     _print_metric("Semantic Drift gap", avg_drift, SEMANTIC_DRIFT_TARGET)
     if avg_tokens > 0:
         print(
-            f"  {'Avg tokens retrieved':<23} {avg_tokens:>8.0f}  {TOKEN_TARGET:>8.0f}  "
-            f"{'✓' if avg_tokens <= TOKEN_TARGET else '✗'}"
+            f"  {'Avg tokens retrieved':<23} {avg_tokens:>8.0f}  {token_target:>8.0f}  "
+            f"{'✓' if avg_tokens <= token_target else '✗'}"
         )
 
     report = {
@@ -115,6 +114,71 @@ def _print_metric(name: str, score: float, target: float) -> None:
     print(f"  {name:<23} {score:>8.3f}  {target:>8.3f}  {status}")
 
 
+def _resolve_ground_truth(
+    case: dict[str, Any], id_map: dict[int, str], org_id_map: dict[int, str]
+) -> tuple[str | None, str | None]:
+    """Returns (ground_truth_id, ground_truth_content) — content is only set
+    for knowledge-sourced cases, resolved to an ID later via fingerprint match."""
+    idx = case.get("ground_truth_index", 0)
+    source = case.get("ground_truth_source", "memories")
+    if source == "org_memories":
+        return org_id_map.get(idx), None
+    if source == "knowledge":
+        know_items = case["setup"].get("knowledge", [])
+        content = know_items[idx].get("content", "") if idx < len(know_items) else None
+        return None, content
+    return id_map.get(idx), None
+
+
+def _resolve_knowledge_ground_truth_id(
+    ground_truth_content: str, result_ids: list[str], result_contents: list[str]
+) -> str | None:
+    """Find ground truth by source_path + chunk_index=0 fingerprint match."""
+    from qortia.knowledge import split_into_sections
+
+    sections = split_into_sections(ground_truth_content)
+    fingerprint = (
+        sections[0]["text"][:40].lower() if sections else ground_truth_content[:40].lower()
+    )
+    for i, content in enumerate(result_contents):
+        if fingerprint in content.lower():
+            return result_ids[i]
+    return None
+
+
+def _compute_semantic_drift_gap(
+    ground_truth_id: str | None,
+    result_ids: list[str],
+    id_map: dict[int, str],
+    hard_negative_count: int,
+) -> float | None:
+    """Rank gap between ground truth and best hard negative."""
+    if not ground_truth_id or hard_negative_count == 0 or ground_truth_id not in result_ids:
+        return None
+    gt_ids = set(id_map.values())
+    hard_negative_result_ids = [
+        rid for rid in result_ids if rid not in gt_ids and rid != ground_truth_id
+    ]
+    hn_ranks = [result_ids.index(hid) for hid in hard_negative_result_ids if hid in result_ids]
+    if not hn_ranks:
+        return None
+    gt_rank = result_ids.index(ground_truth_id)
+    best_hn_rank = min(hn_ranks)
+    return (best_hn_rank - gt_rank) / max(len(result_ids), 1)
+
+
+def _case_meets_expectations(passed: bool, case: dict[str, Any], results: list[dict]) -> bool:  # type: ignore[type-arg]
+    expected = case.get("expected", {})
+    if passed and expected.get("must_contain_in_top_result"):
+        top_content = results[0]["content"] if results else ""
+        for phrase in expected["must_contain_in_top_result"]:
+            if phrase.lower() not in top_content.lower():
+                return False
+    if passed and expected.get("min_results") and len(results) < expected["min_results"]:
+        return False
+    return passed
+
+
 async def _run_reh_case(
     client: httpx.AsyncClient,
     case: dict[str, Any],
@@ -125,25 +189,11 @@ async def _run_reh_case(
     await seed_knowledge(client, case, tenant_id, agent_id)
     await asyncio.sleep(EMBEDDING_WAIT_SECONDS)
 
-    ground_truth_idx = case.get("ground_truth_index", 0)
-    ground_truth_source = case.get("ground_truth_source", "memories")
+    ground_truth_id, ground_truth_content = _resolve_ground_truth(case, id_map, org_id_map)
 
-    # Resolve ground truth ID based on source
-    ground_truth_id: str | None = None
-    ground_truth_content: str | None = None
-    if ground_truth_source == "org_memories":
-        ground_truth_id = org_id_map.get(ground_truth_idx)
-    elif ground_truth_source == "knowledge":
-        know_items = case["setup"].get("knowledge", [])
-        if ground_truth_idx < len(know_items):
-            ground_truth_content = know_items[ground_truth_idx].get("content", "")
-    else:
-        ground_truth_id = id_map.get(ground_truth_idx)
-
-    query_body = case["query"]
     resp = await client.post(
         "/v1/internal/eval/recall-full",
-        json=query_body,
+        json=case["query"],
         params={"tenant_id": tenant_id, "agent_id": agent_id},
     )
     if resp.status_code != 200:
@@ -153,18 +203,10 @@ async def _run_reh_case(
     result_ids = [r["id"] for r in results]
     result_contents = [r["content"] for r in results]
 
-    # For knowledge cases: find ground truth by source_path + chunk_index=0
-    if ground_truth_source == "knowledge" and ground_truth_content:
-        from app.qortia.knowledge import split_into_sections
-
-        sections = split_into_sections(ground_truth_content)
-        fingerprint = (
-            sections[0]["text"][:40].lower() if sections else ground_truth_content[:40].lower()
+    if case.get("ground_truth_source") == "knowledge" and ground_truth_content:
+        ground_truth_id = _resolve_knowledge_ground_truth_id(
+            ground_truth_content, result_ids, result_contents
         )
-        for i, content in enumerate(result_contents):
-            if fingerprint in content.lower():
-                ground_truth_id = result_ids[i]
-                break
 
     recall_at_5 = bool(ground_truth_id and ground_truth_id in result_ids[:5])
     recall_at_10 = bool(ground_truth_id and ground_truth_id in result_ids[:10])
@@ -173,38 +215,12 @@ async def _run_reh_case(
     if ground_truth_id and ground_truth_id in result_ids:
         mrr = 1.0 / (result_ids.index(ground_truth_id) + 1)
 
-    # Semantic Drift: rank gap between ground truth and best hard negative
-    setup = case["setup"]
-    hard_negative_count = len(setup.get("hard_negatives", []))
-    gt_ids = set(id_map.values())
-    hard_negative_result_ids = [rid for rid in result_ids if rid not in gt_ids]
-    if ground_truth_id:
-        hard_negative_result_ids = [
-            rid for rid in hard_negative_result_ids if rid != ground_truth_id
-        ]
+    hard_negative_count = len(case["setup"].get("hard_negatives", []))
+    semantic_drift_gap = _compute_semantic_drift_gap(
+        ground_truth_id, result_ids, id_map, hard_negative_count
+    )
 
-    semantic_drift_gap = None
-    if ground_truth_id and hard_negative_count > 0 and ground_truth_id in result_ids:
-        gt_rank = result_ids.index(ground_truth_id)
-        hn_ranks = [result_ids.index(hid) for hid in hard_negative_result_ids if hid in result_ids]
-        if hn_ranks:
-            best_hn_rank = min(hn_ranks)
-            semantic_drift_gap = (best_hn_rank - gt_rank) / max(len(result_ids), 1)
-
-    passed = recall_at_5
-
-    # Check must_contain_in_top_result
-    if passed and case.get("expected", {}).get("must_contain_in_top_result"):
-        top_content = results[0]["content"] if results else ""
-        for phrase in case["expected"]["must_contain_in_top_result"]:
-            if phrase.lower() not in top_content.lower():
-                passed = False
-                break
-
-    # For org/knowledge cases: also check min_results
-    if passed and case.get("expected", {}).get("min_results"):
-        if len(results) < case["expected"]["min_results"]:
-            passed = False
+    passed = _case_meets_expectations(recall_at_5, case, results)
 
     # Token efficiency: count words in all returned results (proxy for token count)
     tokens_retrieved = sum(len(r["content"].split()) for r in results)

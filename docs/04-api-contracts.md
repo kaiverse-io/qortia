@@ -40,7 +40,7 @@ All agent-authenticated Qortia endpoints check `agent status = active` before ex
 **Check:**
 ```python
 agent = await conn.fetchrow(
-    "SELECT status FROM auth.agents WHERE id = $1 AND tenant_id = $2", agent_id, tenant_id)
+    "SELECT status FROM qortia_agents WHERE id = $1 AND tenant_id = $2", agent_id, tenant_id)
 if agent is None or agent["status"] != "active":
     raise HTTPException(status_code=403, detail="Agent is not active")
 ```
@@ -279,7 +279,7 @@ INSERT INTO hindsight_memories (...) VALUES (...);
 -- ...
 
 -- Single counter increment (episodic count only, once per batch)
-UPDATE auth.agents
+UPDATE qortia_agents
 SET reflection_counter = reflection_counter + $episodic_count, updated_at = now()
 WHERE id = $agent_id;
 ```
@@ -328,7 +328,7 @@ Multiple rows with the same title would load stale versions alongside current �
 ### Reflection: Agent-Driven
 
 **Trigger:** after every 10 new episodic memories since last reflection.
-**Counter:** `auth.agents.reflection_counter` (Postgres). Tracked in-process in `mcp_bridge.py`.
+**Counter:** `qortia_agents.reflection_counter` (Postgres). Tracked in-process in `mcp_bridge.py`.
 
 **Counter invariant:** Postgres always incremented on every episodic write (inside the remember transaction).
 
@@ -579,7 +579,7 @@ single agent's row count exceeds 50K. `REINDEX` only — no schema migration.
 
 Asyncio background task inside FastAPI monolith. No pg_cron. No K8s CronJob.
 
-Tracked via `auth.tenants.weekly_summary_last_run_at`. Multi-replica safe via `SELECT FOR UPDATE SKIP LOCKED`.
+Tracked via `qortia_tenants.weekly_summary_last_run_at`. Multi-replica safe via `SELECT FOR UPDATE SKIP LOCKED`.
 
 **Flow per tenant (weekly):**
 1. Acquire row lock (skip if another replica holds it)
@@ -599,8 +599,8 @@ Two-axis RBAC on `org_memory` and `org_knowledge`, enforced at Postgres RLS laye
 
 **Axis 1 — Clearance level (hierarchical, inclusive).**
 Tenants define ordered levels. Higher order includes all lower. Platform seeds three defaults:
-`external=1`, `internal=2`, `restricted=3`. Stored in `tenant_clearance_levels`.
-Agent assignment in `auth.agents.clearance_level`.
+`external=1`, `internal=2`, `restricted=3`. Stored in `qortia_clearance_levels`.
+Agent assignment in `qortia_agents.clearance_level`.
 
 **Axis 2 — Division / audience (set membership).**
 Tenants define divisions. Memory rows carry `audience TEXT[]`. Agent must be in audience or
@@ -628,4 +628,4 @@ for tenants that do not customise RBAC.
 **Migration:** `V4__org_memory_rbac.sql`
 
 **Deferred:** writing clearance/division to agent's Vault path at provisioning time. Currently
-`auth.agents` is source of truth; agents do not read clearance from Vault at boot.
+`qortia_agents` is source of truth; agents do not read clearance from Vault at boot.

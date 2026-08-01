@@ -17,8 +17,7 @@ These tests require:
   - Eval seed-memory endpoint supporting valid_until, valid_from, importance
 
 Usage:
-    cd platform
-    EVAL_MODE=true python3 evals/run_temporal_eval.py
+    QORTIA_EVAL_MODE=true python3 evals/run_temporal_eval.py
 
 Runs both datasets. Exits 0 if all gates pass, 1 otherwise.
 Report: evals/results/teh_latest.json
@@ -37,7 +36,7 @@ import httpx
 
 from evals.dataset_loader import (
     EMBEDDING_WAIT_SECONDS,
-    PLATFORM_URL,
+    QORTIA_URL,
     load_dataset,
     provision_eval_agent,
 )
@@ -126,52 +125,50 @@ async def _seed_temporal_org_memory(
 # ── Per-case runner ────────────────────────────────────────────────────────
 
 
-async def _run_case(client: httpx.AsyncClient, case: dict[str, Any]) -> dict[str, Any]:
-    tenant_id, agent_id = await provision_eval_agent(client)
-
-    setup = case["setup"]
-    memories = setup.get("memories", [])
-    org_memories = setup.get("org_memories", [])
-    hard_negatives = setup.get("hard_negatives", [])
-
+async def _seed_temporal_case(
+    client: httpx.AsyncClient, tenant_id: str, agent_id: str, setup: dict[str, Any]
+) -> tuple[dict[int, str], dict[int, str], set[str]]:
+    """Seed hard negatives, org memories, then private memories. Returns
+    (id_map, org_id_map, expired_ids) — expired_ids covers rows seeded with
+    a valid_until already in the past."""
     id_map: dict[int, str] = {}
     org_id_map: dict[int, str] = {}
     expired_ids: set[str] = set()
 
     # Seed hard negatives first (older created_at)
-    for neg in hard_negatives:
+    for neg in setup.get("hard_negatives", []):
         await _seed_temporal_memory(client, tenant_id, agent_id, neg)
         await asyncio.sleep(0.1)
 
-    # Seed org memories
-    for i, om in enumerate(org_memories):
+    for i, om in enumerate(setup.get("org_memories", [])):
         mid = await _seed_temporal_org_memory(client, tenant_id, agent_id, om)
         if mid:
             org_id_map[i] = mid
             if om.get("valid_until"):
                 expired_ids.add(mid)
 
-    # Seed private memories
-    for i, mem in enumerate(memories):
+    for i, mem in enumerate(setup.get("memories", [])):
         mid = await _seed_temporal_memory(client, tenant_id, agent_id, mem)
         id_map[i] = mid
         if mem.get("valid_until"):
             expired_ids.add(mid)
         await asyncio.sleep(0.1)
 
-    # Wait 2 full embedding cycles — handles cold-start and batch backlog
-    await asyncio.sleep(EMBEDDING_WAIT_SECONDS * 2)
+    return id_map, org_id_map, expired_ids
 
-    # Resolve ground truth
-    ground_truth_source = case.get("ground_truth_source", "memories")
-    ground_truth_idx = case.get("ground_truth_index", 0)
-    ground_truth_id: str | None = None
-    if ground_truth_source == "org_memories":
-        ground_truth_id = org_id_map.get(ground_truth_idx)
-    else:
-        ground_truth_id = id_map.get(ground_truth_idx)
 
-    # Resolve additional expired IDs
+def _resolve_temporal_ground_truth(
+    case: dict[str, Any], id_map: dict[int, str], org_id_map: dict[int, str]
+) -> str | None:
+    idx = case.get("ground_truth_index", 0)
+    if case.get("ground_truth_source", "memories") == "org_memories":
+        return org_id_map.get(idx)
+    return id_map.get(idx)
+
+
+def _resolve_additional_expired_ids(
+    case: dict[str, Any], id_map: dict[int, str], org_id_map: dict[int, str], expired_ids: set[str]
+) -> None:
     for key in ("negative_must_not_appear_index", "negative_must_not_appear_indices"):
         val = case.get(key)
         if val is None:
@@ -182,13 +179,17 @@ async def _run_case(client: httpx.AsyncClient, case: dict[str, Any]) -> dict[str
             if mid:
                 expired_ids.add(mid)
 
-    # Execute recall (retry once if 0 results — handles embedding race on cold-start)
-    query_body = case["query"]
-    results = []
+
+async def _execute_temporal_recall(
+    client: httpx.AsyncClient, case: dict[str, Any], tenant_id: str, agent_id: str
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """Retry once if 0 results — handles embedding race on cold-start.
+    Returns the results list, or a _failed(...) dict on a non-200 response."""
+    results: list[dict[str, Any]] = []
     for attempt in range(2):
         resp = await client.post(
             "/v1/internal/eval/recall-full",
-            json=query_body,
+            json=case["query"],
             params={"tenant_id": tenant_id, "agent_id": agent_id},
         )
         if resp.status_code != 200:
@@ -197,23 +198,45 @@ async def _run_case(client: httpx.AsyncClient, case: dict[str, Any]) -> dict[str
         if results or attempt == 1:
             break
         await asyncio.sleep(EMBEDDING_WAIT_SECONDS)  # embedding not ready, retry after one cycle
-    result_ids = [r["id"] for r in results]
-    top5_ids = set(result_ids[:5])
-    result_contents = [r["content"] for r in results]
+    return results
 
-    # Scoring
-    gt_in_top5 = ground_truth_id is not None and ground_truth_id in top5_ids
-    expired_leaked = bool(expired_ids & top5_ids)  # any expired ID in top-5
 
+def _temporal_case_passed(
+    gt_in_top5: bool, expired_leaked: bool, case: dict[str, Any], results: list[dict[str, Any]]
+) -> bool:
     passed = gt_in_top5 and not expired_leaked
-
-    # must_contain_in_top_result check
     expected = case.get("expected", {})
     if passed and results and expected.get("must_contain_in_top_result"):
         top_content = results[0]["content"].lower()
         phrases = expected["must_contain_in_top_result"]
         if not any(p.lower() in top_content for p in phrases):
             passed = False
+    return passed
+
+
+async def _run_case(client: httpx.AsyncClient, case: dict[str, Any]) -> dict[str, Any]:
+    tenant_id, agent_id = await provision_eval_agent(client)
+
+    id_map, org_id_map, expired_ids = await _seed_temporal_case(
+        client, tenant_id, agent_id, case["setup"]
+    )
+
+    # Wait 2 full embedding cycles — handles cold-start and batch backlog
+    await asyncio.sleep(EMBEDDING_WAIT_SECONDS * 2)
+
+    ground_truth_id = _resolve_temporal_ground_truth(case, id_map, org_id_map)
+    _resolve_additional_expired_ids(case, id_map, org_id_map, expired_ids)
+
+    results = await _execute_temporal_recall(client, case, tenant_id, agent_id)
+    if isinstance(results, dict):  # _failed(...) sentinel
+        return results
+
+    result_ids = [r["id"] for r in results]
+    top5_ids = set(result_ids[:5])
+
+    gt_in_top5 = ground_truth_id is not None and ground_truth_id in top5_ids
+    expired_leaked = bool(expired_ids & top5_ids)  # any expired ID in top-5
+    passed = _temporal_case_passed(gt_in_top5, expired_leaked, case, results)
 
     return {
         "id": case["id"],
@@ -248,7 +271,7 @@ async def run_teh() -> int:
     all_results: list[dict[str, Any]] = []
     dataset_summaries: list[dict[str, Any]] = []
 
-    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=QORTIA_URL, timeout=60.0) as client:
         for dataset_path in DATASETS:
             if not dataset_path.exists():
                 print(f"SKIP: {dataset_path} not found")

@@ -1,5 +1,5 @@
 """
-LongMemEval Adapter for the platform Qortia.
+LongMemEval Adapter for Qortia.
 
 Downloads the LongMemEval benchmark dataset (Xiaowu et al., 2024) and runs it
 against the Qortia recall pipeline. LongMemEval is the industry-standard benchmark
@@ -22,24 +22,22 @@ Scoring follows Zep's methodology:
     (deterministic string-match check against gold answer)
 
 Note on LLM-as-judge: LongMemEval's original scoring uses GPT-4 as a judge.
-the platform uses deterministic string matching against expected_answer_contains
-fields to maintain the determinism principle (docs/qortia/03-eval-strategy.md §1).
+Qortia uses deterministic string matching against expected_answer_contains
+fields to maintain the determinism principle (docs/03-eval-strategy.md §1).
 This is a deliberate trade-off: deterministic but potentially lower than GPT-4-judged scores.
 
 Usage:
-    cd platform
-
     # Download dataset (run once)
     python3 evals/run_longmemeval.py --download
 
-    # Run eval (requires full stack + EVAL_MODE=true)
-    EVAL_MODE=true python3 evals/run_longmemeval.py
+    # Run eval (requires full stack + QORTIA_EVAL_MODE=true)
+    QORTIA_EVAL_MODE=true python3 evals/run_longmemeval.py
 
     # Run a specific category only
-    EVAL_MODE=true python3 evals/run_longmemeval.py --category temporal
+    QORTIA_EVAL_MODE=true python3 evals/run_longmemeval.py --category temporal
 
     # Run a subset (faster)
-    EVAL_MODE=true python3 evals/run_longmemeval.py --max-cases 50
+    QORTIA_EVAL_MODE=true python3 evals/run_longmemeval.py --max-cases 50
 
 Report: evals/results/longmemeval_latest.json
 """
@@ -57,7 +55,7 @@ import httpx
 
 from evals.dataset_loader import (
     EMBEDDING_WAIT_SECONDS,
-    PLATFORM_URL,
+    QORTIA_URL,
     provision_eval_agent,
 )
 
@@ -281,7 +279,7 @@ def _select_cases(
 
 async def _execute_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
-    async with httpx.AsyncClient(base_url=PLATFORM_URL, timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=QORTIA_URL, timeout=60.0) as client:
         for i, case in enumerate(cases):
             result = await _run_lme_case(client, case)
             results.append(result)

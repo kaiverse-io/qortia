@@ -514,8 +514,8 @@ No `pg_cron`. No K8s CronJob. Works in Docker Compose and K8s identically.
 
 **Execution:**
 - Staggered by `hash(tenant_id) % 7` to prevent all tenants firing simultaneously.
-- Restart-safe: tracked via `auth.tenants.weekly_summary_last_run_at`.
-- Multi-replica safe: uses `SELECT id FROM auth.tenants ... FOR UPDATE SKIP LOCKED`.
+- Restart-safe: tracked via `qortia_tenants.weekly_summary_last_run_at`.
+- Multi-replica safe: uses `SELECT id FROM qortia_tenants ... FOR UPDATE SKIP LOCKED`.
 - If another replica holds the lock for a tenant, the current replica skips it.
 
 **Logic:**
