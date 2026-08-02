@@ -8,7 +8,8 @@ from fastapi import HTTPException
 
 from qortia import config
 
-EMBEDDING_MODEL = "bge-m3"
+# Back-compat alias — prefer qortia.embeddings.embedding_model().
+EMBEDDING_MODEL = config.settings.embedding_model
 
 _litellm_client: httpx.AsyncClient | None = None
 

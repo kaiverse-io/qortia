@@ -11,11 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from qortia import config
 from qortia.auth import AgentIdentity, get_litellm_key, require_agent
-from qortia.common import (
-    EMBEDDING_MODEL,
-    get_litellm_client,
-)
+from qortia.common import get_litellm_client
 from qortia.db import get_main_pool, tenant_transaction
+from qortia.embeddings import embed_text as _get_embedding
+from qortia.embeddings import validate_embedding_config as validate_embedding_dimensions
 from qortia.entity_graph import (
     _maybe_dedup_memory,
     _populate_graph_batch,
@@ -27,6 +26,9 @@ from qortia.entity_graph import (
     _update_entity_summary as _update_entity_summary,
 )
 from qortia.models import ReflectResponse
+
+# Re-export for callers/tests that historically imported from reflect.
+__all__ = ("validate_embedding_dimensions",)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -661,42 +663,6 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
                     "error": str(exc),
                 }
             )
-
-
-async def _get_embedding(text: str, litellm_key: str) -> list[float]:
-    resp = await get_litellm_client().post(
-        "/embeddings",
-        headers={"Authorization": f"Bearer {litellm_key}"},
-        json={"model": EMBEDDING_MODEL, "input": text},
-        timeout=30.0,
-    )
-    resp.raise_for_status()
-    return resp.json()["data"][0]["embedding"]  # type: ignore[no-any-return]
-
-
-async def validate_embedding_dimensions() -> None:
-    from qortia.auth import get_platform_embed_key
-
-    embed_key = get_platform_embed_key()
-
-    try:
-        resp = await get_litellm_client().post(
-            "/embeddings",
-            headers={"Authorization": f"Bearer {embed_key}"},
-            json={"model": EMBEDDING_MODEL, "input": "dimension check"},
-            timeout=60.0,
-        )
-        resp.raise_for_status()
-        actual = len(resp.json()["data"][0]["embedding"])
-        if actual != 1024:
-            raise RuntimeError(
-                f"Embedding dimension mismatch for {EMBEDDING_MODEL}: "
-                f"schema expects 1024, got {actual}."
-            )
-    except RuntimeError:
-        raise
-    except Exception as exc:
-        raise RuntimeError(f"Embedding model unavailable: {exc}") from exc
 
 
 # ── Background reflection trigger ────────────────────────────

@@ -48,9 +48,9 @@ async def test_embed_query_returns_cached_embedding_without_litellm(
     from qortia.recall import _embed_query
 
     cached = [0.2] * 1024
-    monkeypatch.setattr("qortia.recall.get_cached_embedding", lambda *_a, **_k: cached)
+    monkeypatch.setattr("qortia.embeddings.get_cached_embedding", lambda *_a, **_k: cached)
     post = AsyncMock()
-    monkeypatch.setattr("qortia.recall.get_litellm_client", lambda: MagicMock(post=post))
+    monkeypatch.setattr("qortia.embeddings.get_litellm_client", lambda: MagicMock(post=post))
 
     embedding = await _embed_query("database", TENANT_ID)
     assert embedding == cached
@@ -63,12 +63,12 @@ async def test_embed_query_returns_none_when_litellm_fails(
 ) -> None:
     from qortia.recall import _embed_query
 
-    monkeypatch.setattr("qortia.recall.get_cached_embedding", lambda *_a, **_k: None)
+    monkeypatch.setattr("qortia.embeddings.get_cached_embedding", lambda *_a, **_k: None)
     client = MagicMock()
     client.post = AsyncMock(side_effect=RuntimeError("down"))
-    monkeypatch.setattr("qortia.recall.get_litellm_client", lambda: client)
-    monkeypatch.setattr("qortia.recall.get_litellm_key", AsyncMock(return_value="key"))
-    monkeypatch.setattr("qortia.recall.put_cached_embedding", lambda *_a, **_k: None)
+    monkeypatch.setattr("qortia.embeddings.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.embeddings.get_litellm_key", AsyncMock(return_value="key"))
+    monkeypatch.setattr("qortia.embeddings.put_cached_embedding", lambda *_a, **_k: None)
 
     assert await _embed_query("database", TENANT_ID) is None
 
@@ -114,6 +114,7 @@ async def test_record_work_order_outcome_updates_confidence(
     conn = MagicMock()
     conn.fetch = AsyncMock(return_value=[{"memory_id": memory_id}])
     conn.execute = AsyncMock()
+    monkeypatch.setattr("qortia.recall.get_main_pool", lambda: MagicMock())
     monkeypatch.setattr("qortia.recall.tenant_transaction", lambda *_a, **_k: _tenant_tx(conn))
 
     work_order_id = uuid4()
@@ -134,6 +135,7 @@ async def test_log_session_reads_inserts_private_ids(monkeypatch: pytest.MonkeyP
 
     conn = MagicMock()
     conn.execute = AsyncMock()
+    monkeypatch.setattr("qortia.recall.get_main_pool", lambda: MagicMock())
     monkeypatch.setattr("qortia.recall.tenant_transaction", lambda *_a, **_k: _tenant_tx(conn))
 
     await _log_session_reads(
@@ -186,6 +188,7 @@ async def test_forget_org_process_requires_chief(monkeypatch: pytest.MonkeyPatch
         ]
     )
     conn.fetchval = AsyncMock(return_value="engineer")
+    monkeypatch.setattr("qortia.remember.get_main_pool", lambda: MagicMock())
     monkeypatch.setattr("qortia.remember.tenant_transaction", lambda *_a, **_k: _tenant_tx(conn))
     monkeypatch.setattr("qortia.remember.assert_agent_active", AsyncMock())
 

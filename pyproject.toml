@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 qortia-admin = "qortia.provisioning:main"
+qortia-worker = "qortia.workers:main"
 
 [build-system]
 requires = ["hatchling"]

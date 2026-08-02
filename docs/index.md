@@ -15,9 +15,11 @@ Portable Postgres+pgvector memory layer for AI agents
 | Doc | Purpose |
 |-----|---------|
 | [`ARCHITECTURE.md`](../ARCHITECTURE.md) | **Current** component map, auth, RLS, workers, module contracts |
+| [`how-to/embeddings.md`](how-to/embeddings.md) | Configure embed model/dim, run `qortia-worker`, change models safely |
 | [`explanation/extraction-requirements.md`](explanation/extraction-requirements.md) | What was rebuilt at extraction from the host platform |
 | [`explanation/competitive-landscape.md`](explanation/competitive-landscape.md) | Positioning vs mem0 / Hindsight / Graphiti / etc. |
-| [`decisions/adrs/adr-001-standalone-extraction.md`](decisions/adrs/adr-001-standalone-extraction.md) | Standalone identity, secrets, workers (active ADR) |
+| [`decisions/adrs/adr-001-standalone-extraction.md`](decisions/adrs/adr-001-standalone-extraction.md) | Standalone identity, secrets, workers |
+| [`decisions/adrs/adr-002-configurable-embeddings.md`](decisions/adrs/adr-002-configurable-embeddings.md) | Configurable embed model/dim + worker process |
 
 ## Eval & benchmarking (still useful; paths may lag)
 

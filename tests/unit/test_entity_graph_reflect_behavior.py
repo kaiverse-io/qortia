@@ -165,14 +165,17 @@ async def test_purge_expired_short_term_memories_deletes_rows() -> None:
 async def test_validate_embedding_dimensions_accepts_1024(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import qortia.config as config
     from qortia.reflect import validate_embedding_dimensions
 
+    monkeypatch.setattr(config.settings, "litellm_api_key", "embed-key")
+    monkeypatch.setattr(config.settings, "embedding_dimension", 1024)
     response = MagicMock()
     response.json.return_value = {"data": [{"embedding": [0.1] * 1024}]}
     response.raise_for_status = MagicMock()
     client = MagicMock()
     client.post = AsyncMock(return_value=response)
-    monkeypatch.setattr("qortia.reflect.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.embeddings.get_litellm_client", lambda: client)
     monkeypatch.setattr("qortia.auth.get_platform_embed_key", lambda: "embed-key")
 
     await validate_embedding_dimensions()
@@ -182,14 +185,17 @@ async def test_validate_embedding_dimensions_accepts_1024(
 async def test_validate_embedding_dimensions_raises_on_mismatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import qortia.config as config
     from qortia.reflect import validate_embedding_dimensions
 
+    monkeypatch.setattr(config.settings, "litellm_api_key", "embed-key")
+    monkeypatch.setattr(config.settings, "embedding_dimension", 1024)
     response = MagicMock()
     response.json.return_value = {"data": [{"embedding": [0.1] * 512}]}
     response.raise_for_status = MagicMock()
     client = MagicMock()
     client.post = AsyncMock(return_value=response)
-    monkeypatch.setattr("qortia.reflect.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.embeddings.get_litellm_client", lambda: client)
     monkeypatch.setattr("qortia.auth.get_platform_embed_key", lambda: "embed-key")
 
     with pytest.raises(RuntimeError, match="dimension mismatch"):

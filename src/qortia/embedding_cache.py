@@ -43,12 +43,12 @@ def _get_tenant_cache(tenant_id: str) -> TTLCache[str, list[float]]:
 def _make_cache_key(query: str, tenant_id: str, lang: str) -> str:
     """Produce a deterministic cache key from normalised query text.
 
-    Key structure: SHA-256 of "{tenant_id}:{lang}:{normalised_query}"
-    Tenant ID is included in the hash to make collisions across tenants
-    impossible even if an attacker crafts inputs.
+    Key structure: SHA-256 of "{tenant_id}:{model}:{lang}:{normalised_query}"
+    Model is included so swapping QORTIA_EMBEDDING_MODEL cannot serve stale vectors.
     """
     normalised = query.lower().strip()
-    raw = f"{tenant_id}:{lang}:{normalised}".encode()
+    model = config.settings.embedding_model
+    raw = f"{tenant_id}:{model}:{lang}:{normalised}".encode()
     return hashlib.sha256(raw).hexdigest()
 
 

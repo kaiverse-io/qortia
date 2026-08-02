@@ -42,6 +42,9 @@ docs/tutorials|how-to|reference/ — Diátaxis slots (mostly empty; fill as need
 <!-- ── PROJECT INVARIANTS SLOT ────────────────────────────────────────────── -->
 - Tenant-scoped DB access goes through `qortia.db.tenant_transaction` (RLS GUCs).
 - Auth is API-key + `X-Agent-Id` — no JWT, no Vault, no host IDP in this repo.
+- Embeddings go through `qortia.embeddings` only; run `qortia-worker` / `just worker`
+  alongside the API (`docs/how-to/embeddings.md`). Model/dim via
+  `QORTIA_EMBEDDING_MODEL` / `QORTIA_EMBEDDING_DIMENSION` (defaults `bge-m3` / `1024`).
 - `ARCHITECTURE.md` wins over archived extraction docs on conflict.
 - New significant decisions → MADR under `docs/decisions/adrs/` (never append to the archive ADR dump).
 <!-- ─────────────────────────────────────────────────────────────────────── -->

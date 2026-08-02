@@ -6,9 +6,17 @@ Postgres+pgvector (remember / recall / reflect / knowledge).
 ## Setup
 
 ```bash
-uv sync          # install deps
-just ci          # run all checks
+cp .env.example .env   # set QORTIA_DATABASE_URL + LiteLLM
+uv sync                # install deps
+just ci                # run all checks
+
+# Runtime (API + embedding worker — see docs/how-to/embeddings.md)
+uvicorn qortia.app:app --port 8080
+just worker            # fills embeddings; archival / idle-reflect / weekly summary
 ```
+
+Defaults: embedding model `bge-m3`, dimension `1024` (configurable via
+`QORTIA_EMBEDDING_MODEL` / `QORTIA_EMBEDDING_DIMENSION`).
 
 ## Development
 

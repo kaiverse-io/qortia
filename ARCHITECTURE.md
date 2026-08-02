@@ -126,23 +126,21 @@ Authorization: Bearer <api_key>        X-Agent-Id: <uuid>
 ### common
 
 Small shared runtime pieces used across the request path: the module-level `httpx.AsyncClient`
-to LiteLLM (`init_litellm_client`/`close_litellm_client`/`get_litellm_client`), the
-`EMBEDDING_MODEL` constant (`"bge-m3"`), and `assert_agent_active`, which every write/read
-endpoint calls first to 403 on a non-active agent.
+to LiteLLM (`init_litellm_client`/`close_litellm_client`/`get_litellm_client`), a back-compat
+`EMBEDDING_MODEL` alias (prefer `qortia.embeddings.embedding_model()`), and
+`assert_agent_active`, which every write/read endpoint calls first to 403 on a non-active agent.
 
-Depends on: `qortia.config` (litellm_url), `httpx`, `asyncpg` (Connection type), `fastapi`
-(HTTPException).
+Depends on: `qortia.config` (litellm_url / embedding_model), `httpx`, `asyncpg`, `fastapi`.
 
 ### config
 
 Env-driven runtime settings: the `Settings` dataclass, `load_settings()`, and the module-level
-`settings` singleton. Every value (database URL, LiteLLM URL/API key, dedup similarity threshold,
-embedding cache size/TTL, eval_mode, rerank model, reflection threshold, idle-reflection
-interval/window) is a plain environment variable with a sane local default — no external secrets
-manager, replacing the old host-platform's Vault-backed config.
+`settings` singleton. Includes database URL, LiteLLM URL/API key, **`embedding_model` /
+`embedding_dimension`** (defaults `bge-m3` / `1024`), dedup similarity threshold, embedding
+cache size/TTL, eval_mode, rerank model, reflection threshold, idle-reflection interval/window —
+plain environment variables with sane local defaults (see `.env.example`).
 
-Depends on: nothing internal — stdlib `os`/`dataclasses` only. Read by nearly every other module
-(`auth`, `db`, `common`, `recall`, `reflect`, `embedding_cache`, `eval_router`).
+Depends on: nothing internal — stdlib `os`/`dataclasses` only.
 
 ### db
 
@@ -158,19 +156,41 @@ tenant-isolation boundary described in the Executive Summary; `remember`, `recal
 `knowledge`, `links`, and `recall_rerank` all call `tenant_transaction` rather than touching the
 pool directly.
 
+### embeddings
+
+Single owner of LiteLLM `/embeddings` calls for the whole package (ADR-002).
+
+```
+embed_text(text, key)  ──► LiteLLM /embeddings  (write / worker / validate)
+embed_query(q, tid, lang) ──► cache? ──► embed_text  (recall hot path)
+validate_embedding_config() ──► settings.dim == SCHEMA(1024); live probe if API key set
+```
+
+Defaults: model `bge-m3`, dimension `1024` (matches `migrations/V1` `vector(1024)`). Changing
+dimension requires a migration + re-embed — see `docs/how-to/embeddings.md`. Multilingual NER
+(spaCy) is intentionally separate; one multilingual embedder covers semantic search.
+
+Depends on: `qortia.config`, `qortia.common` (httpx client), `qortia.auth` (key),
+`qortia.embedding_cache`. Used by `recall`, `reflect`, `app` lifespan, `workers`.
+
 ### embedding_cache
 
-In-process per-tenant TTL+LRU cache (`cachetools.TTLCache`) of query embeddings, avoiding
-redundant LiteLLM embedding calls for repeated recall queries within the same tenant/language
-inside the TTL window. The cache key is SHA-256 of `"{tenant_id}:{lang}:{normalised_query}"`, so
-tenant_id is baked into the hash itself — cross-tenant cache hits are impossible by construction.
-Per-process (each replica keeps its own cache); a global `threading.Lock` guards the dict of
-per-tenant caches.
+In-process per-tenant TTL+LRU cache (`cachetools.TTLCache`) of query embeddings. Cache key is
+SHA-256 of `"{tenant_id}:{model}:{lang}:{normalised_query}"` so model swaps cannot serve stale
+vectors and cross-tenant hits are impossible. Per-process; guarded by a global lock.
 
 Public interface: `get_cached_embedding`, `put_cached_embedding`, `clear_all_caches` (tests),
 `get_cache_stats`.
 
-Depends on: `qortia.config` (max size / TTL), `cachetools`. Used by `qortia.recall._embed_query`.
+Depends on: `qortia.config` (max size / TTL / model). Used by `qortia.embeddings.embed_query`.
+
+### workers
+
+CLI entrypoint (`qortia-worker` / `just worker`) that runs background loops outside the API
+process: embedding fill, archival, idle-reflection trigger, weekly summary. Same env as the API.
+`--only embed|archive|idle-reflect|weekly-summary` selects a subset.
+
+Depends on: `qortia.common`, `qortia.db`, `qortia.embeddings`, `qortia.reflect`, `qortia.knowledge`.
 
 ### entity_graph
 
@@ -429,15 +449,10 @@ Depends on: `opentelemetry` (optional, imported lazily inside `_make_counter`).
 - **A single configured LiteLLM API key is used for every tenant.** `qortia.auth.get_litellm_key`
   and `get_platform_embed_key` both return `config.settings.litellm_api_key` regardless of
   `tenant_id` — there is no per-tenant LiteLLM key provisioning (no Vault dependency by design).
-- **Background workers exist as functions but nothing runs them as a process.** The embedding
-  worker (`qortia.reflect.run_embedding_worker`), archival task
-  (`qortia.reflect.run_archival_task`), idle-reflection trigger
-  (`qortia.reflect.run_background_reflection_trigger`), and weekly summary task
-  (`qortia.knowledge.run_weekly_summary_task`) are plain async functions meant to run in a
-  separate worker process. `qortia.app`'s lifespan deliberately does not start any of them —
-  wiring up that process is tracked as a follow-up, not part of the current entrypoint. Until
-  that's done, memories are never embedded, archived, purged, idle-reflected, or
-  weekly-summarised outside of a manual/test invocation of these functions.
+- **Background workers run in a separate process.** Use `qortia-worker` / `just worker`
+  alongside the API. The app lifespan does not start workers (keeps request latency clean).
+  Without the worker, memories stay unembedded and archival/idle-reflect/weekly-summary do not
+  run — see `docs/how-to/embeddings.md`.
 - **Eval harnesses haven't been run end-to-end yet.** The scripts under `evals/` (`run_alb.py`,
   `run_reh.py`, `run_pib.py`, `run_temporal_eval.py`, `run_longitudinal_eval.py`,
   `run_longmemeval.py`, `run_extraction_eval.py`) need a live qortia server plus real LiteLLM

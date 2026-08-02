@@ -77,6 +77,11 @@ sync:
 lint:
     pre-commit run --all-files
 
+# Background workers (embeddings, archival, idle-reflect, weekly-summary).
+# Run alongside `uvicorn qortia.app:app` — see docs/how-to/embeddings.md.
+worker *args:
+    uv run qortia-worker {{ args }}
+
 # ── On-demand (bucket C) ─────────────────────────────────────────────────────
 
 # AI-usage cost/burn report — installed by .devcontainer/post-create.sh
