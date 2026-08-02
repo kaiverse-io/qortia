@@ -13,9 +13,9 @@ import math
 import re
 from typing import Any
 
+import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-import uvicorn
 
 DIM = 1024
 app = FastAPI(title="mock-litellm-embeddings")
@@ -92,4 +92,4 @@ def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=4000, log_level="info")
+    uvicorn.run(app, host="127.0.0.1", port=4000, log_level="info")
