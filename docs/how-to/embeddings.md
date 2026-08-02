@@ -45,6 +45,16 @@ just worker
 Without the worker, remember/reflect still write rows, but vector recall stays
 cold until embeddings are filled.
 
+## Live smoke test (no real model required)
+
+Requires Docker. Spins up pgvector, a deterministic mock `/embeddings` server
+(1024-dim), the API, and `qortia-worker --only embed`, then runs
+remember → embed → recall:
+
+```bash
+bash scripts/e2e_embeddings_live.sh
+```
+
 ## Changing the model (same dimension)
 
 1. Point LiteLLM at the new alias; set `QORTIA_EMBEDDING_MODEL`.
