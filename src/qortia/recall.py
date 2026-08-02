@@ -287,10 +287,7 @@ async def _bm25_org(
             WHERE tenant_id = $2
               AND content_tsv @@ plainto_tsquery('simple', $1)
               AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
-                           WHERE tenant_id = org_memory.tenant_id
-                             AND level_name = org_memory.min_clearance)
-                   OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels
-                                  WHERE tenant_id = org_memory.tenant_id))
+                           WHERE level_name = org_memory.min_clearance))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
               AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
@@ -333,10 +330,7 @@ async def _vector_org(
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
               AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
-                           WHERE tenant_id = org_memory.tenant_id
-                             AND level_name = org_memory.min_clearance)
-                   OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels
-                                  WHERE tenant_id = org_memory.tenant_id))
+                           WHERE level_name = org_memory.min_clearance))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
               AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
@@ -376,10 +370,7 @@ async def _bm25_knowledge(
             WHERE tenant_id = $2
               AND index_tsv @@ plainto_tsquery('simple', $1)
               AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
-                           WHERE tenant_id = org_knowledge.tenant_id
-                             AND level_name = org_knowledge.min_clearance)
-                   OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels
-                                  WHERE tenant_id = org_knowledge.tenant_id))
+                           WHERE level_name = org_knowledge.min_clearance))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
             ORDER BY rank DESC LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
         """,  # noqa: S608
@@ -414,10 +405,7 @@ async def _vector_knowledge(
             WHERE tenant_id = $2
               AND embedding IS NOT NULL
               AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
-                           WHERE tenant_id = org_knowledge.tenant_id
-                             AND level_name = org_knowledge.min_clearance)
-                   OR NOT EXISTS (SELECT 1 FROM qortia_clearance_levels
-                                  WHERE tenant_id = org_knowledge.tenant_id))
+                           WHERE level_name = org_knowledge.min_clearance))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
             ORDER BY embedding <=> $1::vector
             LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
