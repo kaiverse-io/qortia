@@ -64,10 +64,7 @@ def health() -> dict[str, str]:
 @app.post("/embeddings", response_model=EmbedResponse)
 def embeddings(body: EmbedRequest) -> EmbedResponse:
     inputs = [body.input] if isinstance(body.input, str) else list(body.input)
-    data = [
-        EmbedData(index=i, embedding=_embed(text))
-        for i, text in enumerate(inputs)
-    ]
+    data = [EmbedData(index=i, embedding=_embed(text)) for i, text in enumerate(inputs)]
     return EmbedResponse(
         data=data,
         model=body.model,
