@@ -216,9 +216,13 @@ def _mmr(
             if not candidate._embedding:
                 continue
             relevance = _cosine(query_embedding, candidate._embedding)
+            selected_embeddings = [s._embedding for s in selected if s._embedding]
             redundancy = (
-                max(_cosine(candidate._embedding, s._embedding) for s in selected if s._embedding)
-                if selected
+                max(
+                    _cosine(candidate._embedding, selected_embedding)
+                    for selected_embedding in selected_embeddings
+                )
+                if selected_embeddings
                 else 0.0
             )
             if redundancy >= dedup_threshold:

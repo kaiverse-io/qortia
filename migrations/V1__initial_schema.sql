@@ -174,6 +174,7 @@ CREATE TABLE org_memory (
     min_clearance           TEXT        NOT NULL DEFAULT 'internal',
     audience                TEXT[]      NOT NULL DEFAULT '{all}',
     confidence_multiplier   FLOAT       NOT NULL DEFAULT 1.0,
+    valid_from              TIMESTAMPTZ NOT NULL DEFAULT now(),
     valid_until             TIMESTAMPTZ,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -191,6 +192,7 @@ CREATE INDEX idx_org_memory_entities ON org_memory USING GIN (entities);
 CREATE INDEX ON org_memory (is_graphed) WHERE is_graphed = false;
 CREATE INDEX ON org_memory (tenant_id, min_clearance);
 CREATE INDEX ON org_memory USING GIN (audience);
+CREATE INDEX idx_org_memory_valid_from ON org_memory (tenant_id, valid_from);
 CREATE INDEX idx_org_memory_valid_until ON org_memory (tenant_id, valid_until) WHERE valid_until IS NOT NULL;
 
 ALTER TABLE org_memory ENABLE ROW LEVEL SECURITY;
