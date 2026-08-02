@@ -40,7 +40,8 @@ All agent-authenticated Qortia endpoints check `agent status = active` before ex
 **Check:**
 ```python
 agent = await conn.fetchrow(
-    "SELECT status FROM qortia_agents WHERE id = $1 AND tenant_id = $2", agent_id, tenant_id)
+    "SELECT status FROM qortia_agents WHERE id = $1 AND tenant_id = $2", agent_id, tenant_id
+)
 if agent is None or agent["status"] != "active":
     raise HTTPException(status_code=403, detail="Agent is not active")
 ```
@@ -152,11 +153,10 @@ spaCy `en_core_web_sm` extracts named entities at write time for `POST /v1/remem
 ```python
 ENTITY_LABELS = frozenset({"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"})
 
+
 def extract_entities(text: str) -> list[str]:
     doc = get_nlp()(text)
-    return list(dict.fromkeys(
-        ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS
-    ))[:20]
+    return list(dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS))[:20]
 ```
 
 `get_nlp()` returns the already-loaded model instance (loaded once at platform startup step 4).
@@ -198,11 +198,14 @@ confidence_multiplier FLOAT    NOT NULL DEFAULT 1.0  -- ADR-125: outcome-driven 
 ```python
 async def _record_recall_access(table: str, row_ids: list[UUID]) -> None:
     async with main_pool.acquire() as conn:
-        await conn.execute(f"""
+        await conn.execute(
+            f"""
             UPDATE {table}
             SET recall_count = recall_count + 1, last_recalled_at = now()
             WHERE id = ANY($1::uuid[])
-        """, row_ids)
+        """,
+            row_ids,
+        )
 ```
 
 **ADR-125 causal read logging — fire-and-forget when `X-Work-Order-Id` header present (`_log_session_reads`):**
@@ -220,7 +223,7 @@ def dynamic_importance(
     recall_count: int,
     last_recalled_at: datetime | None,
     base_importance: float,
-    confidence_multiplier: float = 1.0,   # ADR-125: outcome-driven scaling
+    confidence_multiplier: float = 1.0,  # ADR-125: outcome-driven scaling
 ) -> float:
     frequency_boost = math.log1p(recall_count) / 10.0
     recency_boost = 0.0
@@ -228,7 +231,7 @@ def dynamic_importance(
         days_since = (datetime.now(timezone.utc) - last_recalled_at).days
         recency_boost = max(0.0, 1.0 - (days_since / 30.0)) * 0.2
     raw = min(1.0, base_importance + frequency_boost + recency_boost)
-    return max(0.0, min(1.0, raw * confidence_multiplier))   # outcome scaling last
+    return max(0.0, min(1.0, raw * confidence_multiplier))  # outcome scaling last
 ```
 
 `confidence_multiplier` is read from the DB column, never exposed in the API response
@@ -372,14 +375,19 @@ async def _run_reflect() -> None:
     _reflection_in_progress = True
     try:
         result = await asyncio.wait_for(
-            _http_client.post("/v1/reflect", json={}, timeout=120.0), timeout=125.0)
+            _http_client.post("/v1/reflect", json={}, timeout=120.0), timeout=125.0
+        )
         result.raise_for_status()
         _episodic_counter = result.json()["reflection_counter"]
     except Exception as exc:
-        logger.error({
-            "event": "reflection_failed", "agent_id": AGENT_ID,
-            "tenant_id": TENANT_ID, "error": str(exc),
-        })
+        logger.error(
+            {
+                "event": "reflection_failed",
+                "agent_id": AGENT_ID,
+                "tenant_id": TENANT_ID,
+                "error": str(exc),
+            }
+        )
         # Transaction never committed — neither side changed. Retries on next trigger.
     finally:
         _reflection_in_progress = False
@@ -461,7 +469,7 @@ Authoritative rules for `POST /v1/knowledge` section splitting pipeline.
 
 **Heading detection regex (authoritative):**
 ```python
-HEADING_PATTERN = re.compile(r'^(#{2,3})\s+(.+)$', re.MULTILINE)
+HEADING_PATTERN = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
 ```
 
 **Section token counting ([section token counting](qortia/04-api-contracts.md#org_knowledge-section-splitting-rules)):** word-count approximation (`len(content.split()) * 1.3`).

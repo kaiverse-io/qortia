@@ -223,7 +223,7 @@ async def tenant_transaction(
     tenant_id: UUID,
     agent_id: UUID | None = None,
     memory_clearance_order: int | None = None,  # ADR-080
-    agent_division: str | None = None,           # ADR-080
+    agent_division: str | None = None,  # ADR-080
 ) -> AsyncGenerator[asyncpg.Connection, None]:
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -231,7 +231,7 @@ async def tenant_transaction(
             if agent_id:
                 await conn.execute(f"SET LOCAL app.agent_id = '{agent_id}'")
             order = memory_clearance_order if memory_clearance_order is not None else 2
-            division = agent_division or 'all'
+            division = agent_division or "all"
             await conn.execute(f"SET LOCAL app.memory_clearance_order = '{order}'")
             await conn.execute(f"SET LOCAL app.agent_division = '{division}'")
             yield conn
@@ -383,7 +383,7 @@ def dynamic_importance(
     base_importance: float,
     confidence_multiplier: float = 1.0,  # ADR-125: outcome-driven scaling
 ) -> float:
-    frequency_boost = log1p(recall_count) / 10.0        # log scale, ~0.3 at 1000 recalls
+    frequency_boost = log1p(recall_count) / 10.0  # log scale, ~0.3 at 1000 recalls
     recency_boost = linear_decay(last_recalled_at, 30)  # 0→0.2 over 30 days
     raw = min(1.0, base_importance + frequency_boost + recency_boost)
     return max(0.0, min(1.0, raw * confidence_multiplier))  # outcome scaling last

@@ -68,8 +68,9 @@ import threading
 _embedding_cache: dict[str, TTLCache] = {}
 _cache_lock = threading.Lock()
 
-CACHE_TTL_SECONDS = 300        # 5 minutes
+CACHE_TTL_SECONDS = 300  # 5 minutes
 CACHE_MAX_SIZE_PER_TENANT = 256
+
 
 def _get_tenant_cache(tenant_id: str) -> TTLCache:
     with _cache_lock:
@@ -99,7 +100,7 @@ then check the cache for any stored embedding with cosine similarity ≥ thresho
 If found, return the cached result set without hitting Postgres.
 
 ```python
-SEMANTIC_CACHE_THRESHOLD = 0.97   # must be validated against eval dataset
+SEMANTIC_CACHE_THRESHOLD = 0.97  # must be validated against eval dataset
 SEMANTIC_CACHE_TTL_SECONDS = 300
 ```
 
@@ -158,16 +159,13 @@ at current scale.
 ```python
 # platform/app/qortia/recall.py
 
-async def _embed_query(
-    query: str, tenant_id: UUID, lang: str = "en"
-) -> list[float] | None:
-    cache_key = hashlib.sha256(
-        f"{tenant_id}:{lang}:{query.lower().strip()}".encode()
-    ).hexdigest()
+
+async def _embed_query(query: str, tenant_id: UUID, lang: str = "en") -> list[float] | None:
+    cache_key = hashlib.sha256(f"{tenant_id}:{lang}:{query.lower().strip()}".encode()).hexdigest()
     tenant_cache = _get_tenant_cache(str(tenant_id))
 
     if cache_key in tenant_cache:
-        return tenant_cache[cache_key]   # type: ignore[return-value]
+        return tenant_cache[cache_key]  # type: ignore[return-value]
 
     try:
         litellm_key = await get_litellm_key(str(tenant_id))

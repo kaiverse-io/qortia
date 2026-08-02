@@ -27,7 +27,9 @@ async def _llm_rerank(
         model = config.settings.rerank_model
         litellm_key = await get_litellm_key(str(agent.tenant_id))
 
-        numbered = "\n".join(f"{i+1}. [{r.type}] {r.content[:200]}" for i, r in enumerate(results))
+        numbered = "\n".join(
+            f"{i + 1}. [{r.type}] {r.content[:200]}" for i, r in enumerate(results)
+        )
         prompt = (
             f"Query: {query}\n\nResults:\n{numbered}\n\n"
             f"Return a JSON array of result numbers in order of relevance. "

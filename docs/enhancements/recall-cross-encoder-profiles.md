@@ -180,18 +180,31 @@ class RecallConfig:
     top_k: int
     candidate_multiplier: int  # fetch N × top_k candidates before reranking
 
+
 RECALL_PROFILES: dict[str, RecallConfig] = {
     "fast": RecallConfig(
-        vector=True, bm25=True, entity_boost=False,
-        rerank=None, top_k=5, candidate_multiplier=1,
+        vector=True,
+        bm25=True,
+        entity_boost=False,
+        rerank=None,
+        top_k=5,
+        candidate_multiplier=1,
     ),
     "balanced": RecallConfig(  # current default behaviour
-        vector=True, bm25=True, entity_boost=True,
-        rerank=None, top_k=5, candidate_multiplier=2,
+        vector=True,
+        bm25=True,
+        entity_boost=True,
+        rerank=None,
+        top_k=5,
+        candidate_multiplier=2,
     ),
     "thorough": RecallConfig(
-        vector=True, bm25=True, entity_boost=True,
-        rerank="cross_encoder", top_k=10, candidate_multiplier=3,
+        vector=True,
+        bm25=True,
+        entity_boost=True,
+        rerank="cross_encoder",
+        top_k=10,
+        candidate_multiplier=3,
     ),
 }
 ```

@@ -356,10 +356,7 @@ Rejected: Stripping thoughts (destroys the primary benefit of reasoning models),
 `_recall()` in `mcp_bridge.py` strips all fields except `type` and `content` before returning to the LLM:
 
 ```python
-results = [
-    {"type": r["type"], "content": r["content"]}
-    for r in resp.json().get("results", [])
-]
+results = [{"type": r["type"], "content": r["content"]} for r in resp.json().get("results", [])]
 return json.dumps({"results": results})
 ```
 
@@ -1499,9 +1496,7 @@ Replace the three divergent label sets with one `frozenset` constant used by all
 extraction functions:
 
 ```python
-EN_ENTITY_LABELS = frozenset(
-    {"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"}
-)
+EN_ENTITY_LABELS = frozenset({"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"})
 ```
 
 `TECH` is removed — it is not a valid `en_core_web_sm` label and was dead code.
@@ -1837,10 +1832,10 @@ def dynamic_importance(
     recall_count: int,
     last_recalled_at: datetime,
     base_importance: float,
-    confidence_multiplier: float = 1.0,    # new
+    confidence_multiplier: float = 1.0,  # new
 ) -> float:
     raw = base_importance * (1 + 0.1 * log1p(recall_count)) * recency_factor(...)
-    return raw * confidence_multiplier      # outcome scaling applied last
+    return raw * confidence_multiplier  # outcome scaling applied last
 ```
 
 ## Recall API — `work_order_id` Header

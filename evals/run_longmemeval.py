@@ -286,7 +286,7 @@ async def _execute_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
             status = "PASS" if result["pass"] else "FAIL"
             if (i + 1) % 10 == 0 or not result["pass"]:
                 print(
-                    f"  [{i+1:3d}/{len(cases)}] [{status}] "
+                    f"  [{i + 1:3d}/{len(cases)}] [{status}] "
                     f"{result['category']}/{result['id']} "
                     f"complete={result['completeness']} acc={result['accuracy']}"
                 )

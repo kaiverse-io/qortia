@@ -24,9 +24,7 @@ vs. single-model-for-all-tasks anti-pattern
 to use for reranking:
 
 ```python
-model = yaml.safe_load(domain_md_raw).get(
-    "model", "anthropic/claude-3-haiku-20240307"
-)
+model = yaml.safe_load(domain_md_raw).get("model", "anthropic/claude-3-haiku-20240307")
 ```
 
 This couples the rerank model to the agent's operational model — the model the agent

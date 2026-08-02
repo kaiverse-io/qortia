@@ -298,21 +298,30 @@ async def test_weekly_summary_cycle_and_tenant_summary_branches(
     import qortia.knowledge as knowledge
 
     real_summarise_tenant = knowledge._summarise_tenant
+    today = datetime.now(UTC).date().weekday()
     tenant_for_today = UUID(int=0)
+    tenant_other_day = UUID(int=0)
     while True:
         digest_day = (
             int(__import__("hashlib").md5(str(tenant_for_today).encode()).hexdigest(), 16) % 7
         )
-        if digest_day == datetime.now(UTC).date().weekday():
+        if digest_day == today:
             break
         tenant_for_today = UUID(int=tenant_for_today.int + 1)
+    while True:
+        digest_day = (
+            int(__import__("hashlib").md5(str(tenant_other_day).encode()).hexdigest(), 16) % 7
+        )
+        if digest_day != today:
+            break
+        tenant_other_day = UUID(int=tenant_other_day.int + 1)
 
     summarise = AsyncMock()
     conn = MagicMock()
     conn.fetch = AsyncMock(
         return_value=[
             {"id": tenant_for_today, "weekly_summary_last_run_at": None},
-            {"id": uuid4(), "weekly_summary_last_run_at": None},
+            {"id": tenant_other_day, "weekly_summary_last_run_at": None},
         ]
     )
     monkeypatch.setattr(knowledge, "get_main_pool", lambda: _FakePool(conn))

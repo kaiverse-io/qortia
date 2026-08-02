@@ -94,10 +94,12 @@ class MemoryItem(BaseModel):
     content: str
     source_task_id: str | None = None
     metadata: dict | None = None
-    lang: str = "en"                          # BCP-47, optional
+    lang: str = "en"  # BCP-47, optional
+
 
 class RememberRequest(BaseModel):
     memories: list[MemoryItem]
+
 
 class RememberOrgRequest(BaseModel):
     type: Literal["handoff", "process", "decision_log"]
@@ -105,13 +107,14 @@ class RememberOrgRequest(BaseModel):
     content: str
     lang: str = "en"
 
+
 class RecallRequest(BaseModel):
     query: str
     scope: Literal["private", "org", "knowledge", "all"] = "all"
     type: str | None = None
     rerank: bool = False
     entities: list[str] | None = None
-    lang: str | None = None                   # None = search all languages
+    lang: str | None = None  # None = search all languages
 ```
 
 **`platform/app/qortia/remember.py`** — pass `lang` to INSERT:
@@ -126,10 +129,15 @@ row_id = await conn.fetchval(
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING id
     """,
-    agent.tenant_id, agent.agent_id, mem.type, mem.content,
-    IMPORTANCE[mem.type], mem.source_task_id,
+    agent.tenant_id,
+    agent.agent_id,
+    mem.type,
+    mem.content,
+    IMPORTANCE[mem.type],
+    mem.source_task_id,
     json.dumps(mem.metadata) if mem.metadata else "{}",
-    json.dumps(entities), mem.lang,
+    json.dumps(entities),
+    mem.lang,
 )
 
 # In remember_org() — org_memory INSERT (both branches)
@@ -286,18 +294,19 @@ The routing decision is made in `extract_entities` based on the `lang` parameter
 ```python
 # knowledge.py
 
-import stanza                                  # new dependency
+import stanza  # new dependency
 
-_stanza_pipelines: dict[str, object] = {}      # lang → stanza.Pipeline
+_stanza_pipelines: dict[str, object] = {}  # lang → stanza.Pipeline
 
 STANZA_NER_LANGS = frozenset({"hi", "bn", "ta", "te", "mr"})
+
 
 def _get_stanza_pipeline(lang: str) -> object:
     if lang not in _stanza_pipelines:
         _stanza_pipelines[lang] = stanza.Pipeline(
             lang,
             processors="tokenize,ner",
-            download_method=None,              # models pre-downloaded at build time
+            download_method=None,  # models pre-downloaded at build time
             verbose=False,
         )
     return _stanza_pipelines[lang]
@@ -310,7 +319,7 @@ def extract_entities(text: str, lang: str = "en") -> list[str]:
     """
     if lang in STANZA_NER_LANGS:
         nlp = _get_stanza_pipeline(lang)
-        doc = nlp(text)                        # type: ignore[operator]
+        doc = nlp(text)  # type: ignore[operator]
         entities = []
         for sent in doc.sentences:
             for ent in sent.ents:
@@ -319,10 +328,8 @@ def extract_entities(text: str, lang: str = "en") -> list[str]:
         return list(dict.fromkeys(entities))[:20]
 
     # Default: spaCy English
-    doc = get_nlp()(text)                      # type: ignore[operator]
-    return list(
-        dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS)
-    )[:20]
+    doc = get_nlp()(text)  # type: ignore[operator]
+    return list(dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in ENTITY_LABELS))[:20]
 ```
 
 All call sites in `remember.py` and `reflect.py` pass `lang` through:
@@ -459,9 +466,8 @@ The model name `"indic-embedding"` is what Qortia will use when routing Indic co
 EMBEDDING_MODEL_EN = "text-embedding-3-small"
 EMBEDDING_MODEL_INDIC = "indic-embedding"
 
-INDIC_LANGS = frozenset({
-    "hi", "ta", "te", "bn", "kn", "ml", "mr", "gu", "pa", "or", "as"
-})
+INDIC_LANGS = frozenset({"hi", "ta", "te", "bn", "kn", "ml", "mr", "gu", "pa", "or", "as"})
+
 
 def _embedding_model_for(lang: str) -> str:
     return EMBEDDING_MODEL_INDIC if lang in INDIC_LANGS else EMBEDDING_MODEL_EN
