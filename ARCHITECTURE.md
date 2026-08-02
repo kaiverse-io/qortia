@@ -5,6 +5,12 @@
 > documentation". Diagrams are plain ASCII/Unicode box-drawing text in an untagged fenced code
 > block, not Mermaid — a diagram you can update in the same PR as the code, not a separate
 > rendering step.
+>
+> This file is the **canonical** description of standalone Qortia. Host-platform extraction
+> dumps (old design docs / ADR dump) live under
+> [`docs/archive/extraction/`](docs/archive/extraction/) and must not override this document.
+> See also [`docs/index.md`](docs/index.md) and
+> [`docs/decisions/adrs/adr-001-standalone-extraction.md`](docs/decisions/adrs/adr-001-standalone-extraction.md).
 
 ## Executive Summary
 
