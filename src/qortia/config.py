@@ -7,12 +7,36 @@ so everything here is a plain environment variable with a sane local default.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 def _env_str(name: str, default: str) -> str:
     return os.environ.get(name, default)
+
+
+def _env_tenant_keys(name: str) -> dict[str, str]:
+    """Parse QORTIA_LITELLM_TENANT_KEYS JSON object {tenant_id: virtual_key}."""
+    raw = os.environ.get(name)
+    if not raw or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning({"event": "litellm_tenant_keys_invalid_json", "error": str(exc)})
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning({"event": "litellm_tenant_keys_not_object"})
+        return {}
+    out: dict[str, str] = {}
+    for k, v in parsed.items():
+        if isinstance(k, str) and isinstance(v, str) and k.strip() and v.strip():
+            out[k.strip()] = v.strip()
+    return out
 
 
 def _env_float(name: str, default: float) -> float:
@@ -37,6 +61,8 @@ class Settings:
     database_url: str = "postgresql://localhost:5432/qortia"
     litellm_url: str = "http://localhost:4000"
     litellm_api_key: str = ""
+    # Optional JSON map tenant_id → LiteLLM virtual key (ADR-003). Empty = shared key.
+    litellm_tenant_keys: dict[str, str] = field(default_factory=dict)
     # Defaults match migrations/V1 vector(1024) + multilingual BGE-M3 (ADR-002).
     embedding_model: str = "bge-m3"
     embedding_dimension: int = 1024
@@ -56,6 +82,7 @@ def load_settings() -> Settings:
         database_url=_env_str("QORTIA_DATABASE_URL", d.database_url),
         litellm_url=_env_str("QORTIA_LITELLM_URL", d.litellm_url),
         litellm_api_key=_env_str("QORTIA_LITELLM_API_KEY", d.litellm_api_key),
+        litellm_tenant_keys=_env_tenant_keys("QORTIA_LITELLM_TENANT_KEYS"),
         embedding_model=_env_str("QORTIA_EMBEDDING_MODEL", d.embedding_model),
         embedding_dimension=_env_int("QORTIA_EMBEDDING_DIMENSION", d.embedding_dimension),
         qortia_dedup_similarity_threshold=_env_float(

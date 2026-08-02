@@ -22,10 +22,33 @@ async def test_embed_text_posts_configured_model(monkeypatch: pytest.MonkeyPatch
     client.post = AsyncMock(return_value=response)
     monkeypatch.setattr("qortia.embeddings.get_litellm_client", lambda: client)
 
-    out = await embed_text("hello", "key")
+    out = await embed_text("hello", "key", tenant_id="tid-1")
     assert len(out) == 1024
     kwargs = client.post.await_args.kwargs
     assert kwargs["json"]["model"] == "bge-m3"
+    assert kwargs["json"]["user"] == "tid-1"
+    assert kwargs["json"]["metadata"] == {"qortia.tenant_id": "tid-1"}
+
+
+@pytest.mark.asyncio
+async def test_get_litellm_key_prefers_tenant_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    import qortia.config as config
+    from qortia.auth import get_litellm_key
+
+    tid = str(uuid4())
+    monkeypatch.setattr(config.settings, "litellm_api_key", "sk-shared")
+    monkeypatch.setattr(config.settings, "litellm_tenant_keys", {tid: "sk-tenant"})
+    assert await get_litellm_key(tid) == "sk-tenant"
+    assert await get_litellm_key(str(uuid4())) == "sk-shared"
+
+
+def test_env_tenant_keys_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    from qortia.config import _env_tenant_keys
+
+    monkeypatch.setenv("QORTIA_LITELLM_TENANT_KEYS", '{"a":"sk-a","b":"sk-b"}')
+    assert _env_tenant_keys("QORTIA_LITELLM_TENANT_KEYS") == {"a": "sk-a", "b": "sk-b"}
+    monkeypatch.setenv("QORTIA_LITELLM_TENANT_KEYS", "not-json")
+    assert _env_tenant_keys("QORTIA_LITELLM_TENANT_KEYS") == {}
 
 
 @pytest.mark.asyncio

@@ -41,13 +41,23 @@ async def embed_text(
     text: str,
     litellm_key: str,
     *,
+    tenant_id: str | None = None,
     timeout: float = 30.0,
 ) -> list[float]:
-    """Embed a single string via the configured LiteLLM model. No cache."""
+    """Embed a single string via the configured LiteLLM model. No cache.
+
+    When ``tenant_id`` is set, the OpenAI-compatible ``user`` field and
+    ``metadata.qortia.tenant_id`` are sent so a LiteLLM gateway can attribute
+    cost/traces per tenant (ADR-003). Engines that ignore these fields are fine.
+    """
+    body: dict[str, object] = {"model": embedding_model(), "input": text}
+    if tenant_id:
+        body["user"] = tenant_id
+        body["metadata"] = {"qortia.tenant_id": tenant_id}
     resp = await get_litellm_client().post(
         "/embeddings",
         headers={"Authorization": f"Bearer {litellm_key}"},
-        json={"model": embedding_model(), "input": text},
+        json=body,
         timeout=timeout,
     )
     resp.raise_for_status()
@@ -71,7 +81,7 @@ async def embed_query(query: str, tenant_id: UUID, lang: str = "en") -> list[flo
 
     try:
         litellm_key = await get_litellm_key(tid)
-        embedding = await embed_text(query, litellm_key, timeout=10.0)
+        embedding = await embed_text(query, litellm_key, tenant_id=tid, timeout=10.0)
         put_cached_embedding(query, tid, effective_lang, embedding)
         return embedding
     except Exception as exc:
@@ -117,7 +127,12 @@ async def validate_embedding_config() -> None:
 
     embed_key = get_platform_embed_key()
     try:
-        embedding = await embed_text("dimension check", embed_key, timeout=60.0)
+        embedding = await embed_text(
+            "dimension check",
+            embed_key,
+            tenant_id="platform",
+            timeout=60.0,
+        )
     except Exception as exc:
         raise RuntimeError(f"Embedding model unavailable ({embedding_model()}): {exc}") from exc
 

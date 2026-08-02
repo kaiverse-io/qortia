@@ -5,15 +5,25 @@
 #   bash scripts/e2e_embeddings_live.sh              # mock 1024-dim vectors (default)
 #   EMBED_BACKEND=ollama bash scripts/e2e_embeddings_live.sh
 #     requires: ollama serve + `ollama pull bge-m3` (real BGE-M3 @ 1024)
+#   EMBED_BACKEND=litellm bash scripts/e2e_embeddings_live.sh
+#     requires: `just stack-up` + `just stack-pull-model` (gateway :4000 → Ollama)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 EMBED_BACKEND="${EMBED_BACKEND:-mock}"
 PG_NAME=qortia-e2e-pg
-PG_PORT=5434
+# Default 5434; litellm stack (`just stack-up`) already binds 5434 → use 5435.
+if [[ -z "${PG_PORT:-}" ]]; then
+  if [[ "$EMBED_BACKEND" == "litellm" ]]; then
+    PG_PORT=5435
+  else
+    PG_PORT=5434
+  fi
+fi
 MOCK_PORT=4000
 OLLAMA_BASE="${OLLAMA_BASE:-http://127.0.0.1:11434/v1}"
+LITELLM_BASE="${LITELLM_BASE:-http://127.0.0.1:4000}"
 API_PORT=8090
 WORKDIR="${TMPDIR:-/tmp}/qortia-e2e-$$"
 mkdir -p "$WORKDIR"
@@ -82,8 +92,19 @@ case "$EMBED_BACKEND" in
     }
     EMBED_URL="${QORTIA_LITELLM_URL}/embeddings"
     ;;
+  litellm)
+    export QORTIA_LITELLM_URL="$LITELLM_BASE"
+    export QORTIA_LITELLM_API_KEY="${QORTIA_LITELLM_API_KEY:-sk-qortia-local}"
+    echo "==> Real embeddings via LiteLLM gateway at $LITELLM_BASE → engine"
+    curl -sf "${LITELLM_BASE}/health/liveliness" >/dev/null \
+      || curl -sf "${LITELLM_BASE}/health" >/dev/null || {
+      echo "FAIL: LiteLLM not reachable — start with: just stack-up && just stack-pull-model"
+      exit 1
+    }
+    EMBED_URL="${QORTIA_LITELLM_URL}/embeddings"
+    ;;
   *)
-    echo "FAIL: unknown EMBED_BACKEND=$EMBED_BACKEND (use mock|ollama)"
+    echo "FAIL: unknown EMBED_BACKEND=$EMBED_BACKEND (use mock|ollama|litellm)"
     exit 1
     ;;
 esac
@@ -155,7 +176,7 @@ MEM_ID=$(echo "$REM" | python3 -c "import sys,json; d=json.load(sys.stdin); ids=
 echo "==> Wait for embedding worker to fill vector"
 # Real CPU inference (Ollama BGE-M3) can take tens of seconds on cold start.
 WAIT_SECS=30
-[[ "$EMBED_BACKEND" == "ollama" ]] && WAIT_SECS=120
+[[ "$EMBED_BACKEND" == "ollama" || "$EMBED_BACKEND" == "litellm" ]] && WAIT_SECS=120
 EMBEDDED=0
 for i in $(seq 1 "$WAIT_SECS"); do
   GOT=$(docker exec "$PG_NAME" psql -U postgres -d qortia -Atc \

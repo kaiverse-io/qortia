@@ -6,23 +6,29 @@ Postgres+pgvector (remember / recall / reflect / knowledge).
 ## Setup
 
 ```bash
-cp .env.example .env   # set QORTIA_DATABASE_URL + LiteLLM
-uv sync                # install deps
-just ci                # run all checks
+cp .env.example .env
+uv sync
+just ci
+
+# Local infra (Postgres + Ollama engine + LiteLLM gateway)
+just stack-up
+just stack-pull-model
 
 # Runtime (API + embedding worker — see docs/how-to/embeddings.md)
-uvicorn qortia.app:app --port 8080
-just worker            # fills embeddings; archival / idle-reflect / weekly summary
+uv run uvicorn qortia.app:app --port 8080
+just worker -- --only embed
 ```
 
-Defaults: embedding model `bge-m3`, dimension `1024` (configurable via
-`QORTIA_EMBEDDING_MODEL` / `QORTIA_EMBEDDING_DIMENSION`).
+Defaults: embedding model `bge-m3`, dimension `1024`. Multi-tenant virtual keys:
+`QORTIA_LITELLM_TENANT_KEYS` (see ADR-003).
 
 ## Development
 
 | Command | What it does |
 |---|---|
 | `just ci` | Full CI: lint + type-check + test + docs + arch coverage |
+| `just stack-up` / `stack-down` | Local db + Ollama + LiteLLM |
+| `just e2e-embeddings [mock\|ollama\|litellm]` | Live remember→embed→recall |
 | `just fmt` | Auto-format (ruff) |
 | `just sync` | Sync deps with uv |
 | `just lint` | Run all pre-commit hooks |

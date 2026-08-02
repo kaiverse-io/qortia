@@ -82,6 +82,26 @@ lint:
 worker *args:
     uv run qortia-worker {{ args }}
 
+# Local infra: Postgres+pgvector + Ollama + LiteLLM gateway (ADR-003).
+stack-up:
+    docker compose up -d
+    @echo "Waiting for LiteLLM…"; \
+      for i in $$(seq 1 60); do \
+        curl -sf http://127.0.0.1:4000/health/liveliness >/dev/null 2>&1 && break; \
+        sleep 1; \
+      done; \
+      echo "stack up — DB :5434  LiteLLM :4000  Ollama :11434"
+
+stack-down:
+    docker compose down
+
+stack-pull-model:
+    docker compose exec ollama ollama pull bge-m3
+
+# Live E2E (mock | ollama | litellm). See docs/how-to/embeddings.md.
+e2e-embeddings backend="mock":
+    EMBED_BACKEND={{ backend }} bash scripts/e2e_embeddings_live.sh
+
 # ── On-demand (bucket C) ─────────────────────────────────────────────────────
 
 # AI-usage cost/burn report — installed by .devcontainer/post-create.sh
