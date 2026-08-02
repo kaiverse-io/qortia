@@ -75,8 +75,12 @@ def load_spacy_model() -> None:
 
     _nlp = spacy.load("en_core_web_sm")
     logger.info({"event": "spacy_model_loaded", "model": "en_core_web_sm"})
-    # Warm up Indic pipeline at startup so first memory write doesn't pay the load cost.
-    _get_indic_pipeline("hi")
+    # Optional: warm Indic pipeline when installed. Missing model must not
+    # fail English NER startup (OSS installs often ship en_core_web_sm only).
+    try:
+        _get_indic_pipeline("hi")
+    except Exception as exc:
+        logger.info({"event": "indic_ner_warmup_skipped", "error": str(exc)})
 
 
 def get_nlp() -> object | None:  # spaCy Language — avoid hard dep on spacy type stubs
@@ -119,7 +123,11 @@ def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, 
             if mapped and ent.text not in seen:
                 seen[ent.text] = mapped
         return list(seen.items())[:20]
-    doc = get_nlp()(text)  # type: ignore[operator]
+    nlp = get_nlp()
+    if nlp is None:
+        logger.warning({"event": "ner_model_not_loaded", "lang": lang})
+        return []
+    doc = nlp(text)  # type: ignore[operator]
     seen_en: dict[str, str] = {}
     for ent in doc.ents:
         if ent.label_ in EN_ENTITY_LABELS and ent.text not in seen_en:
@@ -183,27 +191,52 @@ def _paragraph_split(text: str, title: str) -> list[dict[str, str]]:
 
 
 def extract_index_fields(heading: str, text: str, lang: str = "en") -> dict[str, Any]:
-    if lang in INDIC_NER_LANGS:
-        doc = _get_indic_pipeline(lang)(text)
-        entities = list(
-            dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP)
-        )[:10]
-        sentences = list(doc.sents)
-        noun_chunks: list[str] = []
-    else:
-        nlp = get_nlp()
-        doc = nlp(text)  # type: ignore[operator]
-        entities = list(
-            dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS)
-        )[:10]
-        sentences = list(doc.sents)
-        noun_chunks = list(
-            dict.fromkeys(
-                chunk.text.lower() for chunk in doc.noun_chunks if len(chunk.text.split()) <= 4
-            )
-        )[:10]
+    """Build PageIndex fields for a section.
 
-    summary = " ".join(s.text.strip() for s in sentences[:2])
+    When spaCy isn't installed/loaded (common OSS local boot), degrade to a
+    whitespace summary so knowledge ingest still writes rows — BM25/vector
+    recall can proceed; entity-rich index fields stay empty until NER is wired.
+    """
+    entities: list[str] = []
+    noun_chunks: list[str] = []
+    summary = ""
+
+    try:
+        if lang in INDIC_NER_LANGS:
+            doc = _get_indic_pipeline(lang)(text)
+            entities = list(
+                dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP)
+            )[:10]
+            sentences = list(doc.sents)
+            summary = " ".join(s.text.strip() for s in sentences[:2])
+        else:
+            nlp = get_nlp()
+            if nlp is None:
+                raise RuntimeError("spacy_en_not_loaded")
+            doc = nlp(text)  # type: ignore[operator]
+            entities = list(
+                dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in EN_ENTITY_LABELS)
+            )[:10]
+            sentences = list(doc.sents)
+            noun_chunks = list(
+                dict.fromkeys(
+                    chunk.text.lower() for chunk in doc.noun_chunks if len(chunk.text.split()) <= 4
+                )
+            )[:10]
+            summary = " ".join(s.text.strip() for s in sentences[:2])
+    except Exception as exc:
+        logger.warning({"event": "index_fields_ner_degraded", "lang": lang, "error": str(exc)})
+        # First ~2 sentences by punctuation — good enough for index_summary BM25.
+        parts = [
+            p.strip() for p in text.replace("!", ".").replace("?", ".").split(".") if p.strip()
+        ]
+        summary = ". ".join(parts[:2])
+        if summary and not summary.endswith("."):
+            summary += "."
+
+    if not summary:
+        summary = text[:500].strip()
+
     questions = ([heading] + noun_chunks) if heading else noun_chunks
 
     return {

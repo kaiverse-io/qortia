@@ -26,8 +26,25 @@ Call the HTTP API with:
 - `Authorization: Bearer <tenant API key>`
 - `X-Agent-Id: <uuid belonging to that tenant>`
 
-Some internal `/v1/internal/eval/*` routes exist only when `eval_mode=true`
+Some internal `/v1/internal/eval/*` routes exist only when `QORTIA_EVAL_MODE=true`
 (`qortia.eval_router`). They are not a substitute for production auth.
+
+## Live REH (dogfood)
+
+```bash
+just stack-up && just stack-pull-model   # or OLLAMA_MODELS_DIR=$HOME/.ollama just stack-up
+# API (eval routes) + worker — use :8090 if :8080 is taken
+export QORTIA_DATABASE_URL=postgresql://qortia_platform:qortia_platform@127.0.0.1:5434/qortia
+export QORTIA_LITELLM_URL=http://127.0.0.1:4000
+export QORTIA_LITELLM_API_KEY=sk-qortia-local
+export QORTIA_EVAL_MODE=true
+uv run uvicorn qortia.app:app --host 127.0.0.1 --port 8090
+just worker -- --only embed
+
+QORTIA_URL=http://127.0.0.1:8090 PYTHONPATH=. uv run python evals/run_reh.py evals/datasets/recall_smoke.json
+```
+
+`QORTIA_URL` overrides the harness default (`http://localhost:8080`).
 
 ## Dataset provenance
 
