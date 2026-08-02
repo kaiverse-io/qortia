@@ -45,15 +45,22 @@ just worker
 Without the worker, remember/reflect still write rows, but vector recall stays
 cold until embeddings are filled.
 
-## Live smoke test (no real model required)
+## Live smoke test
 
-Requires Docker. Spins up pgvector, a deterministic mock `/embeddings` server
-(1024-dim), the API, and `qortia-worker --only embed`, then runs
-remember → embed → recall:
+Requires Docker. Spins up pgvector, an `/embeddings` backend, the API, and
+`qortia-worker --only embed`, then runs remember → embed → recall:
 
 ```bash
+# Deterministic mock vectors (CI / no model download)
 bash scripts/e2e_embeddings_live.sh
+
+# Real BGE-M3 via Ollama (install ollama, then: ollama serve && ollama pull bge-m3)
+EMBED_BACKEND=ollama bash scripts/e2e_embeddings_live.sh
 ```
+
+`QORTIA_LITELLM_URL` is any OpenAI-compatible base (LiteLLM proxy, Ollama
+`…/v1`, TEI, vLLM). LiteLLM is the recommended *gateway* for multi-tenant keys
+and tracing — not the inference engine. See ADR-002.
 
 ## Changing the model (same dimension)
 

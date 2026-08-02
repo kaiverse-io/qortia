@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Live E2E: Postgres + mock LiteLLM + API + worker → remember → embed → recall
+# Live E2E: Postgres + embed backend + API + worker → remember → embed → recall
+#
+# Usage:
+#   bash scripts/e2e_embeddings_live.sh              # mock 1024-dim vectors (default)
+#   EMBED_BACKEND=ollama bash scripts/e2e_embeddings_live.sh
+#     requires: ollama serve + `ollama pull bge-m3` (real BGE-M3 @ 1024)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+EMBED_BACKEND="${EMBED_BACKEND:-mock}"
 PG_NAME=qortia-e2e-pg
 PG_PORT=5434
 MOCK_PORT=4000
+OLLAMA_BASE="${OLLAMA_BASE:-http://127.0.0.1:11434/v1}"
 API_PORT=8090
 WORKDIR="${TMPDIR:-/tmp}/qortia-e2e-$$"
 mkdir -p "$WORKDIR"
@@ -49,27 +56,45 @@ for attempt in 1 2 3; do
 done
 
 export QORTIA_DATABASE_URL="postgresql://qortia_platform:qortia_platform@127.0.0.1:${PG_PORT}/qortia"
-export QORTIA_LITELLM_URL="http://127.0.0.1:${MOCK_PORT}"
-export QORTIA_LITELLM_API_KEY="sk-e2e-test"
 export QORTIA_EMBEDDING_MODEL="bge-m3"
 export QORTIA_EMBEDDING_DIMENSION="1024"
+export QORTIA_LITELLM_API_KEY="${QORTIA_LITELLM_API_KEY:-sk-e2e-test}"
 
-echo "==> Mock LiteLLM embeddings on :$MOCK_PORT"
-uv run python scripts/mock_litellm_embeddings.py >"$WORKDIR/mock.log" 2>&1 &
-MOCK_PID=$!
-for i in $(seq 1 40); do
-  curl -sf "http://127.0.0.1:${MOCK_PORT}/health" >/dev/null && break
-  sleep 0.25
-done
-curl -sf "http://127.0.0.1:${MOCK_PORT}/health" | tee -a "$LOG"
+case "$EMBED_BACKEND" in
+  mock)
+    export QORTIA_LITELLM_URL="http://127.0.0.1:${MOCK_PORT}"
+    echo "==> Mock LiteLLM embeddings on :$MOCK_PORT"
+    uv run python scripts/mock_litellm_embeddings.py >"$WORKDIR/mock.log" 2>&1 &
+    MOCK_PID=$!
+    for i in $(seq 1 40); do
+      curl -sf "http://127.0.0.1:${MOCK_PORT}/health" >/dev/null && break
+      sleep 0.25
+    done
+    curl -sf "http://127.0.0.1:${MOCK_PORT}/health" | tee -a "$LOG"
+    EMBED_URL="${QORTIA_LITELLM_URL}/embeddings"
+    ;;
+  ollama)
+    export QORTIA_LITELLM_URL="$OLLAMA_BASE"
+    echo "==> Real embeddings via Ollama at $OLLAMA_BASE (model=bge-m3)"
+    curl -sf "${OLLAMA_BASE%/v1}/api/tags" >/dev/null || {
+      echo "FAIL: ollama not reachable at ${OLLAMA_BASE%/v1} — start with: ollama serve"
+      exit 1
+    }
+    EMBED_URL="${QORTIA_LITELLM_URL}/embeddings"
+    ;;
+  *)
+    echo "FAIL: unknown EMBED_BACKEND=$EMBED_BACKEND (use mock|ollama)"
+    exit 1
+    ;;
+esac
 
-echo "==> Probe /embeddings (dim check)"
-DIM=$(curl -sf "http://127.0.0.1:${MOCK_PORT}/embeddings" \
+echo "==> Probe /embeddings (dim check) backend=$EMBED_BACKEND"
+DIM=$(curl -sf "$EMBED_URL" \
   -H "Authorization: Bearer $QORTIA_LITELLM_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"bge-m3","input":"dimension check"}' \
   | python3 -c "import sys,json; print(len(json.load(sys.stdin)['data'][0]['embedding']))")
-echo "mock embedding dim=$DIM"
+echo "embedding dim=$DIM"
 [[ "$DIM" == "1024" ]] || { echo "FAIL: expected 1024"; exit 1; }
 
 echo "==> Provision tenant/agent/key"
@@ -128,8 +153,11 @@ MEM_ID=$(echo "$REM" | python3 -c "import sys,json; d=json.load(sys.stdin); ids=
 [[ -n "$MEM_ID" ]] || { echo "FAIL: no memory id"; cat "$WORKDIR/api.log"; exit 1; }
 
 echo "==> Wait for embedding worker to fill vector"
+# Real CPU inference (Ollama BGE-M3) can take tens of seconds on cold start.
+WAIT_SECS=30
+[[ "$EMBED_BACKEND" == "ollama" ]] && WAIT_SECS=120
 EMBEDDED=0
-for i in $(seq 1 30); do
+for i in $(seq 1 "$WAIT_SECS"); do
   GOT=$(docker exec "$PG_NAME" psql -U postgres -d qortia -Atc \
     "SELECT CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END FROM hindsight_memories WHERE id='${MEM_ID}'")
   if [[ "$GOT" == "1" ]]; then
@@ -175,5 +203,5 @@ echo "$HIT" | grep -q '^1' || {
 }
 
 echo ""
-echo "E2E PASS: remember → worker embed (1024-dim) → recall hit"
+echo "E2E PASS ($EMBED_BACKEND): remember → worker embed (1024-dim) → recall hit"
 echo "logs: $WORKDIR"

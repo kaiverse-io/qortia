@@ -46,6 +46,25 @@ routing was already superseded by a single multilingual BGE-M3 space — keep th
 6. **Validate at API + worker startup** when an API key is configured; skip the
    live probe when the key is empty (local tests / docs builds).
 
+## Gateway vs engine (and multi-tenant tracing)
+
+`QORTIA_LITELLM_URL` names an **OpenAI-compatible base URL**, not a commitment
+to run inference inside LiteLLM:
+
+| Layer | Role | Typical choice |
+|-------|------|----------------|
+| Gateway | Virtual keys, budgets, routing, OTel | **LiteLLM Proxy** (prod multi-tenant) |
+| Engine | Actually run BGE-M3 | Ollama (dev), TEI / vLLM (prod embeddings) |
+
+For multi-tenant tracing: keep one LiteLLM Proxy in front; issue a virtual key
+per tenant; enable LiteLLM OpenTelemetry (v2) and put `aither.tenant_id` /
+`qortia.tenant_id` on every embed request via LiteLLM `metadata` / `user` (or
+pass-through headers). Qortia v1 uses a single configured key — per-tenant
+virtual keys are the next step when more than one tenant shares a gateway.
+Do **not** replace the OpenAI-compatible client with an in-process
+sentence-transformers call: that breaks swapability and loses the gateway’s
+auth/budget/trace seam.
+
 ## Consequences
 
 **Good:** OSS operators configure gateway + model without forking; call sites stop
