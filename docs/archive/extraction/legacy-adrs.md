@@ -1,9 +1,21 @@
 ---
-kind: decisions
-theme: qortia
-status: active
+kind: archive
+status: historical
 owner: platform
-last_reviewed: 2026-05-20
+last_reviewed: 2026-08-02
+---
+
+# Qortia — Architecture Decisions (host-platform era)
+
+> **Historical.** Decisions recorded while Qortia was embedded in a larger host
+> platform. Do **not** treat this file as the active ADR set for standalone
+> Qortia. Canonical current architecture: [`ARCHITECTURE.md`](../../../ARCHITECTURE.md).
+> Extraction rebuild notes: [`extraction-requirements.md`](../../explanation/extraction-requirements.md).
+> New decisions go in [`docs/decisions/adrs/`](../../decisions/adrs/) (MADR).
+>
+> Superseding standalone decision:
+> [`adr-001-standalone-extraction.md`](../../decisions/adrs/adr-001-standalone-extraction.md).
+
 ---
 
 # Qortia — Architecture Decisions
@@ -356,10 +368,7 @@ Rejected: Stripping thoughts (destroys the primary benefit of reasoning models),
 `_recall()` in `mcp_bridge.py` strips all fields except `type` and `content` before returning to the LLM:
 
 ```python
-results = [
-    {"type": r["type"], "content": r["content"]}
-    for r in resp.json().get("results", [])
-]
+results = [{"type": r["type"], "content": r["content"]} for r in resp.json().get("results", [])]
 return json.dumps({"results": results})
 ```
 
@@ -1499,9 +1508,7 @@ Replace the three divergent label sets with one `frozenset` constant used by all
 extraction functions:
 
 ```python
-EN_ENTITY_LABELS = frozenset(
-    {"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"}
-)
+EN_ENTITY_LABELS = frozenset({"ORG", "PERSON", "PRODUCT", "GPE", "NORP", "FAC", "WORK_OF_ART"})
 ```
 
 `TECH` is removed — it is not a valid `en_core_web_sm` label and was dead code.
@@ -1837,10 +1844,10 @@ def dynamic_importance(
     recall_count: int,
     last_recalled_at: datetime,
     base_importance: float,
-    confidence_multiplier: float = 1.0,    # new
+    confidence_multiplier: float = 1.0,  # new
 ) -> float:
     raw = base_importance * (1 + 0.1 * log1p(recall_count)) * recency_factor(...)
-    return raw * confidence_multiplier      # outcome scaling applied last
+    return raw * confidence_multiplier  # outcome scaling applied last
 ```
 
 ## Recall API — `work_order_id` Header

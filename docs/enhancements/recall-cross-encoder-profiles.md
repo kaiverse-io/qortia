@@ -37,8 +37,8 @@ cross-encoder reranking, pre-built search recipes, and candidate over-fetch patt
 ## When to Implement (Trigger Conditions)
 
 **Classification: Post-MVP.** The current LLM rerank (`_llm_rerank`) is adequate at
-Tenant-0 scale — do **not** build this speculatively. The two halves have different
-triggers:
+early / single-tenant scale — do **not** build this speculatively. The two halves have
+different triggers:
 
 **Recall profiles (opt-in stage-toggle, no cross-encoder) — lighter:**
 - Implement when an agent role explicitly needs a non-default latency/quality
@@ -180,18 +180,31 @@ class RecallConfig:
     top_k: int
     candidate_multiplier: int  # fetch N × top_k candidates before reranking
 
+
 RECALL_PROFILES: dict[str, RecallConfig] = {
     "fast": RecallConfig(
-        vector=True, bm25=True, entity_boost=False,
-        rerank=None, top_k=5, candidate_multiplier=1,
+        vector=True,
+        bm25=True,
+        entity_boost=False,
+        rerank=None,
+        top_k=5,
+        candidate_multiplier=1,
     ),
     "balanced": RecallConfig(  # current default behaviour
-        vector=True, bm25=True, entity_boost=True,
-        rerank=None, top_k=5, candidate_multiplier=2,
+        vector=True,
+        bm25=True,
+        entity_boost=True,
+        rerank=None,
+        top_k=5,
+        candidate_multiplier=2,
     ),
     "thorough": RecallConfig(
-        vector=True, bm25=True, entity_boost=True,
-        rerank="cross_encoder", top_k=10, candidate_multiplier=3,
+        vector=True,
+        bm25=True,
+        entity_boost=True,
+        rerank="cross_encoder",
+        top_k=10,
+        candidate_multiplier=3,
     ),
 }
 ```

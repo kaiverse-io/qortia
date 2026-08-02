@@ -279,7 +279,7 @@ async def run_teh() -> int:
             cases = load_dataset(dataset_path)
             dataset_results: list[dict[str, Any]] = []
 
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"Dataset: {dataset_path.name} ({len(cases)} cases)")
             print("=" * 60)
 
@@ -309,7 +309,7 @@ async def run_teh() -> int:
             )
 
     # Print summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("TEMPORAL EVAL HARNESS — SUMMARY")
     print("=" * 60)
     print(f"\n{'Dataset':<35} {'Pass%':>6} {'LeakRate':>9} {'PassGate':>9} {'LeakGate':>9}")

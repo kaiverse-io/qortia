@@ -72,8 +72,8 @@ floor is breached. North star targets are aspirational; floors are the gate.
 ### 2.3 Dataset Structure
 
 **Files:**
-- `platform/evals/datasets/recall_v1.json` — 55 cases, full dataset
-- `platform/evals/datasets/recall_smoke.json` — 10 cases, CI smoke subset
+- `evals/datasets/recall_v1.json` — full dataset
+- `evals/datasets/recall_smoke.json` — CI smoke subset
 
 Each case has the structure:
 

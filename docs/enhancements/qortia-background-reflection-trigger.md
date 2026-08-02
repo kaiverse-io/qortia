@@ -67,8 +67,9 @@ For each qualifying agent, the task calls the existing `reflect()` logic directl
 (not via HTTP — internal function call) on behalf of the agent.
 
 ```python
-REFLECTION_TRIGGER_INTERVAL_SECONDS = 6 * 3600   # 6 hours
+REFLECTION_TRIGGER_INTERVAL_SECONDS = 6 * 3600  # 6 hours
 REFLECTION_IDLE_HOURS = 24
+
 
 async def run_reflection_trigger() -> None:
     while True:
@@ -96,22 +97,24 @@ async def _trigger_pending_reflections() -> None:
             )
         for row in agents:
             try:
-                identity = AgentIdentity(
-                    agent_id=row["id"], tenant_id=row["tenant_id"]
-                )
+                identity = AgentIdentity(agent_id=row["id"], tenant_id=row["tenant_id"])
                 await reflect(agent=identity)
-                logger.info({
-                    "event": "reflection_triggered_background",
-                    "agent_id": str(row["id"]),
-                    "tenant_id": str(row["tenant_id"]),
-                })
+                logger.info(
+                    {
+                        "event": "reflection_triggered_background",
+                        "agent_id": str(row["id"]),
+                        "tenant_id": str(row["tenant_id"]),
+                    }
+                )
             except Exception as exc:
-                logger.warning({
-                    "event": "reflection_trigger_failed",
-                    "agent_id": str(row["id"]),
-                    "tenant_id": str(row["tenant_id"]),
-                    "error": str(exc),
-                })
+                logger.warning(
+                    {
+                        "event": "reflection_trigger_failed",
+                        "agent_id": str(row["id"]),
+                        "tenant_id": str(row["tenant_id"]),
+                        "error": str(exc),
+                    }
+                )
     except Exception as exc:
         logger.warning({"event": "reflection_trigger_scan_failed", "error": str(exc)})
 ```
@@ -123,11 +126,13 @@ existing `run_embedding_worker` and `run_archival_task`:
 
 ```python
 # platform/app/main.py — startup
-start_supervised_tasks([
-    run_embedding_worker,
-    run_archival_task,
-    run_reflection_trigger,   # ← new
-])
+start_supervised_tasks(
+    [
+        run_embedding_worker,
+        run_archival_task,
+        run_reflection_trigger,  # ← new
+    ]
+)
 ```
 
 ### 2.3 Idle Detection Logic

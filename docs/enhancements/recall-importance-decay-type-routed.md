@@ -80,9 +80,9 @@ Apply at the return site of each function:
 return _sort_by_importance([_to_result(dict(r), "private") for r in rows])
 
 # _recall_lessons (already filtered by score >= 0.35)
-return _sort_by_importance([
-    _to_result(dict(r), "private") for r in rows if (r.get("score") or 0) >= 0.35
-])
+return _sort_by_importance(
+    [_to_result(dict(r), "private") for r in rows if (r.get("score") or 0) >= 0.35]
+)
 
 # _recall_episodic
 return _sort_by_importance([_to_result(dict(r), "private") for r in rows])

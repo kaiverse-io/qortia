@@ -311,6 +311,11 @@ def pg_url(setup_infrastructure: None) -> str:
     return POSTGRES_URL
 
 
+@pytest.fixture(scope="session")
+def pg_superuser_url(setup_infrastructure: None) -> str:
+    return POSTGRES_SUPERUSER_URL
+
+
 @pytest.fixture
 def conn(setup_infrastructure: None, _session_loop: asyncio.AbstractEventLoop):  # type: ignore[return]
     """Per-test DB connection with rollback."""

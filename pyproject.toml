@@ -56,7 +56,7 @@ addopts = [
     "--import-mode=importlib",
     "--cov=qortia",
     "--cov-report=term-missing",
-    "--cov-fail-under=0",
+    "--cov-fail-under=90",
 ]
 
 [tool.coverage.run]
@@ -65,4 +65,4 @@ branch = true
 
 [tool.coverage.report]
 # Ratchet (bucket B): only increase this value, never decrease it.
-fail_under = 0
+fail_under = 90

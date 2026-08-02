@@ -44,7 +44,7 @@ def _generate_synthetic_memories(count: int) -> list[dict[str, object]]:
 
 async def _seed_corpus(
     client: httpx.AsyncClient,
-    platform_url: str,
+    qortia_url: str,
     tenant_id: str,
     agent_id: str,
     corpus_size: int,
@@ -59,7 +59,7 @@ async def _seed_corpus(
         batch = memories[offset : offset + batch_size]
         for mem in batch:
             resp = await client.post(
-                f"{platform_url}/v1/internal/eval/seed-memory",
+                f"{qortia_url}/v1/internal/eval/seed-memory",
                 json={
                     "agent_id": agent_id,
                     "tenant_id": tenant_id,
@@ -87,7 +87,7 @@ _QUERIES = [
 
 async def _measure_recall_latencies(
     client: httpx.AsyncClient,
-    platform_url: str,
+    qortia_url: str,
     tenant_id: str,
     agent_id: str,
     iterations: int,
@@ -99,7 +99,7 @@ async def _measure_recall_latencies(
         for query in _QUERIES:
             start = time.perf_counter()
             resp = await client.post(
-                f"{platform_url}/v1/internal/eval/recall",
+                f"{qortia_url}/v1/internal/eval/recall",
                 params={
                     "query": query,
                     "tenant_id": tenant_id,
@@ -120,7 +120,7 @@ async def _measure_recall_latencies(
 
 async def _measure_embedding_throughput(
     client: httpx.AsyncClient,
-    platform_url: str,
+    qortia_url: str,
     tenant_id: str,
     agent_id: str,
     wait_seconds: int = 15,
@@ -129,7 +129,7 @@ async def _measure_embedding_throughput(
 
     async def _pending_count() -> int:
         resp = await client.get(
-            f"{platform_url}/v1/internal/eval/pending-embeddings",
+            f"{qortia_url}/v1/internal/eval/pending-embeddings",
             params={"tenant_id": tenant_id, "agent_id": agent_id},
         )
         if resp.status_code == 404:
@@ -157,14 +157,14 @@ async def _measure_embedding_throughput(
 
 async def _measure_cost_per_recall(
     client: httpx.AsyncClient,
-    platform_url: str,
+    qortia_url: str,
     tenant_id: str,
     agent_id: str,
     recall_count: int,
 ) -> dict[str, object]:
     """Query agent_cost_ledger sum for the measured recall calls."""
     resp = await client.get(
-        f"{platform_url}/v1/internal/eval/cost-ledger",
+        f"{qortia_url}/v1/internal/eval/cost-ledger",
         params={"tenant_id": tenant_id, "agent_id": agent_id},
     )
     if resp.status_code == 404:
@@ -180,13 +180,13 @@ async def _measure_cost_per_recall(
 
 async def _measure_hnsw_overhead(
     client: httpx.AsyncClient,
-    platform_url: str,
+    qortia_url: str,
     tenant_id: str,
     agent_id: str,
 ) -> dict[str, object]:
     """Compare pg_relation_size('hindsight_memories') vs index size."""
     resp = await client.get(
-        f"{platform_url}/v1/internal/eval/table-sizes",
+        f"{qortia_url}/v1/internal/eval/table-sizes",
         params={"tenant_id": tenant_id, "agent_id": agent_id},
     )
     if resp.status_code == 404:
@@ -222,7 +222,7 @@ def _percentile(sorted_vals: list[float], p: float) -> float:
 
 
 async def run_pib(
-    platform_url: str,
+    qortia_url: str,
     tenant_id: UUID,
     agent_id: UUID,
     iterations: int = 10,
@@ -236,13 +236,13 @@ async def run_pib(
         print(f"\n{'=' * 50}")
         print(f"PIB: Seeding {corpus_size} synthetic memories")
         print("=" * 50)
-        seed_time = await _seed_corpus(client, platform_url, tid, aid, corpus_size)
+        seed_time = await _seed_corpus(client, qortia_url, tid, aid, corpus_size)
 
         # 2. Recall latency
         print(f"\n{'=' * 50}")
         print("PIB: Measuring recall latency")
         print("=" * 50)
-        latencies = await _measure_recall_latencies(client, platform_url, tid, aid, iterations)
+        latencies = await _measure_recall_latencies(client, qortia_url, tid, aid, iterations)
         sorted_lat = sorted(latencies)
         avg = sum(latencies) / len(latencies) if latencies else 0.0
         p50 = _percentile(sorted_lat, 50)
@@ -253,20 +253,20 @@ async def run_pib(
         print(f"\n{'=' * 50}")
         print("PIB: Measuring embedding throughput")
         print("=" * 50)
-        emb_throughput = await _measure_embedding_throughput(client, platform_url, tid, aid)
+        emb_throughput = await _measure_embedding_throughput(client, qortia_url, tid, aid)
 
         # 4. Cost per recall
         print(f"\n{'=' * 50}")
         print("PIB: Measuring cost per recall")
         print("=" * 50)
         recall_count = len(latencies)
-        cost = await _measure_cost_per_recall(client, platform_url, tid, aid, recall_count)
+        cost = await _measure_cost_per_recall(client, qortia_url, tid, aid, recall_count)
 
         # 5. HNSW index overhead
         print(f"\n{'=' * 50}")
         print("PIB: Measuring HNSW index overhead")
         print("=" * 50)
-        hnsw = await _measure_hnsw_overhead(client, platform_url, tid, aid)
+        hnsw = await _measure_hnsw_overhead(client, qortia_url, tid, aid)
 
     # ── Report ──────────────────────────────────────────────────
     print(f"\n{'=' * 60}")
@@ -303,7 +303,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Qortia Infrastructure Performance Benchmark (PIB)"
     )
-    parser.add_argument("platform_url", help="Platform base URL (e.g. http://localhost:8080)")
+    parser.add_argument("qortia_url", help="Qortia base URL (e.g. http://localhost:8080)")
     parser.add_argument("tenant_id", type=UUID, help="Tenant UUID")
     parser.add_argument("agent_id", type=UUID, help="Agent UUID")
     parser.add_argument(
@@ -319,7 +319,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     asyncio.run(
         run_pib(
-            args.platform_url,
+            args.qortia_url,
             args.tenant_id,
             args.agent_id,
             iterations=args.iterations,

@@ -81,6 +81,7 @@ synthesis pass runs for that `(agent_id, user_ref)` pair as a fire-and-forget
 ```python
 PROFILE_SYNTHESIS_THRESHOLD = 5
 
+
 async def _maybe_synthesise_profile(
     agent_id: UUID,
     tenant_id: UUID,
@@ -101,11 +102,13 @@ async def _maybe_synthesise_profile(
                   AND type = 'episodic' AND tier = 'active'
                 ORDER BY created_at DESC LIMIT 20
                 """,
-                agent_id, user_ref,
+                agent_id,
+                user_ref,
             )
             existing = await conn.fetchrow(
                 "SELECT profile, summary FROM user_profiles WHERE agent_id = $1 AND user_ref = $2",
-                agent_id, user_ref,
+                agent_id,
+                user_ref,
             )
 
         existing_profile = existing["profile"] if existing else {}
@@ -138,22 +141,29 @@ async def _maybe_synthesise_profile(
                     last_interaction_at = now(),
                     updated_at          = now()
                 """,
-                tenant_id, agent_id, user_ref,
-                json.dumps(updated_profile), updated_summary,
+                tenant_id,
+                agent_id,
+                user_ref,
+                json.dumps(updated_profile),
+                updated_summary,
                 str(embedding),
             )
-        logger.info({
-            "event": "user_profile_synthesised",
-            "agent_id": str(agent_id),
-            "user_ref": user_ref,
-        })
+        logger.info(
+            {
+                "event": "user_profile_synthesised",
+                "agent_id": str(agent_id),
+                "user_ref": user_ref,
+            }
+        )
     except Exception as exc:
-        logger.warning({
-            "event": "user_profile_synthesis_failed",
-            "agent_id": str(agent_id),
-            "user_ref": user_ref,
-            "error": str(exc),
-        })
+        logger.warning(
+            {
+                "event": "user_profile_synthesis_failed",
+                "agent_id": str(agent_id),
+                "user_ref": user_ref,
+                "error": str(exc),
+            }
+        )
 ```
 
 ### 2.2 Synthesis Prompt
@@ -185,7 +195,8 @@ param. When provided and a `user_profiles` row exists:
 if agent_mode == "assistant" and user_ref:
     profile_row = await conn.fetchrow(
         "SELECT summary FROM user_profiles WHERE agent_id = $1 AND user_ref = $2",
-        agent_id, user_ref,
+        agent_id,
+        user_ref,
     )
     if profile_row:
         context["user_profile_summary"] = profile_row["summary"]

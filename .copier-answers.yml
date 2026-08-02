@@ -11,4 +11,5 @@ license: Apache-2.0
 project_name: Qortia
 python_package_name: qortia
 python_version: '3.12'
+coverage_fail_under: 90
 
