@@ -106,6 +106,7 @@ def test_load_spacy_model_skips_missing_indic(monkeypatch: pytest.MonkeyPatch) -
     assert kmod._nlp is not None
     kmod._get_indic_pipeline.assert_called_once_with("hi")
 
+
 def test_build_weekly_summary_formats_handoffs() -> None:
     from qortia.knowledge import build_weekly_summary
 
