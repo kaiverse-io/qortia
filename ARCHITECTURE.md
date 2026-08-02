@@ -99,9 +99,9 @@ hashes (deliberate: high-entropy random tokens, not user passwords, so a slow pa
 only add latency on every request for no benefit).
 
 Public interface: `AgentIdentity` (agent_id, tenant_id, clearance_order, division),
-`hash_api_key`, `require_agent`, `get_litellm_key`/`get_platform_embed_key` (return the single
-configured LiteLLM key regardless of tenant — no per-tenant provisioning in v1),
-`provision_eval_litellm_key` (no-op).
+`hash_api_key`, `require_agent`, `get_litellm_key` (per-tenant virtual key from
+`QORTIA_LITELLM_TENANT_KEYS`, else shared `QORTIA_LITELLM_API_KEY` — ADR-003),
+`get_platform_embed_key` (shared/master key for probes), `provision_eval_litellm_key` (no-op).
 
 Depends on: `qortia.config`, `qortia.db`. Used via `Depends(require_agent)` by `remember.py`,
 `recall.py`, `reflect.py`, `knowledge.py`, and `eval_router.py`.
@@ -161,8 +161,8 @@ pool directly.
 Single owner of LiteLLM `/embeddings` calls for the whole package (ADR-002).
 
 ```
-embed_text(text, key)  ──► LiteLLM /embeddings  (write / worker / validate)
-embed_query(q, tid, lang) ──► cache? ──► embed_text  (recall hot path)
+embed_text(text, key, tenant_id?)  ──► LiteLLM /embeddings (+ user/metadata)
+embed_query(q, tid, lang) ──► cache? ──► embed_text(tenant_id=tid)
 validate_embedding_config() ──► settings.dim == SCHEMA(1024); live probe if API key set
 ```
 
@@ -446,9 +446,10 @@ Depends on: `opentelemetry` (optional, imported lazily inside `_make_counter`).
   process-wide lookup table (`external`/`internal`/`restricted`), simplified from an originally
   per-tenant-customizable design; per-tenant clearance levels are a clean future extension, not
   implemented today.
-- **A single configured LiteLLM API key is used for every tenant.** `qortia.auth.get_litellm_key`
-  and `get_platform_embed_key` both return `config.settings.litellm_api_key` regardless of
-  `tenant_id` — there is no per-tenant LiteLLM key provisioning (no Vault dependency by design).
+- **LiteLLM virtual keys are mapped by env, not Vault.** `get_litellm_key(tenant_id)` returns
+  `QORTIA_LITELLM_TENANT_KEYS[tenant_id]` when set, else the shared `QORTIA_LITELLM_API_KEY`.
+  Embed calls also send `user` + `metadata.qortia.tenant_id` for gateway OTel (ADR-003).
+  Auto-minting virtual keys via the LiteLLM Admin API is a later increment.
 - **Background workers run in a separate process.** Use `qortia-worker` / `just worker`
   alongside the API. The app lifespan does not start workers (keeps request latency clean).
   Without the worker, memories stay unembedded and archival/idle-reflect/weekly-summary do not
@@ -457,4 +458,5 @@ Depends on: `opentelemetry` (optional, imported lazily inside `_make_counter`).
   `run_reh.py`, `run_pib.py`, `run_temporal_eval.py`, `run_longitudinal_eval.py`,
   `run_longmemeval.py`, `run_extraction_eval.py`) need a live qortia server plus real LiteLLM
   connectivity to exercise `qortia.eval_router`'s endpoints, and haven't been exercised end-to-end
-  against the standalone extraction yet.
+  against the standalone extraction yet. Dogfood path after `just stack-up` + `stack-pull-model`
+  is the prerequisite.

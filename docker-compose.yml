@@ -1,0 +1,67 @@
+# Local OSS stack: Postgres+pgvector + Ollama (engine) + LiteLLM (gateway).
+# Qortia API/worker run on the host (or add services later).
+#
+#   just stack-up          # start infra
+#   just stack-pull-model  # ollama pull bge-m3 (once)
+#   export $(grep -v '^#' .env.example | xargs)  # or copy to .env
+#   uvicorn qortia.app:app --port 8080
+#   just worker -- --only embed
+#
+# Point QORTIA_LITELLM_URL at the gateway, not Ollama directly, when you care
+# about virtual keys / budgets / multi-tenant OTel (ADR-003).
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: qortia
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5434:5432"
+    volumes:
+      - qortia-pgdata:/var/lib/postgresql/data
+      - ./migrations/V1__initial_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d qortia"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  ollama:
+    image: ollama/ollama:0.9.6
+    ports:
+      - "11434:11434"
+    volumes:
+      # Named volume by default; override with host cache if you've already
+      # pulled models (e.g. OLLAMA_MODELS_DIR=$HOME/.ollama).
+      - ${OLLAMA_MODELS_DIR:-qortia-ollama}:/root/.ollama
+    # CPU-only is fine for smoke; attach a GPU device in prod-like hosts.
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.74.3-stable
+    depends_on:
+      - ollama
+    ports:
+      - "4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-qortia-local}
+      # Optional: LITELLM_OTEL_V2=true + OTEL_EXPORTER_OTLP_ENDPOINT=...
+    volumes:
+      - ./deploy/litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  qortia-pgdata:
+  qortia-ollama:

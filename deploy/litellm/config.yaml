@@ -1,0 +1,30 @@
+# LiteLLM Proxy — OpenAI-compatible gateway in front of the embedding engine.
+# Qortia talks to this proxy (QORTIA_LITELLM_URL); the proxy talks to Ollama/TEI/vLLM.
+#
+# Multi-tenant: issue virtual keys in the LiteLLM Admin UI / API, map them via
+# QORTIA_LITELLM_TENANT_KEYS, and enable OTel on the proxy. Embed requests from
+# Qortia include user=tenant_id and metadata.qortia.tenant_id for trace attribution.
+#
+# Docs: docs/how-to/embeddings.md · ADR-003
+
+model_list:
+  - model_name: bge-m3
+    litellm_params:
+      model: openai/bge-m3
+      # Reach Ollama via the published host port. Some environments block
+      # container→container TCP to the ollama service even on the same
+      # compose network; host.docker.internal:11434 is reliable with
+      # extra_hosts: host.docker.internal:host-gateway on the litellm service.
+      api_base: http://host.docker.internal:11434/v1
+      api_key: ollama
+      drop_params: true
+
+litellm_settings:
+  # Request `user` + `metadata` from clients are forwarded into callbacks / OTel.
+  # Set LITELLM_OTEL_V2=true (and OTEL_* exporters) on the litellm service for
+  # per-key / per-team destinations — see LiteLLM OpenTelemetry v2 docs.
+  request_timeout: 120
+  set_verbose: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

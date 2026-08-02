@@ -619,7 +619,11 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
         )
         return
     try:
-        embedding = await _get_embedding(row["text_to_embed"], litellm_key)
+        embedding = await _get_embedding(
+            row["text_to_embed"],
+            litellm_key,
+            tenant_id=str(row["tenant_id"]),
+        )
         async with get_main_pool().acquire() as conn:
             await conn.execute(
                 f"UPDATE {row['tbl']} SET embedding = $1::vector WHERE id = $2",  # noqa: S608

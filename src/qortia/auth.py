@@ -88,14 +88,23 @@ async def require_agent(
 
 
 async def get_litellm_key(tenant_id: str) -> str:
-    """One configured LiteLLM key for v1 — no per-tenant Vault provisioning."""
+    """Resolve the LiteLLM virtual key for a tenant (ADR-003).
+
+    Looks up `QORTIA_LITELLM_TENANT_KEYS[tenant_id]` first, then falls back to
+    the shared `QORTIA_LITELLM_API_KEY`. No Vault — operators mint virtual keys
+    in the LiteLLM Admin UI/API and map them via env.
+    """
+    mapped = config.settings.litellm_tenant_keys.get(tenant_id)
+    if mapped:
+        return mapped
     return config.settings.litellm_api_key
 
 
 def get_platform_embed_key() -> str:
+    """Shared/master key for startup probes and non-tenant platform work."""
     return config.settings.litellm_api_key
 
 
 async def provision_eval_litellm_key(tenant_id: str) -> None:
-    """No-op standalone: eval mode shares the single configured LiteLLM key."""
+    """No-op standalone: map eval tenants in QORTIA_LITELLM_TENANT_KEYS if needed."""
     return None
