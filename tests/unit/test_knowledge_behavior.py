@@ -72,6 +72,40 @@ def test_extract_index_fields_english(monkeypatch: pytest.MonkeyPatch) -> None:
     assert fields["index_summary"]
 
 
+def test_extract_index_fields_degrades_without_spacy(monkeypatch: pytest.MonkeyPatch) -> None:
+    from qortia import knowledge as kmod
+
+    monkeypatch.setattr(kmod, "get_nlp", lambda: None)
+    fields = kmod.extract_index_fields(
+        "Architecture",
+        "Qortia stores memories in PostgreSQL. Hybrid recall fuses BM25 and vectors.",
+    )
+    assert fields["index_summary"]
+    assert "PostgreSQL" in fields["index_summary"] or "Qortia" in fields["index_summary"]
+    assert fields["index_entities"] == "[]"
+
+
+def test_extract_entities_with_types_without_spacy(monkeypatch: pytest.MonkeyPatch) -> None:
+    from qortia import knowledge as kmod
+
+    monkeypatch.setattr(kmod, "get_nlp", lambda: None)
+    assert kmod.extract_entities_with_types("Alice reviewed AuthService") == []
+
+
+def test_load_spacy_model_skips_missing_indic(monkeypatch: pytest.MonkeyPatch) -> None:
+    from qortia import knowledge as kmod
+
+    fake_spacy = MagicMock()
+    fake_spacy.load.return_value = MagicMock(name="en_nlp")
+    monkeypatch.setitem(__import__("sys").modules, "spacy", fake_spacy)
+    monkeypatch.setattr(
+        kmod, "_get_indic_pipeline", MagicMock(side_effect=OSError("no indic model"))
+    )
+    kmod._nlp = None
+    kmod.load_spacy_model()
+    assert kmod._nlp is not None
+    kmod._get_indic_pipeline.assert_called_once_with("hi")
+
 def test_build_weekly_summary_formats_handoffs() -> None:
     from qortia.knowledge import build_weekly_summary
 

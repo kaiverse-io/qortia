@@ -6,13 +6,14 @@ Used by run_reh.py and run_pib.py.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
 
-QORTIA_URL = "http://localhost:8080"
+QORTIA_URL = os.environ.get("QORTIA_URL", "http://localhost:8080")
 EMBEDDING_WAIT_SECONDS = 15  # embedding worker runs every 10s; 15s gives one full cycle
 
 
