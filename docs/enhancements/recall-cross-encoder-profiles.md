@@ -37,8 +37,8 @@ cross-encoder reranking, pre-built search recipes, and candidate over-fetch patt
 ## When to Implement (Trigger Conditions)
 
 **Classification: Post-MVP.** The current LLM rerank (`_llm_rerank`) is adequate at
-Tenant-0 scale — do **not** build this speculatively. The two halves have different
-triggers:
+early / single-tenant scale — do **not** build this speculatively. The two halves have
+different triggers:
 
 **Recall profiles (opt-in stage-toggle, no cross-encoder) — lighter:**
 - Implement when an agent role explicitly needs a non-default latency/quality

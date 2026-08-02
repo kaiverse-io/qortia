@@ -1,26 +1,43 @@
 # evals/
 
-> **Bucket D — wired-but-waiting.** This slot is inert until a real model call exists in the
-> project (activates P1 per the chassis build sequence). The CI job in
-> `.github/workflows/adlc-gate.yaml` checks `evals/golden/` and is a documented no-op until
-> it has content — it does not silently stay green forever.
+Real memory-quality harnesses for standalone Qortia (not a chassis placeholder).
 
-## What goes here
+> The chassis ADLC workflow still mentions `evals/golden/` as a bucket-D slot.
+> That gate is separate from the harnesses below — do not confuse the two.
 
-- `golden/` — the golden work-order set: real (or representative) inputs + expected outputs/
-  rubric scores. This is the eval harness's ground truth.
-- A rubric/threshold config (e.g. `promptfoo.config.yaml` or equivalent) once the eval engine
-  is chosen.
+## Harnesses
 
-## Why eval-driven, not eval-at-the-end
+| Script | Layer | Role |
+|--------|-------|------|
+| `run_reh.py` | Retrieval | Seeded-ID hit@K / ranking (deterministic) |
+| `run_alb.py` | Agentic loop | Does the agent use the retrieved fact? |
+| `run_pib.py` | Infra | Latency / cost / scale probes against a live API |
+| `run_temporal_eval.py` | Temporal | `valid_from` / `valid_until` recall behavior |
+| `run_longmemeval.py` | Long-context | LongMemEval-style cases |
+| `run_longitudinal_eval.py` | Longitudinal | Multi-turn memory stability |
+| `run_extraction_eval.py` | NER / extract | Entity extraction quality |
 
-The eval harness should exist at the **start** of the phase that exercises real model calls,
-not as an afterthought before shipping. An unaudited LLM judge self-certifies — audit it
-(bias-test error rate) before trusting it as a gate.
+Supporting: `dataset_loader.py`, `mlflow_logger.py`, `datasets/`.
 
-## Activation
+## Auth against standalone Qortia
 
-1. Add real work-order fixtures to `golden/`.
-2. Wire a rubric + threshold config.
-3. Remove the no-op branch in `.github/workflows/adlc-gate.yaml` — the gate now blocks for real.
-4. Update this README's status line.
+Call the HTTP API with:
+
+- `Authorization: Bearer <tenant API key>`
+- `X-Agent-Id: <uuid belonging to that tenant>`
+
+Some internal `/v1/internal/eval/*` routes exist only when `eval_mode=true`
+(`qortia.eval_router`). They are not a substitute for production auth.
+
+## Dataset provenance
+
+`datasets/` includes fixtures whose *text content* mentions host-platform
+concerns (OpenBao, Vault policies, etc.). That is **corpus content for retrieval
+tests**, not a claim that standalone Qortia uses Vault. Prefer portable examples
+when adding new fixtures.
+
+## Related docs
+
+- [`docs/02-benchmarking.md`](../docs/02-benchmarking.md)
+- [`docs/03-eval-strategy.md`](../docs/03-eval-strategy.md)
+- [`ARCHITECTURE.md`](../ARCHITECTURE.md) — eval_router component

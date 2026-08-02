@@ -8,7 +8,7 @@ last_reviewed: 2026-06-01
 # Qortia Evaluation Strategy — Why We Measure Memory This Way
 
 **Status:** Full eval stack live — 6 harnesses verified on live stack (commit `f3ca394`, 2026-06-01)
-**Audience:** Customers, partners, and engineers evaluating the platform's memory layer
+**Audience:** Customers, partners, and engineers evaluating Qortia's memory layer
 **Last updated:** 2026-06-01
 
 ---
@@ -24,7 +24,7 @@ a simple vector database bolted on after the fact. The result is agents that:
 - Mix one customer's memories with another's when multi-tenancy is implemented at the
   application layer rather than the database layer
 
-the platform built Qortia to solve these problems structurally, not with prompt engineering.
+Qortia is built to solve these problems structurally, not with prompt engineering.
 This document explains how we prove it works.
 
 ---

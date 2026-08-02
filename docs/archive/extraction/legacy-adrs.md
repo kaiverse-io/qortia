@@ -1,9 +1,21 @@
 ---
-kind: decisions
-theme: qortia
-status: active
+kind: archive
+status: historical
 owner: platform
-last_reviewed: 2026-05-20
+last_reviewed: 2026-08-02
+---
+
+# Qortia — Architecture Decisions (host-platform era)
+
+> **Historical.** Decisions recorded while Qortia was embedded in a larger host
+> platform. Do **not** treat this file as the active ADR set for standalone
+> Qortia. Canonical current architecture: [`ARCHITECTURE.md`](../../../ARCHITECTURE.md).
+> Extraction rebuild notes: [`extraction-requirements.md`](../../explanation/extraction-requirements.md).
+> New decisions go in [`docs/decisions/adrs/`](../../decisions/adrs/) (MADR).
+>
+> Superseding standalone decision:
+> [`adr-001-standalone-extraction.md`](../../decisions/adrs/adr-001-standalone-extraction.md).
+
 ---
 
 # Qortia — Architecture Decisions

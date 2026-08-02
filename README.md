@@ -1,6 +1,7 @@
 # Qortia
 
-Portable memory layer for AI agents
+Portable memory layer for AI agents — standalone FastAPI service over
+Postgres+pgvector (remember / recall / reflect / knowledge).
 
 ## Setup
 
@@ -13,7 +14,7 @@ just ci          # run all checks
 
 | Command | What it does |
 |---|---|
-| `just ci` | Full CI: lint + type-check + test + docs |
+| `just ci` | Full CI: lint + type-check + test + docs + arch coverage |
 | `just fmt` | Auto-format (ruff) |
 | `just sync` | Sync deps with uv |
 | `just lint` | Run all pre-commit hooks |
@@ -21,13 +22,18 @@ just ci          # run all checks
 
 ## Docs
 
-Docs follow the [Diátaxis](https://diataxis.fr/) structure:
+**Start with [`ARCHITECTURE.md`](ARCHITECTURE.md)** and [`docs/index.md`](docs/index.md).
 
-- `docs/tutorials/` — learning-oriented
-- `docs/how-to/` — task-oriented
-- `docs/reference/` — API / config reference
-- `docs/explanation/` — concepts and theory
-- `docs/decisions/adrs/` — architecture decision records (MADR)
+| Path | Role |
+|---|---|
+| `ARCHITECTURE.md` | Current component contracts (`just ci-arch`) |
+| `docs/explanation/` | Extraction notes, competitive landscape |
+| `docs/decisions/adrs/` | Active MADRs (e.g. standalone extraction) |
+| `docs/archive/extraction/` | Host-platform-era design/ADRs — historical only |
+| `docs/enhancements/` | Feature proposals (verify paths against `src/qortia/`) |
+| `evals/` | Live memory-quality harnesses |
+
+Diátaxis slots (`docs/tutorials/`, `how-to/`, `reference/`) exist for new material.
 
 ## Contributing
 

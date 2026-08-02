@@ -580,7 +580,7 @@ async def _process_embedding_batch() -> None:
                 dict(r) for r in list(hindsight) + list(org_mem) + list(org_know) + list(entities)
             ]
 
-    # Group by tenant_id to minimise Vault round-trips (one key fetch per tenant per batch)
+    # Group by tenant_id (standalone: one configured LiteLLM key; batch stays per-tenant)
     from collections import defaultdict
 
     rows_by_tenant = defaultdict(list)
