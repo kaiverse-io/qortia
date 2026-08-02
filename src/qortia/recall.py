@@ -7,10 +7,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header
 
-from qortia.auth import AgentIdentity, get_litellm_key, require_agent
-from qortia.common import EMBEDDING_MODEL, get_litellm_client
+from qortia.auth import AgentIdentity, require_agent
 from qortia.db import get_main_pool, tenant_transaction
-from qortia.embedding_cache import get_cached_embedding, put_cached_embedding
+from qortia.embeddings import embed_query as _embed_query
 from qortia.models import RecallRequest, RecallResponse, RecallResult
 from qortia.recall_helpers import (
     KNOWLEDGE_RESULT_LIMIT,
@@ -32,38 +31,6 @@ from qortia.recall_rerank import _bfs_entity_traversal, _llm_rerank
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-async def _embed_query(query: str, tenant_id: UUID, lang: str = "en") -> list[float] | None:
-    tid = str(tenant_id)
-    effective_lang = lang or "en"
-
-    # Cache lookup — avoids redundant LiteLLM calls for repeated queries
-    cached = get_cached_embedding(query, tid, effective_lang)
-    if cached is not None:
-        return cached
-
-    try:
-        litellm_key = await get_litellm_key(tid)
-        resp = await get_litellm_client().post(
-            "/embeddings",
-            headers={"Authorization": f"Bearer {litellm_key}"},
-            json={"model": EMBEDDING_MODEL, "input": query},
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-        embedding: list[float] = resp.json()["data"][0]["embedding"]
-        put_cached_embedding(query, tid, effective_lang, embedding)
-        return embedding
-    except Exception as exc:
-        logger.warning({"event": "recall_embed_failed", "error": str(exc)})
-        try:
-            from qortia.telemetry import qortia_recall_degraded
-
-            qortia_recall_degraded.add(1, {"reason": "embed_failed", "qortia.tenant_id": tid})
-        except Exception:  # noqa: S110
-            pass
-        return None
 
 
 # ── Type-routed strategies ───────────────────────────────────

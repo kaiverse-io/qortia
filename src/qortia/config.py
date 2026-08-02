@@ -37,6 +37,9 @@ class Settings:
     database_url: str = "postgresql://localhost:5432/qortia"
     litellm_url: str = "http://localhost:4000"
     litellm_api_key: str = ""
+    # Defaults match migrations/V1 vector(1024) + multilingual BGE-M3 (ADR-002).
+    embedding_model: str = "bge-m3"
+    embedding_dimension: int = 1024
     qortia_dedup_similarity_threshold: float = 0.95  # calibrated for BGE-M3 1024-dim, ADR-105
     embedding_cache_max_size: int = 10_000
     embedding_cache_ttl_seconds: int = 3600
@@ -53,6 +56,8 @@ def load_settings() -> Settings:
         database_url=_env_str("QORTIA_DATABASE_URL", d.database_url),
         litellm_url=_env_str("QORTIA_LITELLM_URL", d.litellm_url),
         litellm_api_key=_env_str("QORTIA_LITELLM_API_KEY", d.litellm_api_key),
+        embedding_model=_env_str("QORTIA_EMBEDDING_MODEL", d.embedding_model),
+        embedding_dimension=_env_int("QORTIA_EMBEDDING_DIMENSION", d.embedding_dimension),
         qortia_dedup_similarity_threshold=_env_float(
             "QORTIA_DEDUP_SIMILARITY_THRESHOLD", d.qortia_dedup_similarity_threshold
         ),

@@ -102,6 +102,7 @@ async def test_ingest_knowledge_rejects_non_chief(monkeypatch: pytest.MonkeyPatc
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
     ctx.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("qortia.knowledge.get_main_pool", lambda: MagicMock())
     monkeypatch.setattr("qortia.knowledge.tenant_transaction", lambda *_a, **_k: ctx)
     monkeypatch.setattr("qortia.knowledge.assert_agent_active", AsyncMock())
 
@@ -129,6 +130,7 @@ async def test_delete_knowledge_returns_deleted_chunk_count(
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
     ctx.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("qortia.knowledge.get_main_pool", lambda: MagicMock())
     monkeypatch.setattr("qortia.knowledge.tenant_transaction", lambda *_a, **_k: ctx)
     monkeypatch.setattr("qortia.knowledge.assert_agent_active", AsyncMock())
 
