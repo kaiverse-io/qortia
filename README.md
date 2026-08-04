@@ -1,54 +1,58 @@
 # Qortia
 
-Portable memory layer for AI agents — standalone FastAPI service over
-Postgres+pgvector (remember / recall / reflect / knowledge).
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
+[![CI](https://github.com/kaiverse-io/qortia/actions/workflows/ci.yaml/badge.svg)](https://github.com/kaiverse-io/qortia/actions/workflows/ci.yaml)
 
-## Setup
+**Portable memory for AI agents** — a standalone FastAPI service over Postgres + pgvector.
+
+Remember, recall, reflect, and traverse an entity graph. Hybrid lexical + vector search with RRF fusion, background consolidation, and outcome-linked confidence decay. Drop it in beside any agent runtime; tenant isolation is enforced by Postgres RLS, not application hope.
+
+## Features
+
+- **Hybrid recall** — BM25 + embeddings fused with reciprocal rank fusion
+- **Entity graph** — link people, projects, and concepts; traverse at query time
+- **Consolidation** — background reflect workers keep memory coherent over time
+- **Multi-tenant by default** — row-level security with session GUCs as the trust boundary
+- **Gateway-friendly** — embeddings and LLMs via LiteLLM-compatible endpoints (local Ollama included)
+
+## Quick start
 
 ```bash
 cp .env.example .env
 uv sync
-just ci
 
-# Local infra (Postgres + Ollama engine + LiteLLM gateway)
+# Local stack: Postgres + Ollama + LiteLLM
 just stack-up
 just stack-pull-model
 
-# Runtime (API + embedding worker — see docs/how-to/embeddings.md)
+# API + embedding worker
 uv run uvicorn qortia.app:app --port 8080
 just worker -- --only embed
 ```
 
-Defaults: embedding model `bge-m3`, dimension `1024`. Multi-tenant virtual keys:
-`QORTIA_LITELLM_TENANT_KEYS` (see ADR-003).
+Defaults: embedding model `bge-m3`, dimension `1024`. Per-tenant LiteLLM keys: `QORTIA_LITELLM_TENANT_KEYS` (see [ADR-003](docs/decisions/adrs/)).
 
-## Development
+```bash
+just ci          # lint + type-check + tests + docs + architecture coverage
+just e2e-embeddings mock   # remember → embed → recall smoke
+just fmt         # ruff format + fix
+```
 
-| Command | What it does |
+## Documentation
+
+| Doc | Purpose |
 |---|---|
-| `just ci` | Full CI: lint + type-check + test + docs + arch coverage |
-| `just stack-up` / `stack-down` | Local db + Ollama + LiteLLM |
-| `just e2e-embeddings [mock\|ollama\|litellm]` | Live remember→embed→recall |
-| `just fmt` | Auto-format (ruff) |
-| `just sync` | Sync deps with uv |
-| `just lint` | Run all pre-commit hooks |
-| `just metrics` | AI-usage cost report (requires codeburn) |
-
-## Docs
-
-**Start with [`ARCHITECTURE.md`](ARCHITECTURE.md)** and [`docs/index.md`](docs/index.md).
-
-| Path | Role |
-|---|---|
-| `ARCHITECTURE.md` | Current component contracts (`just ci-arch`) |
-| `docs/explanation/` | Extraction notes, competitive landscape |
-| `docs/decisions/adrs/` | Active MADRs (e.g. standalone extraction) |
-| `docs/archive/extraction/` | Host-platform-era design/ADRs — historical only |
-| `docs/enhancements/` | Feature proposals (verify paths against `src/qortia/`) |
-| `evals/` | Live memory-quality harnesses |
-
-Diátaxis slots (`docs/tutorials/`, `how-to/`, `reference/`) exist for new material.
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Component contracts (enforced by `just ci-arch`) |
+| [`docs/index.md`](docs/index.md) | Doc map |
+| [`docs/how-to/`](docs/how-to/) | Task recipes (embeddings, ops) |
+| [`docs/decisions/adrs/`](docs/decisions/adrs/) | Design decisions |
+| [`evals/`](evals/) | Live memory-quality harnesses |
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+
+## License
+
+[Apache License 2.0](LICENSE)
