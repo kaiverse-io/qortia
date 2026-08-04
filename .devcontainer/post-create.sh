@@ -67,8 +67,14 @@ fi
 # ── opengrep (semantic lint / self-weakening rules) ───────────────────────────
 if ! command -v opengrep >/dev/null 2>&1; then
   echo "→ Installing opengrep …"
-  pip install opengrep --quiet --user 2>/dev/null \
-    || echo "[warn] opengrep pip install failed — install manually from https://github.com/opengrep/opengrep"
+  # renovate: datasource=github-releases depName=opengrep/opengrep extractVersion=^v(?<version>.*)$
+  OPENGREP_VERSION="1.26.0"
+  ARCH=$(uname -m)
+  case "$ARCH" in arm64|aarch64) OG_ASSET="opengrep_manylinux_aarch64" ;; *) OG_ASSET="opengrep_manylinux_x86" ;; esac
+  curl -LsSf \
+    "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/${OG_ASSET}" \
+    -o "$HOME/.local/bin/opengrep"
+  chmod +x "$HOME/.local/bin/opengrep"
 fi
 
 # ── Claude Code CLI ────────────────────────────────────────────────────────────
