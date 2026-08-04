@@ -284,12 +284,12 @@
     },
     {
       "id": "reh-008",
-      "description": "episodic BM25 fallback \u2014 qortia-patches unique token",
+      "description": "episodic BM25 fallback \u2014 runtime-patches unique token",
       "setup": {
         "memories": [
           {
             "type": "episodic",
-            "content": "Rebased the qortia-patches branch onto agent-runtime v0.0.25. Two patches survived: chown removal for CAP_DAC_OVERRIDE.",
+            "content": "Rebased the runtime-patches branch onto agent-runtime v0.0.25. Two patches survived: chown removal for CAP_DAC_OVERRIDE.",
             "scope": "private"
           },
           {
@@ -308,7 +308,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "qortia-patches rebased agent-runtime",
+        "query": "runtime-patches rebased agent-runtime",
         "scope": "private",
         "type": "episodic",
         "rerank": false,
@@ -317,7 +317,7 @@
       "expected": {
         "ground_truth_must_rank_above_hard_negatives": true,
         "must_contain_in_top_result": [
-          "qortia-patches"
+          "runtime-patches"
         ],
         "min_results": 1
       },
@@ -1025,13 +1025,13 @@
     },
     {
       "id": "reh-027",
-      "description": "org memory BM25 \u2014 unique token (qortia-patches), BM25 dominant",
+      "description": "org memory BM25 \u2014 unique token (runtime-patches), BM25 dominant",
       "setup": {
         "org_memories": [
           {
             "type": "handoff",
             "title": "agent-runtime submodule upgrade",
-            "content": "Upgraded agent-runtime submodule from v0.0.24 to v0.0.25. Rebased qortia-patches branch. Both chown patches survived. Boot sequence verified."
+            "content": "Upgraded agent-runtime submodule from v0.0.24 to v0.0.25. Rebased runtime-patches branch. Both chown patches survived. Boot sequence verified."
           },
           {
             "type": "handoff",
@@ -1056,7 +1056,7 @@
       },
       "ground_truth_index": 0,
       "query": {
-        "query": "qortia-patches agent-runtime upgrade",
+        "query": "runtime-patches agent-runtime upgrade",
         "scope": "org",
         "rerank": false,
         "entities": null
@@ -1505,7 +1505,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/migrations.md",
-            "content": "## Migration Rules\n\nAll migrations use Flyway with versioned V{N}__description.sql files. Never edit an existing migration — Flyway validates checksums on startup and will reject any modified file with a checksum mismatch error, blocking all deployments. New migrations must be created as V{N+1}__description.sql. Run as qortia_platform role, not superuser, to enforce least privilege. The versioning scheme ensures migrations are applied in deterministic order across all environments.\n\n## RLS Requirements\n\nNew tenant-scoped tables must enable RLS and add a tenant_isolation policy. The audit_rls.py script verifies RLS is enabled on all data tables and disabled on all auth.* tables. Run it after every schema change to catch policy gaps before they reach production."
+            "content": "## Migration Rules\n\nAll migrations use Flyway with versioned V{N}__description.sql files. Never edit an existing migration \u2014 Flyway validates checksums on startup and will reject any modified file with a checksum mismatch error, blocking all deployments. New migrations must be created as V{N+1}__description.sql. Run as qortia_platform role, not superuser, to enforce least privilege. The versioning scheme ensures migrations are applied in deterministic order across all environments.\n\n## RLS Requirements\n\nNew tenant-scoped tables must enable RLS and add a tenant_isolation policy. The audit_rls.py script verifies RLS is enabled on all data tables and disabled on all auth.* tables. Run it after every schema change to catch policy gaps before they reach production."
           }
         ],
         "memories": [
@@ -1544,7 +1544,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/agent-boot.md",
-            "content": "## Boot Sequence\n\nagent-start.sh implements an 11-step boot sequence. Steps must remain in order — Vault auth precedes config fetch, config fetch precedes workspace write, workspace write precedes openclaw patch. New steps insert between existing steps with a STEP N comment. Never reorder existing steps because the sequence has hard dependencies that will cause silent failures if violated. The boot script is the container entrypoint and runs once per agent container start.\n\n## Boot Failure Handling\n\nIf any step fails, the container exits with a boot_failed event logged to Loki with the step name in the boot_failed.step field. The reconciler retries provisioning up to 3 times with fixed backoff before marking the agent inactive."
+            "content": "## Boot Sequence\n\nagent-start.sh implements an 11-step boot sequence. Steps must remain in order \u2014 Vault auth precedes config fetch, config fetch precedes workspace write, workspace write precedes runtime patch. New steps insert between existing steps with a STEP N comment. Never reorder existing steps because the sequence has hard dependencies that will cause silent failures if violated. The boot script is the container entrypoint and runs once per agent container start.\n\n## Boot Failure Handling\n\nIf any step fails, the container exits with a boot_failed event logged to Loki with the step name in the boot_failed.step field. The reconciler retries provisioning up to 3 times with fixed backoff before marking the agent inactive."
           }
         ],
         "memories": [
@@ -1739,7 +1739,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/ci-cd.md",
-            "content": "## Security Scanners\n\nTruffleHog scans the PR diff for verified secrets. Trivy scans the filesystem for CRITICAL/HIGH CVEs. Both security scanning tools are pinned to exact tags — never @main or @master. A failing security scan blocks merge. Using floating branch references for security scanner actions is a supply-chain risk because an attacker who compromises the action repo controls what runs in your pipeline.\n\n## Coverage Floors\n\nPlatform unit tests: 60% floor. Mission Control: 80% lines and functions. Integration tests: 40% floor. Coverage floors are never lowered. If tests are deleted, the floor must be re-evaluated and documented. Silent coverage drops hide regressions that would otherwise be caught before reaching production."
+            "content": "## Security Scanners\n\nTruffleHog scans the PR diff for verified secrets. Trivy scans the filesystem for CRITICAL/HIGH CVEs. Both security scanning tools are pinned to exact tags \u2014 never @main or @master. A failing security scan blocks merge. Using floating branch references for security scanner actions is a supply-chain risk because an attacker who compromises the action repo controls what runs in your pipeline.\n\n## Coverage Floors\n\nPlatform unit tests: 60% floor. Mission Control: 80% lines and functions. Integration tests: 40% floor. Coverage floors are never lowered. If tests are deleted, the floor must be re-evaluated and documented. Silent coverage drops hide regressions that would otherwise be caught before reaching production."
           }
         ],
         "memories": [
@@ -1778,7 +1778,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/dependencies.md",
-            "content": "## Hard Pinning Rules\n\nFour dependencies are always exact-pinned to specific versions: openbao/openbao (secrets store), mcp SDK (stdio protocol), en-core-web-sm spaCy model (must match spaCy major.minor), security scanner actions in CI. Floating these dependencies creates silent breaking changes or supply-chain risk. The mcp SDK minor versions can silently break the agent's stdio protocol interface with the agent harness. The spaCy model must match the library's major.minor or the platform fails to start.\n\n## Renovate\n\nRenovate manages all six dependency layers automatically and opens reviewed PRs for every upstream bump. openbao, agent-runtime submodule, mcp SDK, and security scanners never auto-merge — they always require human review before the version is promoted."
+            "content": "## Hard Pinning Rules\n\nFour dependencies are always exact-pinned to specific versions: openbao/openbao (secrets store), mcp SDK (stdio protocol), en-core-web-sm spaCy model (must match spaCy major.minor), security scanner actions in CI. Floating these dependencies creates silent breaking changes or supply-chain risk. The mcp SDK minor versions can silently break the agent's stdio protocol interface with the agent harness. The spaCy model must match the library's major.minor or the platform fails to start.\n\n## Renovate\n\nRenovate manages all six dependency layers automatically and opens reviewed PRs for every upstream bump. openbao, agent-runtime submodule, mcp SDK, and security scanners never auto-merge \u2014 they always require human review before the version is promoted."
           }
         ],
         "memories": [
@@ -1954,7 +1954,7 @@
           {
             "source_type": "note",
             "source_path": "docs/platform/vault-policy.md",
-            "content": "## OpenBao Vault Policy\n\nAgent vault policies are scoped to {tenant_id}/agents/{agent_id}/*. Paths outside these prefixes require an ADR and security review before they can be added. The create_agent_policy() function in vault.py generates the policy string. Never access _vault_client directly outside vault.py — all Vault operations must go through the public functions in vault.py to ensure centralised error handling and audit logging. Vault token is always passed via the X-Vault-Token header, never as a subprocess argument."
+            "content": "## OpenBao Vault Policy\n\nAgent vault policies are scoped to {tenant_id}/agents/{agent_id}/*. Paths outside these prefixes require an ADR and security review before they can be added. The create_agent_policy() function in vault.py generates the policy string. Never access _vault_client directly outside vault.py \u2014 all Vault operations must go through the public functions in vault.py to ensure centralised error handling and audit logging. Vault token is always passed via the X-Vault-Token header, never as a subprocess argument."
           },
           {
             "source_type": "note",

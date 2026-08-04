@@ -30,7 +30,7 @@ Single Postgres cluster for memory means same RLS, same connection pool, same ba
 no sync problem between stores. pgvector HNSW gives vector search without a separate service —
 works correctly at any dataset size, no training data required unlike IVFFlat. Three tables:
 `hindsight_memories` (private per-agent), `org_memory` (shared structured memory), and
-`org_knowledge` (shared document corpus, section-aware PageIndex). Rejected: SQLite (the agent harness
+`org_knowledge` (shared document corpus, section-aware PageIndex). Rejected: SQLite (a prior agent harness
 native — not multi-tenant, not scalable), Qdrant/Pinecone (separate service, separate auth,
 separate failure domain), IVFFlat (requires ~100K rows to be effective, wrong for early scale).
 
