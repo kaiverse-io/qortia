@@ -1,7 +1,7 @@
 [project]
 name = "qortia"
 version = "0.1.0"
-description = "Portable memory layer for AI agents — Postgres+pgvector native. Hybrid lexical+vector recall with RRF fusion, entity-graph traversal, background consolidation, and outcome-linked confidence decay."
+description = "Portable memory layer for AI agents — Postgres + pgvector, hybrid recall, entity graph, and governed consolidation."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
