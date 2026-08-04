@@ -11,7 +11,7 @@ older `0.x` cuts.
 Please report suspected vulnerabilities **privately**, not in a public issue
 or pull request.
 
-- Preferred: open a [GitHub private security advisory](https://github.com/km2411/qortia/security/advisories/new)
+- Preferred: open a [GitHub private security advisory](https://github.com/kaiverse-io/qortia/security/advisories/new)
   ("Report a vulnerability").
 - Alternatively, email the maintainer at the address on the git commit history
   (GitHub noreply).

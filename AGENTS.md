@@ -113,8 +113,8 @@ loss across sessions and feeds the coaching loop (Factor 2/3 of 12-factor-agents
   in AGENTS.md." See `.agents/skills/dev-coach/SKILL.md`.
 - This cockpit is a chassis-level standard, not project-specific — every project stamped from
   this chassis gets it via `post-create.sh`. See
-  [chassis's docs/explanation/ai-usage-cockpit.md](https://github.com/km2411/chassis/blob/main/docs/explanation/ai-usage-cockpit.md)
-  for the full writeup and [ADR-002](https://github.com/km2411/chassis/blob/main/docs/decisions/adrs/adr-002-ai-usage-cockpit.md).
+  [chassis's docs/explanation/ai-usage-cockpit.md](https://github.com/kaiverse-io/chassis/blob/main/docs/explanation/ai-usage-cockpit.md)
+  for the full writeup and [ADR-002](https://github.com/kaiverse-io/chassis/blob/main/docs/decisions/adrs/adr-002-ai-usage-cockpit.md).
 
 <!-- cockpit-section:end -->
 
