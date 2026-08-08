@@ -673,7 +673,8 @@ async def _embed_single_row(row: dict, litellm_key: str) -> None:  # type: ignor
 
 
 async def run_background_reflection_trigger() -> None:
-    """Supervised background task: triggers reflection for agents idle > window."""
+    """Supervised background task: triggers reflection for agents idle > window
+    that have accumulated at least `reflection_threshold` new episodic memories."""
     while True:
         await asyncio.sleep(config.settings.idle_reflection_interval_s)
         await _trigger_idle_reflections()
@@ -687,13 +688,16 @@ async def _trigger_idle_reflections() -> None:
                 SELECT a.id AS agent_id, a.tenant_id
                 FROM qortia_agents a
                 WHERE a.status = 'active'
-                  AND a.updated_at < now() - ($1 * interval '1 hour')
+                  AND a.reflection_counter >= $1
+                  AND a.updated_at < now() - ($2 * interval '1 hour')
                   AND EXISTS (
                       SELECT 1 FROM hindsight_memories hm
                       WHERE hm.agent_id = a.id
                       LIMIT 1
                   )
+                LIMIT 50
                 """,
+                config.settings.reflection_threshold,
                 config.settings.idle_reflection_window_h,
             )
         for row in rows:

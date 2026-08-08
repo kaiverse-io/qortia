@@ -183,6 +183,37 @@ def test_trigger_idle_reflections_is_async() -> None:
 
 
 @pytest.mark.asyncio
+async def test_trigger_idle_reflections_query_gates_on_reflection_counter() -> None:
+    """Regression test: the idle-reflect query must filter on reflection_counter,
+    not just idle time — otherwise a continuously-busy agent (updated_at never
+    goes stale) is also never gated by "has enough new episodics", and a
+    just-reflected idle agent (reflection_counter back near 0) gets needlessly
+    re-reflected every trigger interval it stays idle."""
+    from qortia.reflect import _trigger_idle_reflections
+
+    mock_conn = AsyncMock()
+    mock_conn.fetch = AsyncMock(return_value=[])
+
+    pool_ctx = MagicMock()
+    pool_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+    pool_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("qortia.reflect.get_main_pool") as mock_pool,
+        patch("qortia.config.settings") as mock_settings,
+    ):
+        mock_pool.return_value.acquire.return_value = pool_ctx
+        mock_settings.idle_reflection_window_h = 4
+        mock_settings.reflection_threshold = 10
+
+        await _trigger_idle_reflections()
+
+    query, *params = mock_conn.fetch.call_args.args
+    assert "reflection_counter" in query
+    assert 10 in params  # reflection_threshold passed through, not hardcoded
+
+
+@pytest.mark.asyncio
 async def test_trigger_idle_reflections_calls_reflect_agent_for_each_row() -> None:
     from qortia.reflect import _trigger_idle_reflections
 

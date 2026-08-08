@@ -427,6 +427,65 @@ def test_reflect_supersede_first(app_client, _session_loop, committed_conn, tena
     assert is_consolidated is False
 
 
+def test_idle_reflection_trigger_gates_on_reflection_counter(
+    app_client, _session_loop, committed_conn, tenant_id
+) -> None:
+    """Background idle-reflect trigger must skip agents that haven't accumulated
+    reflection_threshold new episodics, even if they're idle — and must reflect
+    (and decrement the counter for) agents that have, once idle. Regression test
+    for the gate that was dropped between design (qortia-background-reflection-
+    trigger.md) and the shipped _trigger_idle_reflections query."""
+    from qortia.reflect import _trigger_idle_reflections
+
+    below_id = _active_agent(_session_loop, committed_conn, tenant_id)
+    at_id = _active_agent(_session_loop, committed_conn, tenant_id)
+
+    def _remember_episodics(aid: str, n: int) -> None:
+        _call(
+            _session_loop,
+            app_client.post(
+                "/v1/remember",
+                json={
+                    "memories": [
+                        {"type": "episodic", "content": f"idle trigger event {i} today"}
+                        for i in range(n)
+                    ]
+                },
+                headers=make_agent_headers(aid, tenant_id),
+            ),
+        )
+
+    _remember_episodics(below_id, 5)  # below reflection_threshold (default 10)
+    _remember_episodics(at_id, 10)  # at reflection_threshold (default 10)
+
+    # Both idle well past idle_reflection_window_h (default 1h)
+    for aid in (below_id, at_id):
+        committed_conn.execute(
+            "UPDATE qortia_agents SET updated_at = now() - interval '2 hours' WHERE id = $1",
+            aid,
+        )
+
+    _call(_session_loop, _trigger_idle_reflections())
+
+    below_counter = committed_conn.fetchval(
+        "SELECT reflection_counter FROM qortia_agents WHERE id = $1", below_id
+    )
+    at_counter = committed_conn.fetchval(
+        "SELECT reflection_counter FROM qortia_agents WHERE id = $1", at_id
+    )
+    assert below_counter == 5, "below-threshold idle agent must not be reflected"
+    assert at_counter == 0, "at-threshold idle agent must be reflected, counter decremented"
+
+    at_consolidated = committed_conn.fetchval(
+        """
+        SELECT count(*) FROM hindsight_memories
+        WHERE agent_id = $1 AND is_consolidated = true
+        """,
+        at_id,
+    )
+    assert at_consolidated > 0
+
+
 # ── memory_links (16i) ────────────────────────────────────────────────────────
 
 
