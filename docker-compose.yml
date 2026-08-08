@@ -9,10 +9,19 @@
 #
 # Point QORTIA_LITELLM_URL at the gateway, not Ollama directly, when you care
 # about virtual keys / budgets / multi-tenant OTel (ADR-003).
+#
+# db and litellm build from a Dockerfile that COPYs their own config in
+# rather than bind-mounting it — some Docker hosts refuse bind mounts
+# entirely (Docker Desktop's file-sharing allowlist not covering the
+# workspace, for example), which otherwise silently breaks db's migration
+# and litellm's model config. All three services share one explicitly-named
+# network (`qortia_net` below, not compose's own auto-generated
+# `<project>_default`, whose name depends on the directory this happens to
+# be checked out into).
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    build: ./migrations
     environment:
       POSTGRES_DB: qortia
       POSTGRES_USER: postgres
@@ -21,7 +30,6 @@ services:
       - "5434:5432"
     volumes:
       - qortia-pgdata:/var/lib/postgresql/data
-      - ./migrations/V1__initial_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d qortia"]
       interval: 2s
@@ -39,7 +47,7 @@ services:
     # CPU-only is fine for smoke; attach a GPU device in prod-like hosts.
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-v1.74.3-stable
+    build: ./deploy/litellm
     depends_on:
       - ollama
     ports:
@@ -49,8 +57,6 @@ services:
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-qortia-local}
       # Optional: LITELLM_OTEL_V2=true + OTEL_EXPORTER_OTLP_ENDPOINT=...
-    volumes:
-      - ./deploy/litellm/config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     healthcheck:
       test:
@@ -61,6 +67,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+
+networks:
+  default:
+    name: qortia_net
 
 volumes:
   qortia-pgdata:
