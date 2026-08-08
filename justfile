@@ -15,6 +15,8 @@ ci-lint:
     uv run ruff format --check .
     uv run mypy src/
     uv run lint-imports
+    gitleaks detect --source . --verbose
+    opengrep scan --config .opengrep/rules/ . --error --severity ERROR
 
 ci-test:
     uv run pytest

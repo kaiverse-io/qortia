@@ -7,6 +7,14 @@ rules:
       Self-weakening: --no-verify bypasses pre-commit hooks.
       Fix the violation; never skip the check.
     severity: ERROR
+    paths:
+      exclude:
+        - "**/*.md"
+        - "**/*.md.jinja"
+        - "**/AGENTS.md*"
+        - "**/CONTRIBUTING.md*"
+        - ".opengrep/**"
+        - "template/.opengrep/**"
     metadata:
       category: security
       technology: [git]
@@ -19,6 +27,14 @@ rules:
       Self-weakening: continue-on-error silences CI failures.
       Fix the failing step instead.
     severity: ERROR
+    paths:
+      exclude:
+        - "**/*.md"
+        - "**/*.md.jinja"
+        - "**/AGENTS.md*"
+        - "**/CONTRIBUTING.md*"
+        - ".opengrep/**"
+        - "template/.opengrep/**"
     metadata:
       category: security
       technology: [github-actions]
@@ -42,13 +58,25 @@ rules:
       Self-weakening: pre-commit uninstall removes all hooks.
       This is forbidden. Fix the hook failure instead.
     severity: ERROR
+    paths:
+      exclude:
+        - "**/*.md"
+        - "**/*.md.jinja"
+        - "**/AGENTS.md*"
+        - "**/CONTRIBUTING.md*"
+        - ".opengrep/**"
+        - "template/.opengrep/**"
     metadata:
       category: security
       technology: [pre-commit]
 
-  # Agents must not lower the coverage floor.
+  # Coverage floor at 0 is a smell for mature projects. WARNING only — new stamps start at 0.
+  # generic: opengrep has no toml language.
   - id: agent-no-lower-coverage-floor
-    languages: [toml]
+    languages: [generic]
+    paths:
+      include:
+        - "**/pyproject.toml"
     patterns:
       - pattern-regex: "fail_under\\s*=\\s*0"
     message: >

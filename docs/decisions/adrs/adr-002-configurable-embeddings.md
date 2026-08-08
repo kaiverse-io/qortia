@@ -57,9 +57,9 @@ to run inference inside LiteLLM:
 | Engine | Actually run BGE-M3 | Ollama (dev), TEI / vLLM (prod embeddings) |
 
 For multi-tenant tracing: keep one LiteLLM Proxy in front; issue a virtual key
-per tenant; enable LiteLLM OpenTelemetry (v2) and put `aither.tenant_id` /
-`qortia.tenant_id` on every embed request via LiteLLM `metadata` / `user` (or
-pass-through headers). Qortia v1 uses a single configured key — per-tenant
+per tenant; enable LiteLLM OpenTelemetry (v2) and put `qortia.tenant_id`
+on every embed request via LiteLLM `metadata` / `user` (or pass-through
+headers). Qortia v1 uses a single configured key — per-tenant
 virtual keys are the next step when more than one tenant shares a gateway.
 Do **not** replace the OpenAI-compatible client with an in-process
 sentence-transformers call: that breaks swapability and loses the gateway’s

@@ -27,6 +27,37 @@ jobs:
       - name: Install deps
         run: uv sync
 
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.21.2"
+        run: |
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64) ga=x64 ;;
+            aarch64|arm64) ga=arm64 ;;
+            *) echo "unsupported arch: $arch"; exit 1 ;;
+          esac
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${ga}.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Install opengrep
+        env:
+          OPENGREP_VERSION: "1.26.0"
+        run: |
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64) asset=opengrep_manylinux_x86 ;;
+            aarch64|arm64) asset=opengrep_manylinux_aarch64 ;;
+            *) echo "unsupported arch: $arch"; exit 1 ;;
+          esac
+          curl -sSL --retry 5 --retry-all-errors \
+            "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/${asset}" \
+            -o /tmp/opengrep
+          sudo install -m 0755 /tmp/opengrep /usr/local/bin/opengrep
+          opengrep --version
+
+
       - name: Lint
         run: just ci-lint
 
