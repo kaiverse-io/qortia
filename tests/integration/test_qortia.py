@@ -18,6 +18,15 @@ def _active_agent(loop, conn, tenant_id: str) -> str:
     return create_active_agent(conn, tenant_id)
 
 
+# ── root ──────────────────────────────────────────────────────────────────────
+
+
+def test_root_redirects_to_docs(app_client, _session_loop) -> None:
+    r = _call(_session_loop, app_client.get("/", follow_redirects=False))
+    assert r.status_code in (302, 307)
+    assert r.headers["location"] == "/docs"
+
+
 # ── remember ──────────────────────────────────────────────────────────────────
 
 

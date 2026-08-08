@@ -16,6 +16,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from qortia import config
 from qortia.admin_router import router as admin_router
@@ -48,6 +49,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="Qortia", lifespan=lifespan)
+
+
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    """Bare root has no API meaning of its own — send a human to the docs
+    rather than a bare {"detail": "Not Found"} for the first URL anyone
+    types."""
+    return RedirectResponse("/docs")
+
+
 app.include_router(qortia_router)
 if config.settings.eval_mode:
     app.include_router(eval_router)
