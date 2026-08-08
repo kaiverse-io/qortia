@@ -1,0 +1,47 @@
+# Optional LiteLLM gateway in front of Ollama — virtual keys, budgets,
+# per-tenant OTel attribution (ADR-003). The base stack talks to Ollama
+# directly and works fine without this for single-tenant local dogfood.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gateway.yml up --build
+#
+# litellm builds from a Dockerfile that COPYs its config in rather than
+# bind-mounting it, same reasoning as db/app in docker-compose.yml.
+
+services:
+  litellm:
+    build: ./deploy/litellm
+    depends_on:
+      - ollama
+    ports:
+      - "4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-qortia-local}
+      # Optional: LITELLM_OTEL_V2=true + OTEL_EXPORTER_OTLP_ENDPOINT=...
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  app:
+    environment:
+      QORTIA_LITELLM_URL: http://litellm:4000
+      QORTIA_LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-sk-qortia-local}
+    depends_on:
+      litellm:
+        condition: service_healthy
+
+  worker:
+    environment:
+      QORTIA_LITELLM_URL: http://litellm:4000
+      QORTIA_LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-sk-qortia-local}
+    depends_on:
+      litellm:
+        condition: service_healthy

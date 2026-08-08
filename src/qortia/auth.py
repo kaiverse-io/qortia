@@ -141,6 +141,17 @@ def get_platform_embed_key() -> str:
     return config.settings.litellm_api_key
 
 
+def litellm_auth_headers(litellm_key: str) -> dict[str, str]:
+    """Bearer header for gateway/engine calls — omitted, not blank, without a key.
+
+    Engines reached directly (e.g. Ollama, the no-gateway default) need no
+    auth at all; `f"Bearer {litellm_key}"` with an empty key sends
+    ``Authorization: Bearer `` (trailing space, no token), which httpx
+    rejects outright as an illegal header value.
+    """
+    return {"Authorization": f"Bearer {litellm_key}"} if litellm_key else {}
+
+
 async def provision_eval_litellm_key(tenant_id: str) -> None:
     """No-op standalone: map eval tenants in QORTIA_LITELLM_TENANT_KEYS if needed."""
     return None

@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 from qortia import config
-from qortia.auth import get_litellm_key
+from qortia.auth import get_litellm_key, litellm_auth_headers
 from qortia.common import get_litellm_client
 from qortia.db import get_main_pool
 
@@ -38,7 +38,7 @@ async def _update_entity_summary(
         async with asyncio.timeout(20.0):
             resp = await get_litellm_client().post(
                 "/chat/completions",
-                headers={"Authorization": f"Bearer {litellm_key}"},
+                headers=litellm_auth_headers(litellm_key),
                 json={
                     "model": "anthropic/claude-3-haiku-20240307",
                     "messages": [{"role": "user", "content": prompt}],

@@ -17,7 +17,7 @@ import logging
 from uuid import UUID
 
 from qortia import config
-from qortia.auth import get_litellm_key
+from qortia.auth import get_litellm_key, litellm_auth_headers
 from qortia.common import get_litellm_client
 from qortia.embedding_cache import get_cached_embedding, put_cached_embedding
 
@@ -56,7 +56,7 @@ async def embed_text(
         body["metadata"] = {"qortia.tenant_id": tenant_id}
     resp = await get_litellm_client().post(
         "/embeddings",
-        headers={"Authorization": f"Bearer {litellm_key}"},
+        headers=litellm_auth_headers(litellm_key),
         json=body,
         timeout=timeout,
     )
