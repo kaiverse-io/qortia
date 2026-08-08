@@ -21,6 +21,7 @@ Portable Postgres+pgvector memory layer for AI agents
 | [`decisions/adrs/adr-001-standalone-extraction.md`](decisions/adrs/adr-001-standalone-extraction.md) | Standalone identity, secrets, workers |
 | [`decisions/adrs/adr-002-configurable-embeddings.md`](decisions/adrs/adr-002-configurable-embeddings.md) | Configurable embed model/dim + worker process |
 | [`decisions/adrs/adr-003-litellm-gateway-tenant-tracing.md`](decisions/adrs/adr-003-litellm-gateway-tenant-tracing.md) | LiteLLM gateway + per-tenant keys/OTel |
+| [`decisions/adrs/adr-004-http-admin-provisioning.md`](decisions/adrs/adr-004-http-admin-provisioning.md) | Platform-admin HTTP provisioning (`/v1/admin/*`) |
 
 ## Eval & benchmarking (still useful; paths may lag)
 
