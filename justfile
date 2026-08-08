@@ -84,15 +84,17 @@ lint:
 worker *args:
     uv run qortia-worker {{ args }}
 
-# Local infra: Postgres+pgvector + Ollama + LiteLLM gateway (ADR-003).
+# Full stack: Postgres+pgvector + Ollama + the Qortia API + worker.
+# Embeddings hit Ollama directly — layer on docker-compose.gateway.yml for
+# LiteLLM (virtual keys / budgets / multi-tenant OTel, ADR-003).
 stack-up:
-    docker compose up -d
-    @echo "Waiting for LiteLLM…"; \
+    docker compose up -d --build
+    @echo "Waiting for API…"; \
       for i in $$(seq 1 60); do \
-        curl -sf http://127.0.0.1:4000/health/liveliness >/dev/null 2>&1 && break; \
+        curl -sf http://127.0.0.1:$${QORTIA_APP_PORT:-8081}/docs >/dev/null 2>&1 && break; \
         sleep 1; \
       done; \
-      echo "stack up — DB :5434  LiteLLM :4000  Ollama :11434"
+      echo "stack up — API :$${QORTIA_APP_PORT:-8081}  DB :5434  Ollama :11434"
 
 stack-down:
     docker compose down

@@ -8,7 +8,7 @@ import logging
 from uuid import UUID
 
 from qortia import config
-from qortia.auth import AgentIdentity, get_litellm_key
+from qortia.auth import AgentIdentity, get_litellm_key, litellm_auth_headers
 from qortia.common import get_litellm_client
 from qortia.db import get_main_pool, tenant_transaction
 from qortia.models import RecallResult
@@ -39,7 +39,7 @@ async def _llm_rerank(
         async with asyncio.timeout(35.0):
             resp = await get_litellm_client().post(
                 "/chat/completions",
-                headers={"Authorization": f"Bearer {litellm_key}"},
+                headers=litellm_auth_headers(litellm_key),
                 json={
                     "model": model,
                     "messages": [{"role": "user", "content": prompt}],

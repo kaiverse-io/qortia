@@ -18,15 +18,29 @@ Remember, recall, reflect, and traverse an entity graph. Hybrid lexical + vector
 
 ## Quick start
 
+Full stack, one command — Postgres, Ollama, the API, and the background worker:
+
+```bash
+just stack-up            # docker compose up --build; API at :8081/docs
+just stack-pull-model    # ollama pull bge-m3 (once)
+```
+
+Embeddings talk to Ollama directly by default. Need per-tenant virtual keys,
+budgets, or OTel attribution instead? Layer on the optional gateway compose
+file, which adds LiteLLM in front of Ollama and repoints the API/worker at it:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gateway.yml up --build
+```
+
+(see [ADR-003](docs/decisions/adrs/)).
+
+Iterating on the app itself without rebuilding images:
+
 ```bash
 cp .env.example .env
 uv sync
-
-# Local stack: Postgres + Ollama + LiteLLM
-just stack-up
-just stack-pull-model
-
-# API + embedding worker
+docker compose up -d db ollama
 uv run uvicorn qortia.app:app --port 8080
 just worker -- --only embed
 ```

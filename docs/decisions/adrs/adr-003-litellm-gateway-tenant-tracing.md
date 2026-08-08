@@ -40,3 +40,23 @@ where they belong (gateway); dogfood path is one `just stack-up`.
 **Trade-off:** Operators must provision LiteLLM virtual keys (or accept the
 shared fallback key). Full Admin-API auto-provisioning of virtual keys is a
 later increment — the env map is enough to start isolating tenants.
+
+## Amendment (2026-08-08)
+
+`docker-compose.yml`'s default flipped: the API and worker now hardcode
+`QORTIA_LITELLM_URL` to Ollama's own OpenAI-compatible endpoint
+(`http://ollama:11434/v1`) out of the box, and the `litellm` service moved
+to `docker-compose.gateway.yml`, layered on top when wanted (`docker compose
+-f docker-compose.yml -f docker-compose.gateway.yml up`; a Compose profile
+flag alone can't also repoint app/worker at the gateway, hence a separate
+file rather than `profiles:`). Verified live — Ollama's `/v1/embeddings`
+accepts the same request shape `embed_text` already sends (`user`,
+`metadata.qortia.tenant_id` included; it just ignores fields it doesn't
+understand) and returns the schema's 1024-dim vectors unchanged. No code
+change; `embed_text` still only ever talks to whatever `QORTIA_LITELLM_URL`
+points at, gateway or not.
+
+This doesn't reverse the decision above — multi-tenant budgets/traces still
+need the gateway, and it's one flag away — it just stops paying LiteLLM's
+image size and second moving part for the common local case (`just stack-up`,
+one tenant, dogfooding) that never needed them.

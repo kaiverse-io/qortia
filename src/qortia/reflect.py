@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from qortia import config
-from qortia.auth import AgentIdentity, get_litellm_key, require_agent
+from qortia.auth import AgentIdentity, get_litellm_key, litellm_auth_headers, require_agent
 from qortia.common import get_litellm_client
 from qortia.db import get_main_pool, tenant_transaction
 from qortia.embeddings import embed_text as _get_embedding
@@ -361,7 +361,7 @@ async def _call_litellm_reflect(  # noqa: C901
     async with asyncio.timeout(125.0):
         resp = await get_litellm_client().post(
             "/chat/completions",
-            headers={"Authorization": f"Bearer {litellm_key}"},
+            headers=litellm_auth_headers(litellm_key),
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
