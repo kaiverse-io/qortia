@@ -118,7 +118,10 @@ async def test_admin_create_tenant_returns_tenant_id() -> None:
     from qortia.admin_router import TenantCreateRequest, admin_create_tenant
 
     tenant_id = uuid4()
-    with patch("qortia.admin_router.create_tenant", AsyncMock(return_value=tenant_id)):
+    with (
+        patch("qortia.admin_router.get_main_pool", return_value=MagicMock()),
+        patch("qortia.admin_router.create_tenant", AsyncMock(return_value=tenant_id)),
+    ):
         resp = await admin_create_tenant(TenantCreateRequest(name="Acme"))
     assert resp.tenant_id == str(tenant_id)
 
@@ -129,7 +132,10 @@ async def test_admin_create_tenant_name_is_optional() -> None:
 
     tenant_id = uuid4()
     create_mock = AsyncMock(return_value=tenant_id)
-    with patch("qortia.admin_router.create_tenant", create_mock):
+    with (
+        patch("qortia.admin_router.get_main_pool", return_value=MagicMock()),
+        patch("qortia.admin_router.create_tenant", create_mock),
+    ):
         await admin_create_tenant(TenantCreateRequest())
     assert create_mock.call_args.kwargs["name"] is None
 
@@ -293,7 +299,10 @@ async def test_admin_route_200_over_http_when_token_correct() -> None:
     try:
         app = _throwaway_admin_app()
         transport = ASGITransport(app=app)
-        with patch("qortia.admin_router.create_tenant", AsyncMock(return_value=tenant_id)):
+        with (
+            patch("qortia.admin_router.get_main_pool", return_value=MagicMock()),
+            patch("qortia.admin_router.create_tenant", AsyncMock(return_value=tenant_id)),
+        ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
                     "/v1/admin/tenants",
