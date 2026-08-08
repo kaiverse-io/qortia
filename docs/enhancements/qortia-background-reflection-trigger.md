@@ -1,14 +1,14 @@
 ---
 kind: enhancement
 owner: platform
-last_reviewed: 2026-05-18
+last_reviewed: 2026-08-08
 status: implemented
 ---
 
 # Qortia: Proactive Background Reflection Trigger
 
-**Status:** Implemented — 2026-05-30
-**Scope:** `platform/app/qortia/reflect.py`, `platform/app/main.py`
+**Status:** Implemented — 2026-05-30; reflection_counter gate restored 2026-08-08
+**Scope:** `src/qortia/reflect.py`, `src/qortia/workers.py`
 **ADR required:** No — uses existing `reflect()` logic; no schema change, no new
 endpoints, no API contract change
 **Depends on:** None (but aligns with GitHub Epic #3 — Proactive Triggers)
@@ -17,6 +17,30 @@ Pillar 3 "Improve": "Background extraction creates compounding value: context
 improves automatically without adding latency to the critical path." Also:
 "Managing Memory for AI Agents" (O'Reilly/Redis, 2026) — Ch. 2, "cascading memory
 systems: allowing the agent itself to choose what to promote to long-term storage."
+
+**Implementation note (2026-08-08):** the section below (§2.1) is the original
+design and no longer matches the code verbatim — the standalone-service split
+(qortia moved from `platform/app/qortia/` to this repo's `src/qortia/`) renamed
+`run_reflection_trigger`/`_trigger_pending_reflections` to
+`run_background_reflection_trigger`/`_trigger_idle_reflections`, and moved
+registration from `main.py`'s `start_supervised_tasks` to the standalone
+`qortia-worker --only idle-reflect` process (`workers.py`). Functionally
+equivalent — same interval-loop pattern, just a different process boundary.
+
+More significantly, the `reflection_counter >= $1` clause specified below was
+**dropped** somewhere in that migration — the shipped query only checked
+`status='active'` and `updated_at` idleness, not "has enough new episodics since
+last reflect." That meant a continuously-active agent (episodic `remember` calls
+bump `updated_at`, so it never reads as idle) could accumulate an unbounded
+`reflection_counter` and never get background-reflected — the exact failure mode
+this doc's §1 "Problem" section describes, just via the opposite trigger gap
+(never-idle instead of never-triggered). The `reflection_counter >= $1` clause
+and the `LIMIT 50` cap from §2.4 have both been restored in `_trigger_idle_reflections`
+(reusing `settings.reflection_threshold`, no new setting needed). The doc's own
+§5 test gates for the counter threshold ("agents below threshold not triggered")
+did not previously exist in the test suite either — see
+`tests/unit/test_qortia_enhancements.py::test_trigger_idle_reflections_query_gates_on_reflection_counter`
+and `tests/integration/test_qortia.py::test_idle_reflection_trigger_gates_on_reflection_counter`.
 
 ---
 
