@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from qortia import config
+from qortia.admin_router import router as admin_router
 from qortia.common import close_litellm_client, init_litellm_client
 from qortia.db import close_main_pool, init_main_pool
 from qortia.embeddings import validate_embedding_config
@@ -50,3 +51,5 @@ app = FastAPI(title="Qortia", lifespan=lifespan)
 app.include_router(qortia_router)
 if config.settings.eval_mode:
     app.include_router(eval_router)
+if config.settings.qortia_admin_token:
+    app.include_router(admin_router)

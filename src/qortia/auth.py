@@ -14,11 +14,20 @@ issuance (see qortia.provisioning) and never persisted. SHA-256 rather than a
 slow password hash (bcrypt/argon2) is deliberate: these are high-entropy
 random tokens, not user-chosen passwords, and this lookup runs on every
 request, so a slow hash would add latency for no security benefit.
+
+`require_admin` is a separate, simpler mechanism for a different problem:
+platform-level access to qortia.admin_router (ADR-004), gated by a single
+static `QORTIA_ADMIN_TOKEN` env var rather than a per-tenant DB-backed key.
+It is not a relaxation of the tenant model above — a caller that clears
+`require_admin` still cannot address tenant data directly, only mint new
+tenants/agents/keys through `qortia.provisioning`, the same operations the
+`qortia-admin` CLI already performs with direct DB access.
 """
 
 from __future__ import annotations
 
 import hashlib
+import secrets
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -85,6 +94,33 @@ async def require_agent(
     return AgentIdentity(
         agent_id=agent_id, tenant_id=tenant_id, clearance_order=clearance_order, division=division
     )
+
+
+async def require_admin(authorization: str | None = Header(default=None)) -> None:
+    """Gate for qortia.admin_router (/v1/admin/*) — see ADR-004.
+
+    Checks `Authorization: Bearer <token>` against the static
+    `QORTIA_ADMIN_TOKEN` env var (`config.settings.qortia_admin_token`), using
+    `secrets.compare_digest` for a constant-time comparison since this is a
+    direct in-process string compare against a secret, not a DB-hash lookup
+    like `require_agent`'s.
+
+    404s (not 401) when the token is unset so a deployment that never opted
+    in doesn't even reveal the admin surface exists — the same posture
+    `qortia.app` takes by not mounting the router at all in that case; this
+    is the defense-in-depth half of that pair (mirrors `qortia.eval_router`,
+    which 404s per-handler in addition to its own conditional mount).
+    """
+    admin_token = config.settings.qortia_admin_token
+    if not admin_token:
+        raise HTTPException(404, "Not Found")
+    if authorization is None or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing or malformed Authorization header")
+    provided = authorization.removeprefix("Bearer ").strip()
+    if not provided:
+        raise HTTPException(401, "Missing admin token")
+    if not secrets.compare_digest(provided, admin_token):
+        raise HTTPException(401, "Invalid admin token")
 
 
 async def get_litellm_key(tenant_id: str) -> str:

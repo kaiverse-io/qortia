@@ -1,12 +1,25 @@
-"""Tenant/agent/API-key provisioning — CLI and direct function calls only.
+"""Tenant/agent/API-key provisioning — core functions, called from two places.
 
-There's deliberately no HTTP endpoint for any of this in v1: the very first
-API key for a fresh tenant can't be created through the API (nothing to
-authenticate that request with). The standard answer is an out-of-band
-CLI/admin path with DB access, independent of the HTTP API entirely — that's
-what `qortia-admin` is. A self-service HTTP endpoint for issuing *additional*
-keys (once a tenant already holds one valid key) is a reasonable future
-addition, not built here.
+The very first API key for a fresh tenant can't be created through a
+*tenant-scoped* API that itself requires an existing tenant API key to
+authenticate the request — that bootstrapping problem has no self-service
+answer. The `qortia-admin` CLI (direct DB access, `main()` below) is the
+original out-of-band answer to it, and stays the only path that needs
+nothing but a Postgres connection string.
+
+`qortia.admin_router` (ADR-004, docs/decisions/adrs/) is a second caller of
+these same functions, for operators who need to provision over HTTP because
+they have no shell into wherever Qortia runs — e.g. a separate control-plane
+service in its own container. It does not reopen the bootstrapping problem
+above: it's gated by a static platform-level `QORTIA_ADMIN_TOKEN` set
+out-of-band by whoever deploys Qortia, not a per-tenant API key, so there is
+still nothing self-service about it — see `qortia.auth.require_admin`.
+
+Both callers share these functions rather than duplicating the SQL; neither
+goes through `qortia.db.tenant_transaction` (RLS), because
+`qortia_tenants`/`qortia_agents`/`qortia_api_keys` carry no RLS policies —
+provisioning is inherently a cross-tenant, superuser-ish operation, same as
+it always was for the CLI.
 """
 
 from __future__ import annotations
@@ -36,17 +49,19 @@ async def create_agent(
     pool: asyncpg.Pool,
     tenant_id: UUID,
     *,
+    name: str | None = None,
     clearance_level: str = "internal",
     division: str = "all",
 ) -> UUID:
     agent_id = uuid4()
     await pool.execute(
         """
-        INSERT INTO qortia_agents (id, tenant_id, clearance_level, division)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO qortia_agents (id, tenant_id, name, clearance_level, division)
+        VALUES ($1, $2, $3, $4, $5)
         """,
         agent_id,
         tenant_id,
+        name,
         clearance_level,
         division,
     )
@@ -89,6 +104,7 @@ async def _cli_create_agent(args: argparse.Namespace) -> None:
         agent_id = await create_agent(
             pool,
             UUID(args.tenant),
+            name=args.name,
             clearance_level=args.clearance,
             division=args.division,
         )
@@ -117,6 +133,7 @@ def main() -> None:
 
     p_agent = sub.add_parser("create-agent", help="Create a new agent under a tenant")
     p_agent.add_argument("--tenant", required=True, help="Tenant UUID")
+    p_agent.add_argument("--name", default=None)
     p_agent.add_argument("--clearance", default="internal")
     p_agent.add_argument("--division", default="all")
     p_agent.set_defaults(func=_cli_create_agent)

@@ -70,6 +70,9 @@ class Settings:
     embedding_cache_max_size: int = 10_000
     embedding_cache_ttl_seconds: int = 3600
     eval_mode: bool = False
+    # Platform-admin bearer token gating qortia.admin_router (/v1/admin/*), ADR-004.
+    # Empty (default) = router stays unmounted and its auth dependency 404s outright.
+    qortia_admin_token: str = ""
     rerank_model: str = "anthropic/claude-3-haiku-20240307"
     reflection_threshold: int = 10
     idle_reflection_interval_s: float = 300.0
@@ -95,6 +98,7 @@ def load_settings() -> Settings:
             "QORTIA_EMBEDDING_CACHE_TTL_SECONDS", d.embedding_cache_ttl_seconds
         ),
         eval_mode=_env_bool("QORTIA_EVAL_MODE", d.eval_mode),
+        qortia_admin_token=_env_str("QORTIA_ADMIN_TOKEN", d.qortia_admin_token),
         rerank_model=_env_str("QORTIA_RERANK_MODEL", d.rerank_model),
         reflection_threshold=_env_int("QORTIA_REFLECTION_THRESHOLD", d.reflection_threshold),
         idle_reflection_interval_s=_env_float(

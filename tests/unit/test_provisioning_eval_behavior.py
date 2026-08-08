@@ -89,7 +89,9 @@ async def test_cli_create_agent_prints_id(capsys: pytest.CaptureFixture[str]) ->
         patch("qortia.provisioning.create_agent", AsyncMock(return_value=agent_id)),
     ):
         await _cli_create_agent(
-            argparse.Namespace(tenant=str(tenant_id), clearance="internal", division="all")
+            argparse.Namespace(
+                tenant=str(tenant_id), name="bot", clearance="internal", division="all"
+            )
         )
 
     assert str(agent_id) in capsys.readouterr().out
