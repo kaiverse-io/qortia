@@ -39,6 +39,10 @@ from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 MOCK_EMBEDDING = [0.1] * 1024
+# Fixed test value for QORTIA_ADMIN_TOKEN — set for the whole session so
+# qortia.admin_router (ADR-004) is mounted on the shared app_client, same as
+# QORTIA_EVAL_MODE gates qortia.eval_router below. Not a real secret.
+ADMIN_TOKEN = "qortia-admin-test-token"  # noqa: S105
 
 POSTGRES_URL: str = ""
 POSTGRES_SUPERUSER_URL: str = ""
@@ -143,6 +147,7 @@ def _app_and_loop(setup_infrastructure: None, _pg_urls: tuple[str, str]):  # typ
     os.environ["QORTIA_DATABASE_URL"] = app_url
     os.environ["QORTIA_LITELLM_URL"] = "http://mock-litellm:4000"
     os.environ["QORTIA_EVAL_MODE"] = "false"
+    os.environ["QORTIA_ADMIN_TOKEN"] = ADMIN_TOKEN
 
     # qortia.* modules read settings via `config.settings.<field>` (a live
     # attribute lookup on the qortia.config module), not a frozen

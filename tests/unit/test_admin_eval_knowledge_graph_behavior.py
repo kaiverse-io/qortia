@@ -115,7 +115,7 @@ async def test_provisioning_cli_helpers_close_pools(monkeypatch: pytest.MonkeyPa
 
     await provisioning._cli_create_tenant(argparse.Namespace(name="Tenant"))
     await provisioning._cli_create_agent(
-        argparse.Namespace(tenant=str(TENANT_ID), clearance="internal", division="all")
+        argparse.Namespace(tenant=str(TENANT_ID), name=None, clearance="internal", division="all")
     )
     await provisioning._cli_issue_key(argparse.Namespace(tenant=str(TENANT_ID)))
 

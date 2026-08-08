@@ -66,6 +66,8 @@ than assume a host platform's identity infrastructure is present.
                   └───────────────────────────┘   └───────────────────────────┘
 ```
 
+A third router, `qortia.admin_router` (`/v1/admin/*`, ADR-004), mounts the same way `qortia.eval_router` does — conditionally, on an env var (`QORTIA_ADMIN_TOKEN` instead of `eval_mode`) — but doesn't join the diagram above at all: it never touches the core memory pipeline or `tenant_transaction`. It goes straight from `qortia.auth.require_admin` to `qortia.provisioning` to the Postgres identity tables (`qortia_tenants`/`qortia_agents`/`qortia_api_keys`, which carry no RLS policies). See the `admin_router` section below for its own diagram.
+
 ## Components
 
 Each top-level module or package directly under `src/qortia/` gets a `##`
@@ -81,12 +83,14 @@ Standalone FastAPI entrypoint (`uvicorn qortia.app:app`) — the first time qort
 rather than mounted inside a host platform's app. Its `lifespan` context manager initialises the
 LiteLLM httpx client and the Postgres pool at startup and closes both at shutdown, and
 best-effort loads the spaCy NER model (a load failure is logged and swallowed, since every NER
-call site already degrades to an empty entity list). It always mounts `qortia.router.router`
-and additionally mounts `qortia.eval_router.router` when `config.settings.eval_mode` is true.
+call site already degrades to an empty entity list). It always mounts `qortia.router.router`,
+additionally mounts `qortia.eval_router.router` when `config.settings.eval_mode` is true, and
+additionally mounts `qortia.admin_router.router` when `config.settings.qortia_admin_token` is set
+(ADR-004) — both extra routers are inert by default and opt-in only.
 
 Depends on: `qortia.config`, `qortia.common` (LiteLLM client init/close), `qortia.db` (pool
-init/close), `qortia.router`, `qortia.eval_router`, `qortia.knowledge.load_spacy_model`.
-External: FastAPI, uvicorn.
+init/close), `qortia.router`, `qortia.eval_router`, `qortia.admin_router`,
+`qortia.knowledge.load_spacy_model`. External: FastAPI, uvicorn.
 
 ### auth
 
@@ -101,10 +105,15 @@ only add latency on every request for no benefit).
 Public interface: `AgentIdentity` (agent_id, tenant_id, clearance_order, division),
 `hash_api_key`, `require_agent`, `get_litellm_key` (per-tenant virtual key from
 `QORTIA_LITELLM_TENANT_KEYS`, else shared `QORTIA_LITELLM_API_KEY` — ADR-003),
-`get_platform_embed_key` (shared/master key for probes), `provision_eval_litellm_key` (no-op).
+`get_platform_embed_key` (shared/master key for probes), `provision_eval_litellm_key` (no-op),
+`require_admin` (ADR-004 — a different, simpler mechanism for a different problem: gates
+`qortia.admin_router` on a single static `QORTIA_ADMIN_TOKEN` compared with
+`secrets.compare_digest`, not a per-tenant DB-backed key; 404s if the token is unset, 401 on a
+missing/wrong `Authorization: Bearer` header).
 
 Depends on: `qortia.config`, `qortia.db`. Used via `Depends(require_agent)` by `remember.py`,
-`recall.py`, `reflect.py`, `knowledge.py`, and `eval_router.py`.
+`recall.py`, `reflect.py`, `knowledge.py`, and `eval_router.py`; `require_admin` is used by
+`admin_router.py` via `APIRouter(dependencies=[Depends(require_admin)])`.
 
 ```
 Authorization: Bearer <api_key>        X-Agent-Id: <uuid>
@@ -122,6 +131,46 @@ Authorization: Bearer <api_key>        X-Agent-Id: <uuid>
                         AgentIdentity(agent_id, tenant_id,
                                        clearance_order, division)
 ```
+
+### admin_router
+
+`/v1/admin/*` platform-admin provisioning over HTTP (ADR-004) — the same `create_tenant`/
+`create_agent`/`issue_api_key` functions the `qortia-admin` CLI calls, reached by a caller with no
+shell into wherever Qortia runs. Gated end-to-end by a static `QORTIA_ADMIN_TOKEN`:
+`qortia.app` only mounts this router when the env var is set, and `qortia.auth.require_admin` —
+applied once via `APIRouter(dependencies=...)`, not per-handler, since there's no identity payload
+worth injecting — 404s outright when it's unset, mirroring `qortia.eval_router`'s
+belt-and-suspenders posture for a different flag. `admin_create_agent` and `admin_issue_api_key`
+both check the target tenant exists first (`SELECT 1 FROM qortia_tenants ...`) and 404 rather than
+letting a foreign-key violation surface as a raw 500.
+
+```
+        POST /v1/admin/{tenants,agents,keys}
+                        │
+                        ▼
+        qortia.auth.require_admin (router-level dependency)
+        no QORTIA_ADMIN_TOKEN configured → 404 · wrong/missing Bearer → 401
+                        │
+                        ▼
+        agents/keys only: SELECT 1 FROM qortia_tenants WHERE id = $1
+        → 404 "Tenant not found" if missing
+                        │
+                        ▼
+        qortia.provisioning.{create_tenant, create_agent, issue_api_key}
+        (get_main_pool() directly — no RLS on the identity tables)
+                        │
+                        ▼
+        200 {tenant_id} / {agent_id} / {api_key}
+```
+
+Public interface: `POST /tenants` (`{name}` → `{tenant_id}`), `POST /agents` (`{tenant_id, name,
+clearance_level, division}` → `{agent_id}`), `POST /keys` (`{tenant_id}` → `{api_key}`) — all
+under the `/v1/admin` prefix, all requiring `Authorization: Bearer <QORTIA_ADMIN_TOKEN>`, none
+requiring `X-Agent-Id` (admin routes are platform-level, not tenant/agent-scoped).
+
+Depends on: `qortia.auth.require_admin`, `qortia.db.get_main_pool`, `qortia.provisioning`
+(`create_tenant`, `create_agent`, `issue_api_key`). Mounted by `qortia.app` when
+`config.settings.qortia_admin_token` is set.
 
 ### common
 
@@ -273,14 +322,19 @@ Depends on: `pydantic` only. Imported by nearly every other module (`remember`, 
 
 ### provisioning
 
-Tenant/agent/API-key provisioning — deliberately CLI (`qortia-admin`) and direct-function-call
-only, with no HTTP endpoint: the very first API key for a fresh tenant can't be created through
-an API that itself requires an API key to authenticate, so this stays an out-of-band path with
-direct DB access. Core functions: `create_tenant`, `create_agent`, `issue_api_key` (returns the
-plaintext key once — only its SHA-256 hash is persisted), `revoke_api_key`. `main()` wraps these
-in an `argparse` CLI (`create-tenant` / `create-agent` / `issue-key` subcommands).
+Tenant/agent/API-key provisioning functions, called from two places (ADR-004): the `qortia-admin`
+CLI (`main()`, direct DB access, no HTTP at all — the only out-of-band path for the very first API
+key a fresh tenant gets, since nothing can authenticate that request through a tenant-scoped API
+yet) and `qortia.admin_router` (`/v1/admin/*`, gated by a separate platform-level
+`QORTIA_ADMIN_TOKEN` — a different bootstrapping answer, for callers with no shell into wherever
+Qortia runs). Core functions: `create_tenant`, `create_agent` (`name` is optional — added
+alongside `admin_router`, also exposed as CLI `--name`), `issue_api_key` (returns the plaintext
+key once — only its SHA-256 hash is persisted), `revoke_api_key` (CLI/direct-call only; not
+exposed over HTTP — see Known Limitations). `main()` wraps `create_tenant`/`create_agent`/
+`issue_api_key` in an `argparse` CLI (`create-tenant` / `create-agent` / `issue-key` subcommands).
 
-Depends on: `qortia.config`, `qortia.auth.hash_api_key`, `asyncpg`.
+Depends on: `qortia.config`, `qortia.auth.hash_api_key`, `asyncpg`. Used by `qortia.admin_router`
+in addition to this module's own CLI.
 
 ### recall
 
@@ -438,10 +492,14 @@ Depends on: `opentelemetry` (optional, imported lazily inside `_make_counter`).
 
 ## Known Limitations
 
-- **No HTTP provisioning/admin API.** The first API key for a fresh tenant can't be minted
-  through the API itself (nothing to authenticate that request with), so tenant/agent/API-key
-  creation is CLI-only (`qortia-admin`) or direct function calls into `qortia.provisioning` — see
-  that module's docstring for the rationale.
+- **HTTP admin provisioning is a single static token, not a revocable credential.**
+  `qortia.admin_router` (`/v1/admin/*`, ADR-004) closes the original "no HTTP path for
+  provisioning" gap for callers with no shell into wherever Qortia runs, but `QORTIA_ADMIN_TOKEN`
+  is one process-wide secret — rotating it means changing the env var and restarting, and a leak
+  grants tenant/agent/key creation across every tenant (not memory-data access; `admin_router`
+  never touches `tenant_transaction`). `revoke_api_key` also still isn't exposed over HTTP, only
+  CLI/direct-call. A DB-backed, per-caller, revocable admin-token scheme (and HTTP key revocation)
+  are reasonable future increments, not needed for a single caller and not built here.
 - **Clearance levels are global, not per-tenant.** `qortia_clearance_levels` is a single
   process-wide lookup table (`external`/`internal`/`restricted`), simplified from an originally
   per-tenant-customizable design; per-tenant clearance levels are a clean future extension, not
