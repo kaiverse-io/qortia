@@ -166,6 +166,19 @@ class ReflectResponse(BaseModel):
     reflection_counter: int
 
 
+# ── outcome (ADR-125 Phase 2) ───────────────────────────────────
+
+
+class OutcomeRequest(BaseModel):
+    work_order_id: UUID
+    outcome: Literal["SUCCESS", "MINOR_FAILURE", "CRITICAL_FAILURE"]
+
+
+class OutcomeResponse(BaseModel):
+    work_order_id: str
+    outcome: str
+
+
 # ── recall ───────────────────────────────────────────────────
 
 

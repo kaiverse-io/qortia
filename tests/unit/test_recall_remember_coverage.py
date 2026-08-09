@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from qortia.auth import AgentIdentity
-from qortia.models import ForgetRequest, RecallRequest, RecallResult
+from qortia.models import ForgetRequest, OutcomeRequest, RecallRequest, RecallResult
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 AGENT_ID = UUID("00000000-0000-0000-0000-000000000002")
@@ -127,6 +127,60 @@ async def test_record_work_order_outcome_updates_confidence(
         agent_division="all",
     )
     assert conn.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_report_outcome_endpoint_calls_the_recorder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /v1/outcome must (a) check the agent is active before doing
+    anything and (b) actually call _record_work_order_outcome — this is the
+    regression guard for the endpoint that turns confidence_multiplier from
+    permanently-1.0 into something outcomes can move."""
+    from qortia.recall import report_outcome
+
+    conn = MagicMock()
+    conn.fetchrow = AsyncMock(return_value={"status": "active"})
+    monkeypatch.setattr("qortia.recall.get_main_pool", lambda: MagicMock())
+    monkeypatch.setattr("qortia.recall.tenant_transaction", lambda *_a, **_k: _tenant_tx(conn))
+
+    recorded = AsyncMock()
+    monkeypatch.setattr("qortia.recall._record_work_order_outcome", recorded)
+
+    agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
+    work_order_id = uuid4()
+    body = OutcomeRequest(work_order_id=work_order_id, outcome="CRITICAL_FAILURE")
+
+    result = await report_outcome(body, agent)
+
+    assert result.work_order_id == str(work_order_id)
+    assert result.outcome == "CRITICAL_FAILURE"
+    recorded.assert_awaited_once_with(
+        work_order_id=work_order_id,
+        tenant_id=TENANT_ID,
+        agent_id=AGENT_ID,
+        outcome="CRITICAL_FAILURE",
+        memory_clearance_order=agent.clearance_order,
+        agent_division=agent.division,
+    )
+
+
+@pytest.mark.asyncio
+async def test_report_outcome_rejects_inactive_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    from qortia.recall import report_outcome
+
+    conn = MagicMock()
+    conn.fetchrow = AsyncMock(return_value={"status": "retired"})
+    monkeypatch.setattr("qortia.recall.get_main_pool", lambda: MagicMock())
+    monkeypatch.setattr("qortia.recall.tenant_transaction", lambda *_a, **_k: _tenant_tx(conn))
+    recorded = AsyncMock()
+    monkeypatch.setattr("qortia.recall._record_work_order_outcome", recorded)
+
+    agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
+    body = OutcomeRequest(work_order_id=uuid4(), outcome="SUCCESS")
+
+    with pytest.raises(HTTPException) as exc:
+        await report_outcome(body, agent)
+    assert exc.value.status_code == 403
+    recorded.assert_not_awaited()
 
 
 @pytest.mark.asyncio

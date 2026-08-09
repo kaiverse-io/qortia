@@ -10,7 +10,13 @@ from fastapi import APIRouter, Depends, Header
 from qortia.auth import AgentIdentity, require_agent
 from qortia.db import get_main_pool, tenant_transaction
 from qortia.embeddings import embed_query as _embed_query
-from qortia.models import RecallRequest, RecallResponse, RecallResult
+from qortia.models import (
+    OutcomeRequest,
+    OutcomeResponse,
+    RecallRequest,
+    RecallResponse,
+    RecallResult,
+)
 from qortia.recall_helpers import (
     KNOWLEDGE_RESULT_LIMIT,
     ORG_RESULT_LIMIT,
@@ -476,6 +482,40 @@ async def _record_recall_access(
             )
         except Exception:  # noqa: S110
             pass
+
+
+@router.post("/v1/outcome", response_model=OutcomeResponse)
+async def report_outcome(
+    body: OutcomeRequest,
+    agent: AgentIdentity = Depends(require_agent),  # noqa: B008
+) -> OutcomeResponse:
+    """ADR-125 Phase 2, exposed over HTTP. `_record_work_order_outcome` decays
+    confidence_multiplier on every memory `X-Work-Order-Id` implicated on
+    `/v1/recall` (Phase 1) -- the only thing that ever calls it was, until
+    this endpoint, a unit test. In the platform this was ported from, the
+    caller was a separate work-orders service's router; Qortia standalone
+    owns no such concept, so any caller correlating its own task/work-order
+    lifecycle with recalls it made can report the outcome directly."""
+    from qortia.common import assert_agent_active
+
+    async with tenant_transaction(
+        get_main_pool(),
+        agent.tenant_id,
+        agent.agent_id,
+        memory_clearance_order=agent.clearance_order,
+        agent_division=agent.division,
+    ) as conn:
+        await assert_agent_active(agent.agent_id, agent.tenant_id, conn)
+
+    await _record_work_order_outcome(
+        work_order_id=body.work_order_id,
+        tenant_id=agent.tenant_id,
+        agent_id=agent.agent_id,
+        outcome=body.outcome,
+        memory_clearance_order=agent.clearance_order,
+        agent_division=agent.division,
+    )
+    return OutcomeResponse(work_order_id=str(body.work_order_id), outcome=body.outcome)
 
 
 async def _record_work_order_outcome(

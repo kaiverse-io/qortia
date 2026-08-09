@@ -9,16 +9,14 @@ after 12 recalls under distinct X-Work-Order-Id headers, confirmed
 confidence_multiplier frozen at 1 and qortia_outcome_records empty
 database-wide. See the memory-plane proposal for the full experiment logs.
 
-Each is `xfail(strict=True)`: red is the known, tracked state. A fix that
-lands without removing the marker turns the suite red again — that is the
-point.
+All five findings here are now fixed (each docstring says how) — this file
+is the regression suite pinning them, not the open list anymore. See the
+sibling agnova and aither repos for the parts of the seam that live there.
 """
 
 from __future__ import annotations
 
 import inspect
-
-import pytest
 
 # ── F1 · /v1/context cannot be asked for a budget ───────────────────────────
 
@@ -74,12 +72,13 @@ def test_every_context_entry_carries_importance() -> None:
 # memory. The read half of the loop works; nothing exercises the write half.
 
 
-@pytest.mark.xfail(strict=True, reason="no route accepts a work-order outcome")
 def test_an_outcome_can_be_reported_over_http() -> None:
     """`confidence_multiplier` is read on every recall and multiplied into the
-    score. `_record_work_order_outcome` is the only thing that writes it — and
-    nothing outside a unit test calls it. Without an endpoint the multiplier is
-    pinned at its insert-time default of 1.0 forever — confirmed live."""
+    score. `_record_work_order_outcome` is the only thing that writes it —
+    confirmed live it was pinned at its insert-time default of 1.0 forever.
+
+    Fixed: POST /v1/outcome (recall.py's report_outcome) now calls it.
+    """
     from qortia.app import app
 
     # app.routes holds lazy _IncludedRouter wrappers on this FastAPI version;
@@ -92,9 +91,11 @@ def test_an_outcome_can_be_reported_over_http() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="_record_work_order_outcome has no caller outside a test")
 def test_record_outcome_has_a_non_test_caller() -> None:
-    """Guards the same gap from the other side: dead code that ranking depends on."""
+    """Guards the same gap from the other side: dead code that ranking depends on.
+
+    Fixed alongside the endpoint above: report_outcome() is now a real caller.
+    """
     import subprocess
 
     # git grep, not grep -r: searches tracked files only, so build artifacts
