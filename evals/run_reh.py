@@ -5,7 +5,10 @@ Measures recall.py pipeline in isolation. Outputs Recall@5, Recall@10, MRR, and
 Semantic Drift gap. Exits 0 if regression floors are met, 1 otherwise.
 
 Usage:
-    QORTIA_EVAL_MODE=true python3 evals/run_reh.py [--dataset evals/datasets/recall_v1.json]
+    QORTIA_EVAL_MODE=true python3 evals/run_reh.py [evals/datasets/recall_v1.json]
+
+    The dataset path is a single positional argument (default:
+    evals/datasets/recall_v1.json) — not a --dataset flag.
 
 North star targets (docs/02-benchmarking.md §2.2):
     Recall@5            > 0.85

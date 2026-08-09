@@ -2,14 +2,16 @@
 kind: architecture
 status: active
 owner: platform
-last_reviewed: 2026-06-01
+last_reviewed: 2026-08-09
 ---
 
 # Qortia Evaluation Strategy — Why We Measure Memory This Way
 
-**Status:** Full eval stack live — 6 harnesses verified on live stack (commit `f3ca394`, 2026-06-01)
+**Status:** Full eval stack live — 6 harnesses + LongMemEval, REH re-verified live
+2026-08-09 (exact match to the `f3ca394` 2026-06-01 baseline); LongMemEval run for
+the first time 2026-08-09 — see below for why its score needs context, not a floor change
 **Audience:** Customers, partners, and engineers evaluating Qortia's memory layer
-**Last updated:** 2026-06-01
+**Last updated:** 2026-08-09
 
 ---
 
@@ -206,16 +208,17 @@ matches the stored chunk.
 
 ## Current Results and What They Mean
 
-**Verified baseline — all 6 harnesses, live stack (commit `f3ca394`, 2026-06-01):**
+**Verified baseline — REH re-verified live (2026-08-09), 5 harnesses unchanged since
+commit `f3ca394` (2026-06-01):**
 
 | Harness | Cases | Key Score | Gate |
 |---|---|---|---|
-| REH | 55/55 | Recall@5=**1.000**, MRR=**0.942**, tokens=**49** words/query | ✅ PASS |
-| TEH | 9/18 | pass_rate=**50%** (floor), expired_leak_rate=**0.0%** (hard gate) | ✅ PASS |
-| ALB | 3/3 | All 3 tasks: temporal recency, reflection consolidation, cross-scope | ✅ PASS |
-| EQE | 10/10 | signal=**100%**, noise_rejection=**100%** | ✅ PASS |
-| LEH | 1/3 rank-improved | consolidation=**100%**, rank_improvement=**33%** (floor 30%) | ✅ PASS |
-| PIB | 50-corpus | p50=31ms, p95=394ms, p99=**415ms** (target <400ms warm) | ⚠️ NEAR |
+| REH | 55/55 | Recall@5=**1.000**, MRR=**0.942**, tokens=**49** words/query | ✅ PASS — re-run live 2026-08-09, exact match to the 2026-06-01 baseline |
+| TEH | 9/18 | pass_rate=**50%** (floor), expired_leak_rate=**0.0%** (hard gate) | ✅ PASS (2026-06-01) |
+| ALB | 3/3 | All 3 tasks: temporal recency, reflection consolidation, cross-scope | ✅ PASS (2026-06-01) |
+| EQE | 10/10 | signal=**100%**, noise_rejection=**100%** | ✅ PASS (2026-06-01) |
+| LEH | 1/3 rank-improved | consolidation=**100%**, rank_improvement=**33%** (floor 30%) | ✅ PASS (2026-06-01) |
+| PIB | 50-corpus | p50=31ms, p95=394ms, p99=**415ms** (target <400ms warm) | ⚠️ NEAR (2026-06-01) |
 
 **REH floor reference (enforced in `run_reh.py`):**
 
@@ -228,6 +231,65 @@ matches the stored chunk.
 (ADR-074, commit `cf65af7`). The 10 bugs found during live-stack eval verification
 (expired-fact leaks, clearance NULL-safety, link-expansion bypass) are documented
 in `02-benchmarking.md §7`.
+
+**A note on running two harnesses concurrently against the same stack:** a REH-55
+run started at the same time as a 100-case LongMemEval seeding pass (both hitting
+the same embedding worker) measured Recall@5=0.709 — a real, reproducible-looking
+regression that was actually queue contention: `EMBEDDING_WAIT_SECONDS=15`
+(`dataset_loader.py`) assumes one harness has the worker to itself. Re-run alone,
+REH-55 reproduces the 2026-06-01 baseline exactly. Don't run eval harnesses
+concurrently against one stack; if CI ever parallelizes eval jobs, they need
+either separate stacks or a shared queue-depth guard, not just a longer sleep.
+
+### LongMemEval — run for real for the first time (2026-08-09)
+
+Never previously run: the dataset was never downloaded (the hardcoded HuggingFace
+path was stale — `xiaowu0162/LongMemEval` 404s; the real dataset lives at
+`xiaowu0162/longmemeval-cleaned`, fixed in this pass), and the adapter's parsing
+assumed a schema (`conversations`, `id`, `category`, `expected_answer_contains`)
+that doesn't match the real downloaded file (`haystack_sessions`/
+`haystack_dates`/`haystack_session_ids` as parallel lists, `question_id`,
+`question_type`, a single `answer` that's sometimes an int) — also fixed here.
+Once it actually ran, against the live stack, 96 real cases (evenly sampled
+across all 6 categories):
+
+| Category | Recall@5 | Complete | Accurate | Cases |
+|---|---|---|---|---|
+| single-session-user | 68.8% | 75.0% | 43.8% | 16 |
+| single-session-assistant | 50.0% | 50.0% | 50.0% | 16 |
+| single-session-preference | 0.0% | 0.0% | 0.0% | 16 |
+| multi-session | 18.8% | 18.8% | 18.8% | 16 |
+| knowledge-update | 6.2% | 6.2% | 0.0% | 16 |
+| temporal-reasoning | 0.0% | 0.0% | 0.0% | 16 |
+| **TOTAL** | **24.0%** | **25.0%** | **18.8%** | **96** |
+
+**Gate: FAIL** (floor: Recall@5 ≥60%, Complete ≥55%) — reported honestly, not
+tuned away. But this number is not what it looks like. Manually reproducing a
+`single-session-preference` failure (case `8a2466db`, "recommend video editing
+resources") end-to-end — seed the real haystack, call `/v1/internal/eval/recall-full`
+with the real question, read the actual top result — shows Qortia's top result
+*is* the correct session, containing the literal conversation about Adobe Premiere
+Pro and its advanced settings that the question is about. The gold `answer` field
+for this case is `"The user would prefer responses that suggest resources
+specifically tailored to Adobe Premiere Pro, especially those that delve into its
+advanced settings..."` — a synthesized paraphrase of the user's preference, never
+stated verbatim by anyone in the conversation. `_check_answer`'s deterministic
+substring match (§1's determinism principle — no LLM-as-judge) requires that whole
+gold string to appear in retrieved content; a paraphrase never will, regardless of
+retrieval quality. That's why `single-session-preference`, `temporal-reasoning`,
+and `knowledge-update` — the three categories whose gold answers are inference/
+synthesis, not extraction — score at or near 0%, while `single-session-user` and
+`single-session-assistant` (closer to direct fact lookup) score 50-70%.
+
+**What this actually shows:** retrieval quality on this one manually-checked case
+was correct; the scoring methodology's known trade-off (documented in
+`run_longmemeval.py`'s own module docstring: "deterministic but potentially lower
+than GPT-4-judged scores") turns out to be severe, not marginal, for a benchmark
+where most categories expect synthesis. This is real evidence for the
+LLM-as-judge item below, not proof of a retrieval regression — but it is only
+evidence for *this one manually-checked case*; the other 95 weren't individually
+verified this way, so treat "retrieval is fine, scoring isn't" as a strong
+hypothesis, not a certainty, until a judged re-run confirms it across the set.
 
 ---
 
@@ -281,7 +343,7 @@ evaluation harness is the only mechanism that catches quality regressions.
 |---|---|---|---|
 | Retrieval strategy | Type-routed hybrid (BM25 + vector + RRF) | Flat vector + LLM extraction | Graph traversal + vector |
 | Tenant isolation | Database RLS (row-level, every query) | Application-level filter | Application-level filter |
-| Evaluation | 6-harness stack: REH/TEH/ALB/EQE/LEH/PIB | LoCoMo/LongMemEval published | DMR 94.8% published |
+| Evaluation | 6-harness stack: REH/TEH/ALB/EQE/LEH/PIB + LongMemEval (run 2026-08-09; deterministic scoring understates it — see above) | LoCoMo/LongMemEval published | DMR 94.8% published |
 | Reflection | Automated consolidation (formula-based, outcome-driven decay via ADR-125) | LLM extraction per-write | Per-write edge invalidation |
 | Importance scoring | `dynamic_importance()` with `confidence_multiplier` (outcome feedback) | None | None |
 | Token efficiency | **49 words/query** retrieved (~250 tokens) | <7k tokens (published target) | Not published |
@@ -296,24 +358,44 @@ objective measurement, not a marketing claim.
 
 ## Roadmap
 
-**Done (as of 2026-06-01):**
-- All 6 harnesses live and PASSING on the production Docker stack
-- ADR-125 causal tracking + outcome-driven confidence decay (all 3 phases, dark-launch)
+**Done (as of 2026-06-01, re-verified 2026-08-09):**
+- All 6 harnesses live and PASSING on the production Docker stack (REH re-run
+  live 2026-08-09, exact match)
+- ADR-125 causal tracking + outcome-driven confidence decay (all 3 phases,
+  dark-launch) — now has a real caller outside a unit test: agnova's
+  `QortiaMemoryBackend.outcome()` (2026-08-09)
 - ADR-078 bi-temporal `valid_until` filtering on all 10 recall paths + link expansion
-- REH smoke runs on every PR; full dataset + all other harnesses run weekly on staging
+- LongMemEval dataset downloaded and run for real for the first time (2026-08-09,
+  96 cases) — see above; the adapter itself had never been exercised against
+  the real dataset before this
 
-**Near-term (GH issues):**
-- #83 — LongMemEval full 500-case benchmark (dataset gated on HuggingFace)
-- #84 — LLM-as-a-Judge semantic scoring harness (Zep-style Context Completeness)
-- #85 — LoCoMo + DMR benchmark integration for direct Mem0/Zep comparison
+**Corrected (as of 2026-08-09):** "REH smoke runs on every PR" was aspirational,
+not true — no workflow ever invoked `run_reh.py` or set `QORTIA_EVAL_MODE`.
+`.github/workflows/eval-gate.yaml` now does, scoped to PRs touching the recall
+pipeline. The near-term items below (`#83`/`#84`/`#85`) were also never real
+GitHub issues (all three 404 against `kaiverse-io/qortia`) — tracked here as
+plain items instead of implying issue-tracker status they never had.
+
+**Near-term:**
+- LongMemEval full 500-case run (the 96-case sample above is representative but
+  not exhaustive — full run takes ~2+ hours at 15s/case and hasn't been done yet)
+- **LLM-as-a-Judge semantic scoring harness (Zep-style Context Completeness)** —
+  no longer just a nice-to-have: the 2026-08-09 LongMemEval run's diagnostic
+  (single manually-verified case: correct retrieval, 0% deterministic score
+  because the gold answer is a synthesized paraphrase) is real evidence that
+  deterministic scoring specifically *cannot* measure Qortia's quality on
+  synthesis/inference categories (preference, temporal-reasoning,
+  knowledge-update — 3 of LongMemEval's 6), not just that it scores them
+  conservatively
+- LoCoMo + DMR benchmark integration for direct Mem0/Zep comparison
 
 **Medium-term:**
 - TEH pass rate improvement: 9/18 → 14/18 (warm embedding env, richer semantic queries)
 - PIB p99 under 400ms on warm stack (currently 415ms cold-start Docker)
-- #74 — Cross-encoder reranking for `recall_profile=thorough` (requires Infinity container)
+- Cross-encoder reranking for `recall_profile=thorough` (requires Infinity container)
 
 **Long-term:**
-- #86 — Temporal entity graph (time-aware edges in `memory_links`, Zep-style)
+- Temporal entity graph (time-aware edges in `memory_links`, Zep-style)
 - Event Sourcing / append-only fact log for multi-agent conflict-free state
 
 ---

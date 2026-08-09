@@ -3,13 +3,16 @@ LongMemEval Adapter for Qortia.
 
 Downloads the LongMemEval benchmark dataset (Xiaowu et al., 2024) and runs it
 against the Qortia recall pipeline. LongMemEval is the industry-standard benchmark
-for evaluating agent memory systems across 5 categories:
+for evaluating agent memory systems. The real `longmemeval_oracle.json` (verified
+against the actual downloaded 500-case file, not the paper's abstract description)
+uses 6 `question_type` values, not the 5 this adapter originally assumed:
 
-  single-session-user (SSU)   — single-session preference and fact retrieval
-  single-session-assistant (SSA) — assistant knowledge updated in one session
-  multi-session-user (MSU)    — cross-session user preference tracking
-  multi-session-assistant (MSA) — assistant knowledge across multiple sessions
-  temporal (TMP)              — temporal reasoning and knowledge updates
+  single-session-user        — single-session fact retrieval
+  single-session-assistant   — assistant knowledge updated in one session
+  single-session-preference  — single-session preference tracking
+  multi-session              — cross-session reasoning (user or assistant)
+  knowledge-update            — later sessions supersede earlier facts
+  temporal-reasoning          — temporal reasoning over dated sessions
 
 Dataset: https://github.com/xiaowu0162/LongMemEval
 Paper: "LongMemEval: Benchmarking Chat Assistants on Long-Term Interactive Memory"
@@ -34,7 +37,7 @@ Usage:
     QORTIA_EVAL_MODE=true python3 evals/run_longmemeval.py
 
     # Run a specific category only
-    QORTIA_EVAL_MODE=true python3 evals/run_longmemeval.py --category temporal
+    QORTIA_EVAL_MODE=true python3 evals/run_longmemeval.py --category temporal-reasoning
 
     # Run a subset (faster)
     QORTIA_EVAL_MODE=true python3 evals/run_longmemeval.py --max-cases 50
@@ -59,11 +62,14 @@ from evals.dataset_loader import (
     provision_eval_agent,
 )
 
-# Dataset source — Hugging Face (primary) with GitHub fallback
-# Dataset card: https://huggingface.co/datasets/xiaowu0162/LongMemEval
+# Dataset source — Hugging Face. The dataset card lives under `-cleaned`
+# (the author's revision that strips noisy history sessions interfering
+# with answer correctness, https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned) —
+# not `xiaowu0162/LongMemEval` (a 404; that's the GitHub *code* repo's name,
+# not the HF dataset repo's). No GitHub raw fallback exists for this file —
+# the benchmark's own repo never committed the dataset to git.
 DATASET_URLS = [
-    "https://huggingface.co/datasets/xiaowu0162/LongMemEval/resolve/main/longmemeval_oracle.json",
-    "https://raw.githubusercontent.com/xiaowu0162/LongMemEval/main/data/longmemeval_oracle.json",
+    "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_oracle.json",
 ]
 DATASET_PATH = Path("evals/datasets/longmemeval_oracle.json")
 
@@ -75,9 +81,10 @@ ANSWER_ACCURACY_FLOOR = 0.50  # ≥50% string-match answer accuracy
 CATEGORIES = [
     "single-session-user",
     "single-session-assistant",
-    "multi-session-user",
-    "multi-session-assistant",
-    "temporal",
+    "single-session-preference",
+    "multi-session",
+    "knowledge-update",
+    "temporal-reasoning",
 ]
 
 
@@ -107,20 +114,25 @@ def download_dataset() -> None:
 # ── Qortia adapter ─────────────────────────────────────────────────────────
 
 
-def _conversation_to_memories(
-    conversations: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Convert LongMemEval conversation format to Qortia memory seeds.
+def _conversation_to_memories(case: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert LongMemEval's real haystack format to Qortia memory seeds.
 
-    Each message in the conversation becomes an episodic memory.
-    The conversation is turned into: "On <date>, user said: <msg>. Assistant replied: <reply>."
-    This preserves both sides of the conversation as a single episodic fact.
+    The actual dataset (verified against the downloaded 500-case
+    `longmemeval_oracle.json`, not the paper's abstract description this
+    adapter was originally written from) has no `conversations` key at all.
+    Sessions live in three parallel top-level lists: `haystack_sessions`
+    (list of message lists), `haystack_dates`, `haystack_session_ids` — same
+    index into each. Each message in a session becomes part of an episodic
+    memory: "Session <id> (<date>): User said: <msg>. Assistant replied: <reply>."
     """
     memories: list[dict[str, Any]] = []
-    for session in conversations:
-        session_id = session.get("session_id", "unknown")
-        session_date = session.get("date", "")
-        msgs = session.get("messages", [])
+    sessions = case.get("haystack_sessions", [])
+    dates = case.get("haystack_dates", [])
+    session_ids = case.get("haystack_session_ids", [])
+
+    for idx, msgs in enumerate(sessions):
+        session_id = session_ids[idx] if idx < len(session_ids) else f"session_{idx}"
+        session_date = dates[idx] if idx < len(dates) else ""
 
         i = 0
         while i < len(msgs):
@@ -192,8 +204,7 @@ async def _run_lme_case(
     params = {"tenant_id": tenant_id, "agent_id": agent_id}
 
     # Convert conversations to episodic memories and seed them
-    conversations = case.get("conversations", [])
-    memories = _conversation_to_memories(conversations)
+    memories = _conversation_to_memories(case)
 
     # Batch seed — no more than 20 per case to keep eval time reasonable
     for mem in memories[:20]:
@@ -220,8 +231,8 @@ async def _run_lme_case(
     )
     if resp.status_code != 200:
         return {
-            "id": case.get("id", "unknown"),
-            "category": case.get("category", "unknown"),
+            "id": case.get("question_id", "unknown"),
+            "category": case.get("question_type", "unknown"),
             "pass": False,
             "completeness": "INSUFFICIENT",
             "accuracy": "WRONG",
@@ -229,9 +240,11 @@ async def _run_lme_case(
         }
 
     results = resp.json().get("results", [])
-    expected = case.get("expected_answer_contains", [])
-    if isinstance(expected, str):
-        expected = [expected]
+    # Real schema: a single gold `answer`, not `expected_answer_contains` —
+    # and not always a string: 32/500 cases (counting questions) have an int
+    # answer, which .lower() rejects if not coerced first.
+    raw_answer = case.get("answer")
+    expected = [str(raw_answer)] if raw_answer is not None and raw_answer != "" else []
 
     completeness, accuracy = _check_answer(results, expected)
     recall_at_5 = (
@@ -243,8 +256,8 @@ async def _run_lme_case(
     passed = recall_at_5 and completeness in ("COMPLETE", "PARTIAL")
 
     return {
-        "id": case.get("id", "unknown"),
-        "category": case.get("category", "unknown"),
+        "id": case.get("question_id", "unknown"),
+        "category": case.get("question_type", "unknown"),
         "pass": passed,
         "recall_at_5": recall_at_5,
         "completeness": completeness,
@@ -260,7 +273,7 @@ async def _run_lme_case(
 def _select_cases(
     all_cases: list[dict[str, Any]], category: str | None, max_cases: int
 ) -> list[dict[str, Any]]:
-    cases = [c for c in all_cases if c.get("category") == category] if category else all_cases
+    cases = [c for c in all_cases if c.get("question_type") == category] if category else all_cases
 
     if not max_cases:
         return cases
@@ -272,7 +285,7 @@ def _select_cases(
     per_cat = max_cases // len(CATEGORIES)
     sampled = []
     for cat in CATEGORIES:
-        cat_cases = [c for c in cases if c.get("category") == cat]
+        cat_cases = [c for c in cases if c.get("question_type") == cat]
         sampled.extend(cat_cases[:per_cat])
     return sampled[:max_cases]
 
