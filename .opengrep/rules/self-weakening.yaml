@@ -15,6 +15,12 @@ rules:
         - "**/CONTRIBUTING.md*"
         - ".opengrep/**"
         - "template/.opengrep/**"
+        # The permissions.deny rule / Codex prefix_rule that blocks --no-verify necessarily
+        # contains the literal string it blocks — this is the rule's own enforcement, not
+        # a violation.
+        - "**/settings.json.jinja"
+        - ".claude/settings.json"
+        - "**/.codex/rules/**"
     metadata:
       category: security
       technology: [git]
@@ -46,7 +52,7 @@ rules:
     message: >
       Self-weakening: bare # noqa suppresses all lint.
       Use specific codes with a reason (e.g. # noqa: E501  # line too long by design).
-    severity: WARNING
+    severity: ERROR
     metadata:
       category: maintainability
 
@@ -70,7 +76,12 @@ rules:
       category: security
       technology: [pre-commit]
 
-  # Coverage floor at 0 is a smell for mature projects. WARNING only — new stamps start at 0.
+  # Deliberately WARNING, not ERROR — do not promote without also changing the default
+  # stamp: `just accept`'s default parameterization intentionally renders fail_under = 0
+  # (a fresh project has no tests yet), and `just accept` runs `just ci` --severity ERROR
+  # against its own stamped output. Promoting this rule to ERROR would make chassis's
+  # own acceptance test fail on the default answer set. If the ratchet default ever
+  # changes, revisit this severity in the same change.
   # generic: opengrep has no toml language.
   - id: agent-no-lower-coverage-floor
     languages: [generic]

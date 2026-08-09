@@ -16,6 +16,9 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(pre-commit run *)"
+    ],
+    "deny": [
+      "Bash(*--no-verify*)"
     ]
   },
   "hooks": {

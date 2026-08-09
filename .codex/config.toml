@@ -1,0 +1,27 @@
+# Codex CLI project-level config — developers.openai.com/codex/config-reference.
+# Mirrors the posture .claude/settings.json.jinja already ships: a pinned, explicit
+# default instead of inheriting whatever Codex's own install default happens to be,
+# so this project's posture can't silently drift if Codex's upstream default changes.
+#
+# approval_policy = "untrusted": pauses for approval before anything outside Codex's
+# own built-in safe/read-only command set — the closest coarse analog to this
+# project's default-ask-unless-allow-listed Claude Code posture (permissions.allow's
+# narrow Bash(pattern) list, prompt otherwise). Codex has no per-command allow/deny
+# list of its own beyond the rules/ mechanism below — approval_policy is a
+# session-wide posture, not a fine-grained command-pattern allowlist.
+#
+# sandbox_mode = "workspace-write": scopes filesystem access to this repo (matches
+# the devcontainer's own isolation boundary) with network access off by default.
+# "danger-full-access" would add host-wide reach with no matching benefit inside an
+# already-sandboxed devcontainer; "read-only" can't edit or build at all, defeating
+# the point of a coding agent.
+#
+# TRUST CAVEAT (see AGENTS.md's "Harness-specific configuration" section): this file
+# and rules/ below only take effect once a human running Codex has manually marked
+# THIS project trusted, once, on their own machine. Codex's own docs: "If you mark a
+# project as untrusted, Codex skips project-scoped .codex/ layers, including
+# project-local config." A repo can never pre-trust itself — same shape as Claude
+# Code's permissions.allow needing the workspace-trust dialog accepted first.
+# Stamping this file is necessary, never sufficient.
+approval_policy = "untrusted"
+sandbox_mode = "workspace-write"

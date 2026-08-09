@@ -9,7 +9,7 @@ rules:
       Inline prompt literal (200+ chars) assigned to a prompt-shaped name. Prompts are
       versioned artifacts (12-factor-agents F2) — move this to prompts/ and load it at
       runtime instead of embedding it in application code.
-    severity: WARNING
+    severity: ERROR
     metadata:
       category: architecture
       technology: [agents]

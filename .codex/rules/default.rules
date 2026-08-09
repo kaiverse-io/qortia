@@ -1,0 +1,25 @@
+# Codex execution-policy rules — Starlark, developers.openai.com/codex/agent-configuration/rules.
+# Best-effort mirror of .claude/settings.json.jinja's permissions.deny for --no-verify.
+#
+# LIMITATION, stated honestly: Codex's rule matching is a strict, ORDERED PREFIX match
+# on the command's argument list — not a substring-anywhere match like Claude Code's
+# Bash(*--no-verify*) glob. This only catches --no-verify when it is literally the
+# argument immediately after the subcommand (e.g. `git commit --no-verify`). A
+# reordered invocation (`git commit -m "msg" --no-verify`) is NOT caught — Codex's
+# rules engine has no anywhere-in-arguments equivalent. This is a first-line nudge,
+# not a guarantee, and it only applies once this project is trusted (see
+# config.toml). The actual floor, exactly as for Claude Code, is CI (bucket A)
+# re-checking the pushed diff regardless of what wrote it — see
+# docs/explanation/design.md, "Harness neutrality" section.
+
+prefix_rule(
+    pattern = ["git", "commit", "--no-verify"],
+    decision = "forbidden",
+    justification = "git commit --no-verify bypasses pre-commit hooks — fix the violation, never skip the gate (AGENTS.md Forbidden patterns).",
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--no-verify"],
+    decision = "forbidden",
+    justification = "git push --no-verify bypasses the pre-push hook (osv-scanner) — fix the violation, never skip the gate.",
+)

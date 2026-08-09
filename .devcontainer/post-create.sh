@@ -29,18 +29,82 @@ if [ -S /var/run/docker.sock ]; then
 fi
 
 # ── uv (Python package/venv manager) ─────────────────────────────────────────
+# Pinned to a specific release's prebuilt binary + per-asset SHA-256 verification,
+# rather than piping the unpinned https://astral.sh/uv/install.sh through sh — this
+# template runs unattended in other people's containers, so it fetches a known
+# artifact and checks it, the same standard ctx and just already hold below.
+# renovate: datasource=github-releases depName=astral-sh/uv extractVersion=^(?<version>.*)$
+UV_VERSION="0.12.3"
 if ! command -v uv >/dev/null 2>&1; then
-  echo "→ Installing uv …"
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+  echo "→ Installing uv v${UV_VERSION} …"
+  mkdir -p "$HOME/.local/bin"
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64)              UV_ASSET="uv-x86_64-unknown-linux-gnu.tar.gz" ;;
+    Linux-aarch64|Linux-arm64) UV_ASSET="uv-aarch64-unknown-linux-gnu.tar.gz" ;;
+    Darwin-arm64)              UV_ASSET="uv-aarch64-apple-darwin.tar.gz" ;;
+    Darwin-x86_64)             UV_ASSET="uv-x86_64-apple-darwin.tar.gz" ;;
+    *)                         UV_ASSET="" ;;
+  esac
+  if [ -n "$UV_ASSET" ]; then
+    UV_TMP=$(mktemp -d)
+    UV_BASE="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
+    UV_OK=""
+    if curl --proto '=https' --tlsv1.2 -fsSL "$UV_BASE/$UV_ASSET" -o "$UV_TMP/uv.tar.gz" \
+       && curl --proto '=https' --tlsv1.2 -fsSL "$UV_BASE/$UV_ASSET.sha256" -o "$UV_TMP/uv.tar.gz.sha256"; then
+      UV_WANT=$(awk '{print $1}' "$UV_TMP/uv.tar.gz.sha256")
+      UV_GOT=$(sha256sum "$UV_TMP/uv.tar.gz" | awk '{print $1}')
+      [ -n "$UV_WANT" ] && [ "$UV_WANT" = "$UV_GOT" ] && UV_OK=1
+    fi
+    if [ -n "$UV_OK" ]; then
+      tar -xzf "$UV_TMP/uv.tar.gz" -C "$UV_TMP" \
+        && find "$UV_TMP" -type f -name uv -exec mv {} "$HOME/.local/bin/uv" \; \
+        && chmod +x "$HOME/.local/bin/uv"
+    else
+      echo "[warn] uv download/checksum failed — install manually from https://github.com/astral-sh/uv/releases"
+    fi
+    rm -rf "$UV_TMP"
+  else
+    echo "[warn] no prebuilt uv asset for $(uname -s)-$(uname -m) — install manually from https://github.com/astral-sh/uv/releases"
+  fi
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
 # ── just (task runner) ────────────────────────────────────────────────────────
+# Pinned to a specific release's prebuilt binary + SHA256SUMS verification — mirrors
+# chassis's own root CI (.github/workflows/ci.yml), which avoids the unpinned
+# just.systems/install.sh for the same reason: that host has intermittently 403'd a
+# container build, and a template installing unattended shouldn't run "latest" either.
+# renovate: datasource=github-releases depName=casey/just extractVersion=^(?<version>.*)$
+JUST_VERSION="1.56.0"
 if ! command -v just >/dev/null 2>&1; then
-  echo "→ Installing just …"
+  echo "→ Installing just v${JUST_VERSION} …"
   mkdir -p "$HOME/.local/bin"
-  curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
-    | bash -s -- --to "$HOME/.local/bin"
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64)              JUST_ASSET="just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" ;;
+    Linux-aarch64|Linux-arm64) JUST_ASSET="just-${JUST_VERSION}-aarch64-unknown-linux-musl.tar.gz" ;;
+    Darwin-arm64)              JUST_ASSET="just-${JUST_VERSION}-aarch64-apple-darwin.tar.gz" ;;
+    Darwin-x86_64)             JUST_ASSET="just-${JUST_VERSION}-x86_64-apple-darwin.tar.gz" ;;
+    *)                         JUST_ASSET="" ;;
+  esac
+  if [ -n "$JUST_ASSET" ]; then
+    JUST_TMP=$(mktemp -d)
+    JUST_BASE="https://github.com/casey/just/releases/download/${JUST_VERSION}"
+    JUST_OK=""
+    if curl --proto '=https' --tlsv1.2 -fsSL "$JUST_BASE/$JUST_ASSET" -o "$JUST_TMP/just.tar.gz" \
+       && curl --proto '=https' --tlsv1.2 -fsSL "$JUST_BASE/SHA256SUMS" -o "$JUST_TMP/SHA256SUMS"; then
+      JUST_WANT=$(grep " ${JUST_ASSET}\$" "$JUST_TMP/SHA256SUMS" | awk '{print $1}')
+      JUST_GOT=$(sha256sum "$JUST_TMP/just.tar.gz" | awk '{print $1}')
+      [ -n "$JUST_WANT" ] && [ "$JUST_WANT" = "$JUST_GOT" ] && JUST_OK=1
+    fi
+    if [ -n "$JUST_OK" ]; then
+      tar -xzf "$JUST_TMP/just.tar.gz" -C "$HOME/.local/bin" just
+    else
+      echo "[warn] just download/checksum failed — install manually from https://github.com/casey/just/releases"
+    fi
+    rm -rf "$JUST_TMP"
+  else
+    echo "[warn] no prebuilt just asset for $(uname -s)-$(uname -m) — install manually from https://github.com/casey/just/releases"
+  fi
 fi
 
 # ── pre-commit ────────────────────────────────────────────────────────────────
@@ -55,13 +119,18 @@ if ! command -v gitleaks >/dev/null 2>&1; then
   # renovate: datasource=github-releases depName=gitleaks/gitleaks extractVersion=^v(?<version>.*)$
   GITLEAKS_VERSION="8.21.2"
   ARCH=$(uname -m)
-  case "$ARCH" in arm64|aarch64) GA="arm64" ;; *) GA="x64" ;; esac
-  TMP=$(mktemp -d)
-  curl -LsSf \
-    "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${GA}.tar.gz" \
-    | tar -xz -C "$TMP" gitleaks
-  mv "$TMP/gitleaks" "$HOME/.local/bin/gitleaks"
-  rm -rf "$TMP"
+  case "$ARCH" in arm64|aarch64) GA="arm64" ;; x86_64) GA="x64" ;; *) GA="" ;; esac
+  if [ -n "$GA" ]; then
+    TMP=$(mktemp -d)
+    curl -LsSf \
+      "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${GA}.tar.gz" \
+      | tar -xz -C "$TMP" gitleaks \
+      && mv "$TMP/gitleaks" "$HOME/.local/bin/gitleaks" \
+      || echo "[warn] gitleaks install failed — install manually from https://github.com/gitleaks/gitleaks/releases"
+    rm -rf "$TMP"
+  else
+    echo "[warn] no prebuilt gitleaks asset for $ARCH — install manually from https://github.com/gitleaks/gitleaks/releases"
+  fi
 fi
 
 # ── opengrep (semantic lint / self-weakening rules) ───────────────────────────
@@ -70,11 +139,20 @@ if ! command -v opengrep >/dev/null 2>&1; then
   # renovate: datasource=github-releases depName=opengrep/opengrep extractVersion=^v(?<version>.*)$
   OPENGREP_VERSION="1.26.0"
   ARCH=$(uname -m)
-  case "$ARCH" in arm64|aarch64) OG_ASSET="opengrep_manylinux_aarch64" ;; *) OG_ASSET="opengrep_manylinux_x86" ;; esac
-  curl -LsSf \
-    "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/${OG_ASSET}" \
-    -o "$HOME/.local/bin/opengrep"
-  chmod +x "$HOME/.local/bin/opengrep"
+  case "$ARCH" in
+    arm64|aarch64) OG_ASSET="opengrep_manylinux_aarch64" ;;
+    x86_64)        OG_ASSET="opengrep_manylinux_x86" ;;
+    *)             OG_ASSET="" ;;
+  esac
+  if [ -n "$OG_ASSET" ]; then
+    curl -LsSf \
+      "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/${OG_ASSET}" \
+      -o "$HOME/.local/bin/opengrep" \
+      && chmod +x "$HOME/.local/bin/opengrep" \
+      || echo "[warn] opengrep install failed — install manually from https://github.com/opengrep/opengrep/releases"
+  else
+    echo "[warn] no prebuilt opengrep asset for $ARCH — install manually from https://github.com/opengrep/opengrep/releases"
+  fi
 fi
 
 # ── Claude Code CLI ────────────────────────────────────────────────────────────

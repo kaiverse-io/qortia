@@ -1,9 +1,11 @@
-_commit: v0.12.0
+_commit: v0.13.0
 _src_path: https://github.com/kaiverse-io/chassis.git
 author_email: ''
 author_name: km2411
+coverage_fail_under: 90
 description: Portable memory layer for AI agents
 enable_docker_outside_of_docker: true
+enable_release_automation: false
 github_owner: km2411
 include_ts: false
 install_ai_coach: false
@@ -11,5 +13,4 @@ license: Apache-2.0
 project_name: Qortia
 python_package_name: qortia
 python_version: '3.12'
-coverage_fail_under: 90
 
