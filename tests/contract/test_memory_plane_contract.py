@@ -23,10 +23,15 @@ import pytest
 # ── F1 · /v1/context cannot be asked for a budget ───────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="GET /v1/context takes no size parameter at all")
 def test_context_endpoint_accepts_a_budget() -> None:
     """A client with a bounded context window must be able to ask for a bundle
-    that fits. Today it can only fetch everything and truncate blind."""
+    that fits, instead of fetching everything and truncating blind.
+
+    Fixed: GET /v1/context now takes `budget` (chars) and keeps the highest-
+    importance entries across mental_models/decisions/lessons combined, in
+    importance order, dropping whole entries rather than slicing any one of
+    them. See _budget_memories() in qortia/remember.py.
+    """
     from qortia.remember import get_context
 
     params = set(inspect.signature(get_context).parameters) - {"agent"}
@@ -40,13 +45,15 @@ def test_context_endpoint_accepts_a_budget() -> None:
 # ── F2 · decisions ship without the importance the ranking depends on ──────
 
 
-@pytest.mark.xfail(strict=True, reason="decisions are built without importance in get_context()")
 def test_every_context_entry_carries_importance() -> None:
-    """ContextResponse.MemoryEntry has an `importance` field. The handler
-    populates it for mental_models and lessons but not for decisions, so a
-    client cannot sort the bundle by importance even if it wants to — this is
-    the reason agnova's context_keeps_the_most_important_memories_under_budget
-    contract test cannot be fixed client-side alone."""
+    """ContextResponse.MemoryEntry has an `importance` field. It must be
+    populated for decisions too, not just mental_models and lessons, or a
+    client cannot sort the bundle by importance even if it wants to.
+
+    Fixed: the decisions query now selects `importance` (it was always
+    populated at write time via IMPORTANCE["decision"] — the query just
+    never selected it).
+    """
     from qortia import remember as remember_mod
 
     src = inspect.getsource(remember_mod.get_context)
@@ -108,11 +115,16 @@ def test_record_outcome_has_a_non_test_caller() -> None:
 # ── F4 · a bundle missing two of three buckets looks identical to a full one ─
 
 
-@pytest.mark.xfail(strict=True, reason="ContextResponse carries no consolidation signal")
 def test_context_signals_whether_consolidation_has_run() -> None:
     """mental_models and lessons are both filtered `is_consolidated = true`.
-    If reflect never runs, both arrays are empty forever and the response says
-    nothing about why."""
+    If reflect never runs, both arrays are empty forever, so the response
+    must say something about why.
+
+    Fixed: ContextResponse now carries `reflection_counter` (the same value
+    reflect() itself returns and decrements) — a client seeing it high
+    alongside thin mental_models/lessons knows consolidation is pending,
+    not that there is nothing to consolidate.
+    """
     from qortia.models import ContextResponse
 
     fields = set(ContextResponse.model_fields)

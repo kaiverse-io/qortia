@@ -148,6 +148,14 @@ class ContextResponse(BaseModel):
     handoffs: list[MemoryEntry]
     weekly_summary: MemoryEntry | None
     memories: ContextMemories
+    # Pending-consolidation signal: mental_models and lessons are both filtered
+    # `is_consolidated = true`, so if reflect never runs both stay empty forever
+    # with nothing in the response saying why. reflection_counter is the same
+    # value reflect() itself returns and decrements (qortia_agents.reflection_counter)
+    # -- a client seeing it high alongside empty/thin mental_models or lessons
+    # knows the bundle is incomplete because consolidation hasn't run, not
+    # because there is nothing to consolidate.
+    reflection_counter: int
 
 
 # ── reflect ──────────────────────────────────────────────────
