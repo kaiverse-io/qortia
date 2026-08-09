@@ -1,0 +1,137 @@
+"""Contract tests for Qortia's side of the agnova memory-plane seam.
+
+Each asserts a property a *client* (agnova's QortiaMemoryBackend, or any
+future one) depends on. None require a live database — they read the app's
+own route table and response-construction source. F3/F4 were additionally
+verified live: a real remember() -> recall() round trip against this app on
+qortia_net, and a direct SQL read of hindsight_memories/qortia_outcome_records
+after 12 recalls under distinct X-Work-Order-Id headers, confirmed
+confidence_multiplier frozen at 1 and qortia_outcome_records empty
+database-wide. See the memory-plane proposal for the full experiment logs.
+
+Each is `xfail(strict=True)`: red is the known, tracked state. A fix that
+lands without removing the marker turns the suite red again — that is the
+point.
+"""
+
+from __future__ import annotations
+
+import inspect
+
+import pytest
+
+# ── F1 · /v1/context cannot be asked for a budget ───────────────────────────
+
+
+@pytest.mark.xfail(strict=True, reason="GET /v1/context takes no size parameter at all")
+def test_context_endpoint_accepts_a_budget() -> None:
+    """A client with a bounded context window must be able to ask for a bundle
+    that fits. Today it can only fetch everything and truncate blind."""
+    from qortia.remember import get_context
+
+    params = set(inspect.signature(get_context).parameters) - {"agent"}
+    assert params & {"budget", "limit", "max_tokens"}, (
+        "GET /v1/context takes no size parameter at all "
+        f"(params={sorted(inspect.signature(get_context).parameters)}); "
+        "the client must fetch the whole bundle and byte-slice it"
+    )
+
+
+# ── F2 · decisions ship without the importance the ranking depends on ──────
+
+
+@pytest.mark.xfail(strict=True, reason="decisions are built without importance in get_context()")
+def test_every_context_entry_carries_importance() -> None:
+    """ContextResponse.MemoryEntry has an `importance` field. The handler
+    populates it for mental_models and lessons but not for decisions, so a
+    client cannot sort the bundle by importance even if it wants to — this is
+    the reason agnova's context_keeps_the_most_important_memories_under_budget
+    contract test cannot be fixed client-side alone."""
+    from qortia import remember as remember_mod
+
+    src = inspect.getsource(remember_mod.get_context)
+    built = [ln.strip() for ln in src.splitlines() if "MemoryEntry(content=" in ln]
+    without_importance = [ln for ln in built if "importance=" not in ln]
+    assert not without_importance, (
+        "these context entries are built without importance, so the field is "
+        f"None over the wire: {without_importance}"
+    )
+
+
+# ── F3 · the outcome-feedback loop has no write surface ────────────────────
+#
+# Verified live: 12 recalls against a real stored `lesson` memory (importance
+# 0.95), each under a distinct X-Work-Order-Id, correctly wrote 12 rows to
+# qortia_session_reads. confidence_multiplier stayed exactly 1, and
+# qortia_outcome_records had 0 rows *database-wide* — not just for this
+# memory. The read half of the loop works; nothing exercises the write half.
+
+
+@pytest.mark.xfail(strict=True, reason="no route accepts a work-order outcome")
+def test_an_outcome_can_be_reported_over_http() -> None:
+    """`confidence_multiplier` is read on every recall and multiplied into the
+    score. `_record_work_order_outcome` is the only thing that writes it — and
+    nothing outside a unit test calls it. Without an endpoint the multiplier is
+    pinned at its insert-time default of 1.0 forever — confirmed live."""
+    from qortia.app import app
+
+    # app.routes holds lazy _IncludedRouter wrappers on this FastAPI version;
+    # the generated OpenAPI path table is the authoritative surface.
+    paths = set(app.openapi()["paths"])
+    outcome_routes = {p for p in paths if "outcome" in p or "feedback" in p}
+    assert outcome_routes, (
+        "no route accepts a work-order outcome; the differentiator "
+        f"cannot be exercised by any client. published surface={sorted(paths)}"
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="_record_work_order_outcome has no caller outside a test")
+def test_record_outcome_has_a_non_test_caller() -> None:
+    """Guards the same gap from the other side: dead code that ranking depends on."""
+    import subprocess
+
+    # git grep, not grep -r: searches tracked files only, so build artifacts
+    # like .mypy_cache's serialized symbol tables (which also contain this
+    # name) can't produce a false "it has a caller" positive.
+    out = subprocess.run(
+        ["git", "grep", "-n", "_record_work_order_outcome", "--", "src/", "evals/"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    call_sites = [ln for ln in out.splitlines() if "async def _record_work_order_outcome" not in ln]
+    assert call_sites, (
+        "_record_work_order_outcome is defined in src/qortia/recall.py and called "
+        "from nowhere in src/ or evals/ — its only caller is a unit test"
+    )
+
+
+# ── F4 · a bundle missing two of three buckets looks identical to a full one ─
+
+
+@pytest.mark.xfail(strict=True, reason="ContextResponse carries no consolidation signal")
+def test_context_signals_whether_consolidation_has_run() -> None:
+    """mental_models and lessons are both filtered `is_consolidated = true`.
+    If reflect never runs, both arrays are empty forever and the response says
+    nothing about why."""
+    from qortia.models import ContextResponse
+
+    fields = set(ContextResponse.model_fields)
+    assert fields & {"last_reflected_at", "consolidated", "reflection_counter"}, (
+        "ContextResponse carries no consolidation signal "
+        f"(fields={sorted(fields)}); an operator who never runs reflect gets a "
+        "silently 2/3-empty bundle"
+    )
+
+
+# ── The published contract already exists — this one is meant to pass ──────
+
+
+def test_openapi_publishes_the_memory_type_enum() -> None:
+    """FastAPI already publishes the six-value enum via /openapi.json — agnova
+    does not need a Qortia change to learn the vocabulary, only to read it."""
+    from qortia.app import app
+
+    schema = app.openapi()
+    item = schema["components"]["schemas"]["MemoryItem"]["properties"]["type"]
+    enum = item.get("enum") or item.get("allOf", [{}])[0].get("enum")
+    assert enum and "lesson" in enum, f"expected the six-value enum, got {item}"
