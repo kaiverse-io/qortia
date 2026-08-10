@@ -1,7 +1,7 @@
 _commit: v0.13.0
 _src_path: https://github.com/kaiverse-io/chassis.git
 author_email: ''
-author_name: km2411
+author_name: kaiverse.io
 coverage_fail_under: 90
 description: Portable memory layer for AI agents
 enable_docker_outside_of_docker: true
