@@ -78,16 +78,25 @@ def test_an_outcome_can_be_reported_over_http() -> None:
     confirmed live it was pinned at its insert-time default of 1.0 forever.
 
     Fixed: POST /v1/outcome (recall.py's report_outcome) now calls it.
-    """
-    from qortia.app import app
 
-    # app.routes holds lazy _IncludedRouter wrappers on this FastAPI version;
-    # the generated OpenAPI path table is the authoritative surface.
-    paths = set(app.openapi()["paths"])
-    outcome_routes = {p for p in paths if "outcome" in p or "feedback" in p}
+    Checks qortia.recall.router directly, not qortia.app — importing the
+    real app singleton here would freeze its one-time admin_router mounting
+    decision (`if config.settings.qortia_admin_token`, app.py) before
+    tests/integration/conftest.py's _app_and_loop fixture ever gets to set
+    QORTIA_ADMIN_TOKEN, since this file collects/runs before tests/integration/
+    in the same pytest session — breaking test_provisioning_api.py collaterally
+    (see that file's own comment on the same fixture for the intended
+    single-importer design this respects).
+    """
+    from qortia.recall import router as qortia_router
+
+    outcome_routes = {
+        r.path for r in qortia_router.routes if "outcome" in r.path or "feedback" in r.path
+    }
     assert outcome_routes, (
         "no route accepts a work-order outcome; the differentiator "
-        f"cannot be exercised by any client. published surface={sorted(paths)}"
+        f"cannot be exercised by any client. published surface="
+        f"{sorted(r.path for r in qortia_router.routes)}"
     )
 
 
@@ -141,10 +150,14 @@ def test_context_signals_whether_consolidation_has_run() -> None:
 
 def test_openapi_publishes_the_memory_type_enum() -> None:
     """FastAPI already publishes the six-value enum via /openapi.json — agnova
-    does not need a Qortia change to learn the vocabulary, only to read it."""
-    from qortia.app import app
+    does not need a Qortia change to learn the vocabulary, only to read it.
 
-    schema = app.openapi()
-    item = schema["components"]["schemas"]["MemoryItem"]["properties"]["type"]
+    Checks MemoryItem's own JSON schema directly rather than the full
+    qortia.app singleton's assembled OpenAPI document — same reasoning as
+    test_an_outcome_can_be_reported_over_http above, and the schema FastAPI
+    publishes is generated from exactly this model either way."""
+    from qortia.models import MemoryItem
+
+    item = MemoryItem.model_json_schema()["properties"]["type"]
     enum = item.get("enum") or item.get("allOf", [{}])[0].get("enum")
     assert enum and "lesson" in enum, f"expected the six-value enum, got {item}"
