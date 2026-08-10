@@ -21,7 +21,7 @@ silently.
    what.
 
 2. **Re-derive each claim from source, not memory.** For a component at
-   `src/{{ python_package_name }}/<name>/`:
+   `src/qortia/<name>/`:
    - Named symbols: `grep -n` the claimed name in that path — flag if absent or renamed.
    - Dependencies: check actual imports (`grep -rn "^import\|^from" <path>`) against the
      section's stated dependency list — flag both directions (claimed-but-absent,
@@ -41,7 +41,7 @@ silently.
    `ARCHITECTURE.md`. If confirmed, make the correction and say what changed — don't touch
    sections with no findings.
 
-5. **If a component from `src/{{ python_package_name }}/` has no section at all**, note it but
+5. **If a component from `src/qortia/` has no section at all**, note it but
    don't fix it here — that's `just ci-arch`'s job (a missing section is a coverage gap, not a
    drift finding this skill should silently patch over).
 

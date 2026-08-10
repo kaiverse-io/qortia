@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from qortia.auth import AgentIdentity, require_agent
 from qortia.common import assert_agent_active
@@ -499,8 +499,76 @@ async def forget(
     return ForgetResponse(id=str(row["id"]))
 
 
+def _budget_memories(
+    mental_models: list[MemoryEntry],
+    decisions: list[MemoryEntry],
+    lessons: list[MemoryEntry],
+    budget: int | None,
+) -> ContextMemories:
+    """Keep the highest-importance entries across all three buckets under a
+    character budget, dropping whole entries rather than slicing any of them.
+
+    Each bucket arrives already importance-sorted (or, for decisions, in the
+    order the query returned — importance is now always populated, per
+    IMPORTANCE, so this sorts correctly either way). Cutting is done on one
+    merged, importance-ordered pool so a 0.95 lesson never loses to a 0.3
+    mental model just because of bucket order — the failure this replaces.
+    """
+    if budget is None or budget <= 0:
+        return ContextMemories(mental_models=mental_models, decisions=decisions, lessons=lessons)
+
+    tagged = [
+        (entry, bucket)
+        for bucket, entries in (
+            ("mental_models", mental_models),
+            ("decisions", decisions),
+            ("lessons", lessons),
+        )
+        for entry in entries
+    ]
+    tagged.sort(key=lambda pair: pair[0].importance or 0.0, reverse=True)
+
+    kept: dict[str, list[MemoryEntry]] = {"mental_models": [], "decisions": [], "lessons": []}
+    used = 0
+    for entry, bucket in tagged:
+        cost = len(entry.content)
+        if used + cost > budget and used > 0:
+            break
+        kept[bucket].append(entry)
+        used += cost
+
+    # Restore each bucket's own original relative order (importance DESC,
+    # ties broken as the SQL already ordered them) rather than the flattened
+    # cross-bucket sort order used only to decide what survives.
+    def _restore_order(
+        original: list[MemoryEntry], survivors: list[MemoryEntry]
+    ) -> list[MemoryEntry]:
+        keep_ids = {id(e) for e in survivors}
+        return [e for e in original if id(e) in keep_ids]
+
+    return ContextMemories(
+        mental_models=_restore_order(mental_models, kept["mental_models"]),
+        decisions=_restore_order(decisions, kept["decisions"]),
+        lessons=_restore_order(lessons, kept["lessons"]),
+    )
+
+
 @router.get("/v1/context", response_model=ContextResponse)
-async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextResponse:  # noqa: B008
+async def get_context(
+    agent: AgentIdentity = Depends(require_agent),  # noqa: B008
+    budget: int | None = Query(
+        default=None,
+        ge=1,
+        description=(
+            "Approximate character budget for the memories.* buckets "
+            "(mental_models/decisions/lessons combined). The highest-importance "
+            "entries across all three are kept, in importance order, until the "
+            "budget is spent; whole entries are dropped, never truncated "
+            "mid-content. org_chart/processes/handoffs/weekly_summary are "
+            "operational context and are never budget-trimmed."
+        ),
+    ),
+) -> ContextResponse:
     clearance_order, agent_division = agent.clearance_order, agent.division
     async with tenant_transaction(
         get_main_pool(),
@@ -535,9 +603,9 @@ async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextR
         )
         decisions = await conn.fetch(
             """
-            SELECT content FROM hindsight_memories
+            SELECT content, importance FROM hindsight_memories
             WHERE agent_id = $1 AND type = 'decision'
-            ORDER BY created_at DESC LIMIT 15
+            ORDER BY importance DESC, created_at DESC LIMIT 15
         """,
             agent.agent_id,
         )
@@ -549,19 +617,26 @@ async def get_context(agent: AgentIdentity = Depends(require_agent)) -> ContextR
         """,
             agent.agent_id,
         )
+        reflection_counter = await conn.fetchval(
+            "SELECT reflection_counter FROM qortia_agents WHERE id = $1", agent.agent_id
+        )
+
+    memories = _budget_memories(
+        mental_models=[
+            MemoryEntry(content=r["content"], importance=r["importance"]) for r in mental_models
+        ],
+        decisions=[
+            MemoryEntry(content=r["content"], importance=r["importance"]) for r in decisions
+        ],
+        lessons=[MemoryEntry(content=r["content"], importance=r["importance"]) for r in lessons],
+        budget=budget,
+    )
 
     return ContextResponse(
         org_chart=[MemoryEntry(title=r["title"], content=r["content"]) for r in org_chart],
         processes=[MemoryEntry(title=r["title"], content=r["content"]) for r in processes],
         handoffs=[MemoryEntry(title=r["title"], content=r["content"]) for r in handoffs],
         weekly_summary=MemoryEntry(title=ws["title"], content=ws["content"]) if ws else None,
-        memories=ContextMemories(
-            mental_models=[
-                MemoryEntry(content=r["content"], importance=r["importance"]) for r in mental_models
-            ],
-            decisions=[MemoryEntry(content=r["content"]) for r in decisions],
-            lessons=[
-                MemoryEntry(content=r["content"], importance=r["importance"]) for r in lessons
-            ],
-        ),
+        memories=memories,
+        reflection_counter=reflection_counter or 0,
     )

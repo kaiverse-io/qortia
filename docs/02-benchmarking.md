@@ -188,20 +188,20 @@ have been verified to produce ≥ 50 tokens.
 ### 2.8 Running the Harness
 
 ```bash
-# Prerequisites: stack running with EVAL_MODE=true
-cd platform
+# Prerequisites: stack running (just stack-up), QORTIA_EVAL_MODE=true — see
+# evals/README.md for the verified end-to-end sequence (QORTIA_URL, worker, etc.)
 
 # Smoke eval (10 cases, ~3 minutes)
-EVAL_MODE=true PYTHONPATH=. python3 evals/run_reh.py evals/datasets/recall_smoke.json
+QORTIA_EVAL_MODE=true PYTHONPATH=. python3 evals/run_reh.py evals/datasets/recall_smoke.json
 
 # Full eval (55 cases, ~15 minutes)
-EVAL_MODE=true PYTHONPATH=. python3 evals/run_reh.py evals/datasets/recall_v1.json
+QORTIA_EVAL_MODE=true PYTHONPATH=. python3 evals/run_reh.py evals/datasets/recall_v1.json
 
 # Report written to evals/results/reh_latest.json
 ```
 
-**EVAL_MODE** must be `true` — the eval seed endpoint returns 404 otherwise.
-Never set `EVAL_MODE=true` in staging or production.
+**QORTIA_EVAL_MODE** must be `true` — the eval seed endpoint returns 404 otherwise.
+Never set `QORTIA_EVAL_MODE=true` in staging or production.
 
 ---
 
@@ -252,10 +252,9 @@ Full LLM-as-judge automation is deferred — violates the determinism principle.
 ### 3.3 Running the Harness
 
 ```bash
-# Prerequisites: full stack running (just up), EVAL_MODE=true, LiteLLM reachable
-cd platform
+# Prerequisites: full stack running (just stack-up), QORTIA_EVAL_MODE=true
 
-EVAL_MODE=true python3 evals/run_alb.py
+QORTIA_EVAL_MODE=true python3 evals/run_alb.py
 
 # Report written to evals/results/alb_latest.json
 # Annotate 'memory_utilization' and 'hallucination_rate' fields after
@@ -319,7 +318,7 @@ to all 4 affected queries: `_bm25_org`, `_vector_org`, `_bm25_knowledge`, `_vect
 
 ### Eval Infrastructure — Internal Eval Router (`eval_router.py`)
 
-New endpoints (EVAL_MODE guard, bypass JWT auth):
+New endpoints (QORTIA_EVAL_MODE guard, bypass JWT auth):
 
 | Endpoint | Purpose |
 |---|---|
@@ -350,36 +349,34 @@ Six harnesses covering all memory evaluation dimensions:
 ### Running the full stack
 
 ```bash
-cd platform
-
 # Layer 1 — Retrieval (55 cases, ~15 min)
-EVAL_MODE=true python3 evals/run_reh.py evals/datasets/recall_v1.json
+QORTIA_EVAL_MODE=true python3 evals/run_reh.py evals/datasets/recall_v1.json
 
 # Layer 1b — Temporal (18 cases, ~8 min)
-EVAL_MODE=true python3 evals/run_temporal_eval.py
+QORTIA_EVAL_MODE=true python3 evals/run_temporal_eval.py
 
 # Layer 2 — Agentic Loop (3 tasks, ~3 min)
-EVAL_MODE=true python3 evals/run_alb.py
+QORTIA_EVAL_MODE=true python3 evals/run_alb.py
 
 # Layer 2b — Extraction Quality (10 cases, ~5 min)
-EVAL_MODE=true python3 evals/run_extraction_eval.py
+QORTIA_EVAL_MODE=true python3 evals/run_extraction_eval.py
 
 # Layer 2c — Longitudinal Learning (3 scenarios, ~5 min)
-EVAL_MODE=true python3 evals/run_longitudinal_eval.py
+QORTIA_EVAL_MODE=true python3 evals/run_longitudinal_eval.py
 
 # Layer 3 — Infrastructure (50-corpus, ~5 min)
-EVAL_MODE=true python3 evals/run_pib.py http://localhost:8080 <tenant_id> <agent_id>
+QORTIA_EVAL_MODE=true python3 evals/run_pib.py http://localhost:8080 <tenant_id> <agent_id>
 
 # Layer 4 — LongMemEval (download once, then run)
 python3 evals/run_longmemeval.py --download
-EVAL_MODE=true python3 evals/run_longmemeval.py --max-cases 100
+QORTIA_EVAL_MODE=true python3 evals/run_longmemeval.py --max-cases 100
 ```
 
 ### SoA comparison targets
 
 | Benchmark | Mem0 published | Zep published | Qortia current | Qortia target |
 |---|---|---|---|---|
-| LongMemEval Recall@5 | ~72% | ~69% | ⚠️ dataset gated (see GH #83) | ≥75% |
+| LongMemEval Recall@5 | ~72% | ~69% | **24.0%** (96 cases, 2026-08-09) — deterministic scoring; see `03-eval-strategy.md` for why this understates it | ≥75% (needs LLM-as-judge scoring first — see roadmap) |
 | DMR accuracy | — | 94.8% | not integrated | ≥90% |
 | REH Recall@5 | — | — | **1.000** (55/55) | 1.000 |
 | REH MRR | — | — | **0.942** | ≥0.90 |
@@ -438,7 +435,7 @@ Full 55-case REH runs weekly on staging. TEH/EQE/LEH run weekly. PIB runs weekly
 
 To re-establish baseline after a major recall change:
 
-1. `EVAL_MODE=true python3 evals/run_reh.py evals/datasets/recall_v1.json`
+1. `QORTIA_EVAL_MODE=true python3 evals/run_reh.py evals/datasets/recall_v1.json`
 2. Record all metric scores — update this document and ADR-073.
 3. Adjust regression floors if scores improve (never lower them).
 4. Run PIB and record p50/p95/p99 — note whether stack is warm or cold-start.

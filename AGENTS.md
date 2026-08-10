@@ -56,9 +56,10 @@ docs/tutorials|how-to|reference/ — Diátaxis slots (mostly empty; fill as need
 - `just sync` after changing `pyproject.toml`.
 - Conventional commits enforced: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
 - All significant decisions → MADR ADR in `docs/decisions/adrs/` first.
-- Coverage ratchet: `fail_under` in `[tool.coverage.report]` and matching
-  `--cov-fail-under` in pytest `addopts` — only ever increase both (Copier answer
-  `coverage_fail_under`).
+- Coverage ratchet: `fail_under` in `[tool.coverage.report]` (and matching
+  `--cov-fail-under` in pytest `addopts`) — only ever increase it. Initial floor is
+  stamped from the Copier answer `coverage_fail_under` (per package via
+  `python_package_name` as the cov target); raise both values together after measuring.
 
 ## Architecture documentation
 
@@ -76,11 +77,39 @@ as the code change, not a separate rendering step.
 
 ## Agent-memory convention
 
-After a significant multi-step task, save reusable learnings to:
-`~/.claude/projects/<project-slug>/memory/`
+After a significant multi-step task, save reusable learnings to `.agents/memory/` — the
+canonical, git-tracked location (survives a devcontainer rebuild and travels with the repo).
+On Claude Code, `~/.claude/projects/<project-slug>/memory/` is a symlink `post-create.sh`
+maintains into the same files, not a separate location — write to `.agents/memory/` directly
+so the memory exists even if that symlink hasn't been (re)created yet.
 
 One file per insight; `MEMORY.md` index (one line per entry). This prevents knowledge
 loss across sessions and feeds the coaching loop (Factor 2/3 of 12-factor-agents).
+
+## Harness-specific configuration
+
+This project's safety/quality floor comes from two different places: universally, in
+CI and git (Guardrails, Ratchet — run regardless of which harness or human wrote the
+commit), and per-harness, via that harness's own config — which requires a human to
+explicitly trust this project on their machine before it does anything at all:
+
+- **Claude Code**: `.claude/settings.json` (`permissions.allow`/`deny`) — active once
+  you accept the workspace-trust dialog.
+- **Codex CLI**: `.codex/config.toml` (`approval_policy`, `sandbox_mode`) and
+  `.codex/rules/default.rules` (denies `git commit --no-verify` /
+  `git push --no-verify`, best-effort — see that file's own comment for the exact
+  matching limitation) — active only once you mark this project trusted in Codex;
+  Codex skips `.codex/` entirely for untrusted projects.
+- **goose**: no project-level config file exists for goose at all (confirmed against
+  block/goose's own docs). `GOOSE_MODE=smart_approve` is instead set for every
+  process in this devcontainer via `.devcontainer/devcontainer.json`'s
+  `containerEnv` — a coarser, session-wide posture, not a per-command allow/deny
+  list. A `goose` run anywhere outside this devcontainer does not inherit it.
+
+None of the three is a substitute for the others, and none is a substitute for CI.
+Stamping a config file is necessary, never sufficient. See
+[docs/explanation/design.md](docs/explanation/design.md#harness-neutrality-whats-guaranteed-vs-whats-harness-enhanced)
+for the full reasoning.
 
 <!-- cockpit-section:start (kept in sync with chassis's own root AGENTS.md — see justfile ci-lint) -->
 ## AI-usage cockpit & coaching

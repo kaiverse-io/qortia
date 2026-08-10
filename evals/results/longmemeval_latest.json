@@ -1,0 +1,51 @@
+{
+  "total_cases": 96,
+  "category_filter": null,
+  "recall_at_5": 0.23958333333333334,
+  "context_completeness": 0.25,
+  "answer_accuracy": 0.1875,
+  "overall_gate": "FAIL",
+  "by_category": {
+    "single-session-user": {
+      "cases": 16,
+      "recall_at_5": 0.6875,
+      "context_completeness": 0.75,
+      "answer_accuracy": 0.4375
+    },
+    "single-session-assistant": {
+      "cases": 16,
+      "recall_at_5": 0.5,
+      "context_completeness": 0.5,
+      "answer_accuracy": 0.5
+    },
+    "single-session-preference": {
+      "cases": 16,
+      "recall_at_5": 0.0,
+      "context_completeness": 0.0,
+      "answer_accuracy": 0.0
+    },
+    "multi-session": {
+      "cases": 16,
+      "recall_at_5": 0.1875,
+      "context_completeness": 0.1875,
+      "answer_accuracy": 0.1875
+    },
+    "knowledge-update": {
+      "cases": 16,
+      "recall_at_5": 0.0625,
+      "context_completeness": 0.0625,
+      "answer_accuracy": 0.0
+    },
+    "temporal-reasoning": {
+      "cases": 16,
+      "recall_at_5": 0.0,
+      "context_completeness": 0.0,
+      "answer_accuracy": 0.0
+    }
+  },
+  "floors": {
+    "recall_at_5": 0.6,
+    "context_completeness": 0.55,
+    "answer_accuracy": 0.5
+  }
+}

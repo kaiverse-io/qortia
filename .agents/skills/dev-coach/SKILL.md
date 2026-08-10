@@ -1,6 +1,6 @@
 # Dev Coach
 
-> The chassis's coaching loop (ADR-016): anti-pattern detection + an AGENTS.md/skills auditor
+> The chassis's coaching loop: anti-pattern detection + an AGENTS.md/skills auditor
 > that writes improvements back. Invoke with `/dev-coach`.
 >
 > **Complements [AI Engineer Coach](https://github.com/microsoft/ai-engineering-coach)**
@@ -25,14 +25,16 @@ skills — then asks before writing anything. It never edits silently.
    a flag like that exists) to get one-shot rate, task-type breakdown, and rework signal for this
    project. If not installed, say so and skip — don't block on it.
 
-2. **Scan recent memory for unreflected feedback.** Read every file under
-   `~/.claude/projects/<project-slug>/memory/` with `metadata.type: feedback` (check
-   `MEMORY.md` for the index — `<project-slug>` is the dashed form of the repo's absolute path,
-   e.g. a repo at `/home/dev/acme-api` becomes `-home-dev-acme-api`). For each one, check
-   whether its rule already appears in `AGENTS.md`
-   (the "Hard rules", "Forbidden patterns", or "How to work here" sections). Flag any feedback
-   memory that exists but was never promoted into AGENTS.md — that's a correction the user may
-   have to repeat to a future session that doesn't load this specific memory file.
+2. **Scan recent memory for unreflected feedback.** Read every file under `.agents/memory/`
+   (the canonical, git-tracked location — check `MEMORY.md` for the index; on Claude Code
+   this is also reachable at `~/.claude/projects/<project-slug>/memory/`, a symlink
+   `post-create.sh` maintains into the same files, not a second copy). Don't filter by a
+   specific `metadata.type` — treat any memory file describing a correction, convention, or
+   constraint as in scope, whatever type label it carries. For each one, check whether its
+   rule already appears in `AGENTS.md` (the "Hard rules", "Forbidden patterns", or "How to
+   work here" sections). Flag any memory that exists but was never promoted into AGENTS.md —
+   that's a correction the user may have to repeat to a future session that doesn't load this
+   specific memory file.
 
 2a. **If `ctx` is installed, search full session transcripts, not just memory files.**
    `ctx search "actually"`, `ctx search "no, don't"`, `ctx search "I already told you"` (and

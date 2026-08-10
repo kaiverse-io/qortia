@@ -89,12 +89,18 @@ worker *args:
 # LiteLLM (virtual keys / budgets / multi-tenant OTel, ADR-003).
 stack-up:
     docker compose up -d --build
+    # A single $ here, not $$: just doesn't collapse $$ to a literal $ in plain
+    # recipe text (that's a Makefile convention, not just's) — it was passed
+    # straight through to sh, where $$ is the shell's own PID variable,
+    # immediately followed by a bare "(seq 1 60)" it can't parse. The recipe
+    # silently never ran its health-check wait — it always fell straight
+    # through to a syntax error, on every invocation, not just sometimes.
     @echo "Waiting for API…"; \
-      for i in $$(seq 1 60); do \
-        curl -sf http://127.0.0.1:$${QORTIA_APP_PORT:-8081}/docs >/dev/null 2>&1 && break; \
+      for i in $(seq 1 60); do \
+        curl -sf http://127.0.0.1:${QORTIA_APP_PORT:-8081}/docs >/dev/null 2>&1 && break; \
         sleep 1; \
       done; \
-      echo "stack up — API :$${QORTIA_APP_PORT:-8081}  DB :5434  Ollama :11434"
+      echo "stack up — API :${QORTIA_APP_PORT:-8081}  DB :5434  Ollama :11434"
 
 stack-down:
     docker compose down

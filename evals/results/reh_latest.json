@@ -1,9 +1,9 @@
 {
   "recall_at_5": 1.0,
   "recall_at_10": 1.0,
-  "mrr": 0.95,
-  "semantic_drift_avg": 0.47619047619047616,
-  "avg_tokens_retrieved": 50.5,
+  "mrr": 0.9424242424242425,
+  "semantic_drift_avg": 0.45238095238095233,
+  "avg_tokens_retrieved": 49.43636363636364,
   "cases": [
     {
       "id": "reh-001",
@@ -13,6 +13,46 @@
       "mrr": 1.0,
       "semantic_drift_gap": 0.6666666666666666,
       "tokens_retrieved": 44,
+      "reason": null
+    },
+    {
+      "id": "reh-002",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 38,
+      "reason": null
+    },
+    {
+      "id": "reh-003",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 31,
+      "reason": null
+    },
+    {
+      "id": "reh-004",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 32,
+      "reason": null
+    },
+    {
+      "id": "reh-005",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 38,
       "reason": null
     },
     {
@@ -26,7 +66,87 @@
       "reason": null
     },
     {
+      "id": "reh-007",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 0.5,
+      "semantic_drift_gap": 0.3333333333333333,
+      "tokens_retrieved": 36,
+      "reason": null
+    },
+    {
+      "id": "reh-008",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 39,
+      "reason": null
+    },
+    {
+      "id": "reh-009",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 0.5,
+      "semantic_drift_gap": 0.3333333333333333,
+      "tokens_retrieved": 37,
+      "reason": null
+    },
+    {
+      "id": "reh-010",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 0.5,
+      "semantic_drift_gap": 0.3333333333333333,
+      "tokens_retrieved": 51,
+      "reason": null
+    },
+    {
       "id": "reh-011",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 18,
+      "reason": null
+    },
+    {
+      "id": "reh-012",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 20,
+      "reason": null
+    },
+    {
+      "id": "reh-013",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 18,
+      "reason": null
+    },
+    {
+      "id": "reh-014",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 23,
+      "reason": null
+    },
+    {
+      "id": "reh-015",
       "pass": true,
       "recall_at_5": true,
       "recall_at_10": true,
@@ -46,6 +166,46 @@
       "reason": null
     },
     {
+      "id": "reh-017",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 23,
+      "reason": null
+    },
+    {
+      "id": "reh-018",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.3333333333333333,
+      "tokens_retrieved": 51,
+      "reason": null
+    },
+    {
+      "id": "reh-019",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 67,
+      "reason": null
+    },
+    {
+      "id": "reh-020",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 78,
+      "reason": null
+    },
+    {
       "id": "reh-021",
       "pass": true,
       "recall_at_5": true,
@@ -53,6 +213,46 @@
       "mrr": 1.0,
       "semantic_drift_gap": 0.3333333333333333,
       "tokens_retrieved": 80,
+      "reason": null
+    },
+    {
+      "id": "reh-022",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 59,
+      "reason": null
+    },
+    {
+      "id": "reh-023",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 73,
+      "reason": null
+    },
+    {
+      "id": "reh-024",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 71,
+      "reason": null
+    },
+    {
+      "id": "reh-025",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 0.5,
+      "semantic_drift_gap": -0.3333333333333333,
+      "tokens_retrieved": 84,
       "reason": null
     },
     {
@@ -66,6 +266,46 @@
       "reason": null
     },
     {
+      "id": "reh-027",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "tokens_retrieved": 30,
+      "reason": null
+    },
+    {
+      "id": "reh-028",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "tokens_retrieved": 37,
+      "reason": null
+    },
+    {
+      "id": "reh-029",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "tokens_retrieved": 37,
+      "reason": null
+    },
+    {
+      "id": "reh-030",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "tokens_retrieved": 39,
+      "reason": null
+    },
+    {
       "id": "reh-031",
       "pass": true,
       "recall_at_5": true,
@@ -76,13 +316,93 @@
       "reason": null
     },
     {
+      "id": "reh-032",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "tokens_retrieved": 47,
+      "reason": null
+    },
+    {
+      "id": "reh-033",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "tokens_retrieved": 43,
+      "reason": null
+    },
+    {
+      "id": "reh-034",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "tokens_retrieved": 41,
+      "reason": null
+    },
+    {
+      "id": "reh-035",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
+      "tokens_retrieved": 45,
+      "reason": null
+    },
+    {
       "id": "reh-036",
       "pass": true,
       "recall_at_5": true,
       "recall_at_10": true,
       "mrr": 1.0,
       "semantic_drift_gap": null,
-      "tokens_retrieved": 65,
+      "tokens_retrieved": 64,
+      "reason": null
+    },
+    {
+      "id": "reh-037",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 87,
+      "reason": null
+    },
+    {
+      "id": "reh-038",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 63,
+      "reason": null
+    },
+    {
+      "id": "reh-039",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 107,
+      "reason": null
+    },
+    {
+      "id": "reh-040",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 51,
       "reason": null
     },
     {
@@ -92,7 +412,47 @@
       "recall_at_10": true,
       "mrr": 1.0,
       "semantic_drift_gap": null,
-      "tokens_retrieved": 76,
+      "tokens_retrieved": 67,
+      "reason": null
+    },
+    {
+      "id": "reh-042",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 60,
+      "reason": null
+    },
+    {
+      "id": "reh-043",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 59,
+      "reason": null
+    },
+    {
+      "id": "reh-044",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 61,
+      "reason": null
+    },
+    {
+      "id": "reh-045",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 104,
       "reason": null
     },
     {
@@ -102,6 +462,96 @@
       "recall_at_10": true,
       "mrr": 1.0,
       "semantic_drift_gap": 0.6666666666666666,
+      "tokens_retrieved": 34,
+      "reason": null
+    },
+    {
+      "id": "reh-047",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 18,
+      "reason": null
+    },
+    {
+      "id": "reh-048",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 20,
+      "reason": null
+    },
+    {
+      "id": "reh-049",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 71,
+      "reason": null
+    },
+    {
+      "id": "reh-050",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": null,
+      "tokens_retrieved": 44,
+      "reason": null
+    },
+    {
+      "id": "reh-051",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 0.3333333333333333,
+      "semantic_drift_gap": -0.6666666666666666,
+      "tokens_retrieved": 49,
+      "reason": null
+    },
+    {
+      "id": "reh-052",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.3333333333333333,
+      "tokens_retrieved": 70,
+      "reason": null
+    },
+    {
+      "id": "reh-053",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.3333333333333333,
+      "tokens_retrieved": 52,
+      "reason": null
+    },
+    {
+      "id": "reh-054",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.3333333333333333,
+      "tokens_retrieved": 68,
+      "reason": null
+    },
+    {
+      "id": "reh-055",
+      "pass": true,
+      "recall_at_5": true,
+      "recall_at_10": true,
+      "mrr": 1.0,
+      "semantic_drift_gap": 0.5,
       "tokens_retrieved": 34,
       "reason": null
     }

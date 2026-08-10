@@ -52,6 +52,22 @@
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "forwardPorts": [8080],
 
+  // ── Harness-neutral environment (Governance layer, non-Claude harnesses) ───
+  // containerEnv sets the variable on the container itself, so every process inside
+  // it inherits it — including a `goose` binary a developer launches by hand in a
+  // plain terminal, not just VS Code's own integrated terminal (that narrower scope
+  // is remoteEnv's job, which is not guaranteed to reach a manually-launched CLI
+  // process). goose (block/goose) has no project-level permission config file at
+  // all — GOOSE_MODE is the only lever reachable from a stamped repo, and only via
+  // the process environment. "smart_approve" auto-runs goose's own risk-tiered
+  // "low-risk" actions and prompts for the rest — the closest coarse analog to this
+  // project's Claude Code posture; goose's own default, "auto", means zero approval
+  // at all. This is a session-wide posture, not a per-command allow/deny list — see
+  // AGENTS.md's "Harness-specific configuration".
+  "containerEnv": {
+    "GOOSE_MODE": "smart_approve"
+  },
+
   // ── Mounts (4-layer model) ────────────────────────────────────────────────
   // Layer 2 — mounted host-state (machine-agnostic, gitignored on host)
   "mounts": [

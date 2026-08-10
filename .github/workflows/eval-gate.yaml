@@ -1,0 +1,60 @@
+name: Eval Gate
+
+# REH smoke (10 cases) on every PR touching the recall pipeline — the claim
+# docs/03-eval-strategy.md has made since 2026-06-01 ("REH smoke runs on
+# every PR") without a workflow that actually did it. This is that workflow.
+#
+# Full REH (55 cases), TEH, ALB, EQE, LEH, PIB, and LongMemEval stay a
+# manual/staging concern (see evals/README.md) — bringing up the full stack
+# + pulling the embedding model already costs real CI minutes; running that
+# on every PR regardless of what changed is not worth it for a regression
+# gate, only for the pipeline this specifically protects.
+
+on:
+  pull_request:
+    paths:
+      - "src/qortia/recall.py"
+      - "src/qortia/remember.py"
+      - "evals/run_reh.py"
+      - "evals/dataset_loader.py"
+      - "evals/datasets/recall_smoke.json"
+
+env:
+  QORTIA_EVAL_MODE: "true"
+
+jobs:
+  reh-smoke:
+    name: REH smoke (10 cases)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install just
+        run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+
+      - name: Install deps
+        run: uv sync
+
+      # QORTIA_EVAL_MODE is a job-level env var, so docker compose's own
+      # ${QORTIA_EVAL_MODE:-false} interpolation (docker-compose.yml) picks
+      # it up on this very `up` — no restart-after-the-fact needed.
+      - name: Bring up the stack
+        run: just stack-up
+
+      - name: Pull the embedding model
+        run: just stack-pull-model
+
+      - name: Run REH smoke
+        run: |
+          QORTIA_URL="http://127.0.0.1:${QORTIA_APP_PORT:-8081}" PYTHONPATH=. \
+            uv run python evals/run_reh.py evals/datasets/recall_smoke.json
+
+      - name: Tear down
+        if: always()
+        run: just stack-down

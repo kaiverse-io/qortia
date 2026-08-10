@@ -48,3 +48,7 @@ graphify-out/
 # generated as `{}` by devcontainer.json's initializeCommand, not tracked — committing it would
 # pin one developer's prefs onto everyone.
 .devcontainer/claude-user-settings.json
+
+# Third-party benchmark dataset — 15MB, fetched on demand via
+# `evals/run_longmemeval.py --download`, never meant to be versioned here.
+evals/datasets/longmemeval_oracle.json

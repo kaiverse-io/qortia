@@ -5,7 +5,7 @@ description = "Portable memory layer for AI agents — Postgres + pgvector, hybr
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
-authors = [{ name = "km2411" }]
+authors = [{ name = "kaiverse.io" }]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
