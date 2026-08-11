@@ -1,17 +1,26 @@
-"""Pure helper functions for the recall pipeline. No I/O or database access."""
+"""Pure helper functions for the recall pipeline. No I/O or database access.
+
+Tuning constants that used to live here as module-level literals (RRF k, the
+result-count limits, the search fetch multiplier) are now read from
+`qortia.config.settings` at point of use instead of cached at import time —
+reading a process-wide, already-loaded settings singleton isn't I/O in the
+sense this docstring means (nothing is touched per-call; that happened once
+at process startup), and caching them as bare module constants would freeze
+whatever value existed at first import, invisible to any later config change
+or to a test that monkeypatches `config.settings` expecting it to take
+effect (same reasoning `recall_rerank._llm_rerank` already applies to
+`rerank_model`). See qortia.config's own docstring for why these became
+file-configurable: recall()'s response size was never capped at all before,
+a real gap this module now closes.
+"""
 
 from __future__ import annotations
 
 import math
 from datetime import UTC, datetime
 
+from qortia import config
 from qortia.models import RecallResult
-
-RRF_K = 60
-SEARCH_FETCH_MULTIPLIER = 2
-PRIVATE_RESULT_LIMIT = 20
-ORG_RESULT_LIMIT = 10
-KNOWLEDGE_RESULT_LIMIT = 16
 
 _VALID_MEMORY_TYPES: frozenset[str] = frozenset(
     {"episodic", "experiential", "mental_model", "decision", "lesson", "short_term"}
@@ -119,6 +128,7 @@ def _rrf_fuse(
 ) -> list[RecallResult]:
     if not results:
         return []
+    rrf_k = config.settings.recall_rrf_k
     scores: dict[str, float] = {}
     by_id: dict[str, RecallResult] = {}
     seen_positions: dict[str, int] = {}
@@ -127,7 +137,7 @@ def _rrf_fuse(
         key = result.id
         pos = seen_positions.get(key, 0) + 1
         seen_positions[key] = pos
-        scores[key] = scores.get(key, 0.0) + 1.0 / (RRF_K + pos)
+        scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + pos)
         by_id[key] = result
 
     def final_score(rid: str) -> float:
@@ -162,6 +172,63 @@ def _sort_by_importance(results: list[RecallResult]) -> list[RecallResult]:
         ),
         reverse=True,
     )
+
+
+def _resolve_max_chars(body_max_chars: int | None) -> int:
+    """What /v1/recall's char budget actually is for one request.
+
+    `None` — the common case, no caller passes `max_chars` — resolves to the
+    server-configured default, not "no cap": recall() having no size cap by
+    default at all is the exact gap this whole change closes (see
+    `_apply_char_budget`). An explicit non-positive value is the caller's own
+    choice to opt out and get everything; a positive value is used as-is.
+    Pulled out of the endpoint as its own pure function so it's unit-testable
+    without standing up `/v1/recall`'s full DB-backed pipeline.
+    """
+    if body_max_chars is not None:
+        return body_max_chars
+    return config.settings.recall_default_max_chars
+
+
+def _apply_char_budget(results: list[RecallResult], max_chars: int) -> list[RecallResult]:
+    """Keep results, already ranked, until their combined `content` would cross
+    `max_chars`. Drops whole results rather than truncating any one — a sliced
+    memory reads as a complete, wrong answer, not a signal something was cut.
+
+    /v1/recall had no cap on total response size at all: the private/org/
+    knowledge result-count limits (`config.settings.recall_*_result_limit`,
+    20/10/16 by default) bound *result count*, not content volume, and full
+    `RecallResult.content` is unbounded per row. Measured against a real
+    corpus (agnova's evals/run_scale_eval_qortia.py,
+    276 FiQA documents, 100 queries): recall() averaged 38,961 characters
+    returned per call — roughly 80x what a comparable capped lexical backend
+    returns for the same queries — for only 5.5% of those characters belonging
+    to a query's actual relevant document.
+
+    Same policy `_budget_memories` (qortia.remember, `/v1/context`) already
+    established for this codebase — ranked-order, drop whole entries, stop at
+    the first one that doesn't fit rather than skipping ahead to a smaller
+    later one (its `used > 0` guard), keep at least one even over budget.
+    `/v1/recall` had never gotten the same treatment; this is that policy
+    applied to the other read path, not a new invention.
+    (`agnova.memory.qortia_backend._fill_budget` independently applies a
+    *client-side* version of the same idea to `/v1/context`'s response, for
+    the same reason.) An empty list here would be indistinguishable from "no
+    relevant memories," and Qortia content has no snippet-window precedent
+    capping a single result the way agnova's `_snippet()` does, so one memory
+    can legitimately exceed any budget on its own.
+    """
+    kept: list[RecallResult] = []
+    used = 0
+    for result in results:
+        cost = len(result.content)
+        if kept and used + cost > max_chars:
+            break
+        kept.append(result)
+        used += cost
+        if used >= max_chars:
+            break
+    return kept
 
 
 def _keyword_boost(query: str, content: str) -> float:

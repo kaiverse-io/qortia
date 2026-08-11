@@ -7,6 +7,7 @@ from uuid import UUID
 
 import pytest
 
+from qortia import config
 from qortia.auth import AgentIdentity
 from qortia.models import RecallResult
 
@@ -138,18 +139,23 @@ async def test_llm_rerank_uses_model_order_and_appends_omitted_results(
 ) -> None:
     from qortia.recall_rerank import _llm_rerank
 
+    # rerank_model defaults to "" (not configured, skip) — this test is
+    # specifically about the reranking-happens path, so it must configure
+    # one explicitly rather than rely on a default that used to be non-empty.
+    monkeypatch.setattr(config.settings, "rerank_model", "test-rerank-model")
     first = _recall_result("first", "first memory")
     second = _recall_result("second", "second memory")
     third = _recall_result("third", "third memory")
 
     response = MagicMock()
+    response.status_code = 200
     response.json.return_value = {
         "choices": [{"message": {"content": "[3, 1]"}}],
         "usage": {"prompt_tokens": 11, "completion_tokens": 3},
     }
     client = MagicMock()
     client.post = AsyncMock(return_value=response)
-    monkeypatch.setattr("qortia.recall_rerank.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
     monkeypatch.setattr("qortia.recall_rerank.get_litellm_key", AsyncMock(return_value="key"))
 
     reranked = await _llm_rerank(
@@ -163,17 +169,45 @@ async def test_llm_rerank_uses_model_order_and_appends_omitted_results(
 
 
 @pytest.mark.asyncio
+async def test_llm_rerank_skips_the_network_call_when_no_model_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """rerank_model="" (the default — see config.Settings) means 'not
+    configured', not 'call litellm with an empty model string and let it
+    fail'. Before this guard, every rerank=True call paid a network
+    round-trip guaranteed to fail and logged a misleading rerank_failed
+    warning for a state that is deliberate, not a failure."""
+    from qortia.recall_rerank import _llm_rerank
+
+    monkeypatch.setattr(config.settings, "rerank_model", "")
+    results = [_recall_result("one", "one"), _recall_result("two", "two")]
+    client = MagicMock()
+    client.post = AsyncMock()
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
+
+    out = await _llm_rerank("query", results, AgentIdentity(AGENT_ID, TENANT_ID))
+
+    assert out == results
+    client.post.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_llm_rerank_returns_original_order_on_malformed_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from qortia.recall_rerank import _llm_rerank
 
+    # Must configure a model, or the empty-model guard returns early and this
+    # test would pass vacuously without ever reaching the malformed-response
+    # handling it's meant to exercise.
+    monkeypatch.setattr(config.settings, "rerank_model", "test-rerank-model")
     results = [_recall_result("one", "one"), _recall_result("two", "two")]
     response = MagicMock()
+    response.status_code = 200
     response.json.return_value = {"choices": [{"message": {"content": "not json"}}]}
     client = MagicMock()
     client.post = AsyncMock(return_value=response)
-    monkeypatch.setattr("qortia.recall_rerank.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
     monkeypatch.setattr("qortia.recall_rerank.get_litellm_key", AsyncMock(return_value="key"))
 
     assert await _llm_rerank("query", results, AgentIdentity(AGENT_ID, TENANT_ID)) == results

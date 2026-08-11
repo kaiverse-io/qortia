@@ -1,0 +1,54 @@
+# Copy to qortia.toml (gitignored — see .gitignore) to change these without
+# touching env vars or restarting with new -e flags. Optional: no qortia.toml
+# reproduces today's pure-env-var behaviour exactly. Env vars still override
+# whatever is set here — see qortia.config's module docstring for the full
+# precedence (env var > this file > code default) and for why secrets and
+# per-deployment topology (database_url, litellm_api_key, qortia_admin_token,
+# ...) are deliberately NOT exposed here: a config file should never become a
+# second place a credential can leak into git.
+#
+# Point QORTIA_CONFIG_FILE at a different path to use a name other than
+# qortia.toml, or to keep multiple named profiles (qortia.staging.toml, ...).
+#
+# Root-level keys must come before the first [table] header below — TOML
+# doesn't "close" a table on a blank line, so anything after [recall] stays
+# part of it until another table header appears. Keep new root-level keys up
+# here, not appended after [recall].
+
+# ── Everything else config.Settings exposes to this file ──────────────────
+# embedding_model = "bge-m3"                  # structurally pinned to migrations/V1's vector(1024) — ADR-002; don't change without a migration
+# embedding_dimension = 1024
+# dedup_similarity_threshold = 0.95            # calibrated for BGE-M3 1024-dim — ADR-105
+# embedding_cache_max_size = 10000
+# embedding_cache_ttl_seconds = 3600
+# rerank_model = ""                            # shared by reranking, reflection, and entity-summary consolidation. Empty = all skipped, not attempted against nothing. For local Ollama, "qwen2.5:3b" is the smallest size verified to follow reflection's structured JSON contract correctly — see .env.example.
+# reflection_threshold = 10
+# idle_reflection_interval_s = 300.0
+# idle_reflection_window_h = 1.0
+
+# ── Recall tuning ─────────────────────────────────────────────────────────
+# Was hardcoded in recall_helpers.py — see qortia.config.Settings for the
+# full reasoning behind each default.
+[recall]
+# Reciprocal-rank-fusion constant (_rrf_fuse). Smaller values weight a
+# result's raw rank/frequency more heavily; larger values flatten position
+# differences until importance dominates instead.
+rrf_k = 60
+
+# Each result-count limit below is multiplied by this before the initial DB
+# fetch, so RRF/MMR have a larger candidate pool to re-rank from than what
+# actually gets returned.
+search_fetch_multiplier = 2
+
+private_result_limit = 20
+org_result_limit = 10
+knowledge_result_limit = 16
+
+# Applied when a /v1/recall caller doesn't pass max_chars explicitly in the
+# request body — 0 or a negative value means no default cap (the original,
+# unbounded behaviour). Measured unbounded: 38,961 chars/call average
+# against a real 276-document corpus (agnova's evals/run_scale_eval_qortia.py)
+# for only 5.5% of those characters belonging to a query's actual relevant
+# document — a real gap this default closes without every caller having to
+# know to ask for it.
+default_max_chars = 8000

@@ -21,6 +21,10 @@ htmlcov/
 venv/
 env/
 
+# Local recall-tuning overrides — qortia.example.toml is the committed template;
+# a real qortia.toml is per-deployment tuning, same reasoning as .env above.
+qortia.toml
+
 # Editor
 .idea/
 *.swp

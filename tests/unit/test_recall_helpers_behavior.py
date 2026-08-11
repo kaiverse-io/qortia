@@ -5,14 +5,17 @@ from uuid import uuid4
 
 import pytest
 
+from qortia import config
 from qortia.models import RecallResult
 from qortia.recall_helpers import (
+    _apply_char_budget,
     _bm25_normalization,
     _cosine,
     _entity_filter_clause,
     _keyword_boost,
     _lang_filter_clause,
     _mmr,
+    _resolve_max_chars,
     _rrf_fuse,
     _sort_by_importance,
     _temporal_filter_clause,
@@ -179,6 +182,109 @@ def test_sort_by_importance_ranks_frequently_recalled_memories_first() -> None:
     popular._recall_count = 30
 
     assert _sort_by_importance([stale, popular])[0].id == "popular"
+
+
+def test_apply_char_budget_drops_whole_results_past_the_cap() -> None:
+    """/v1/recall had no response-size cap at all before this — measured at
+    38,961 chars/call for 5.5% precision (agnova's scale eval against real
+    FiQA data). Same policy as _budget_memories: rank order, drop whole
+    entries, never slice one."""
+    first = _result(rid="first", content="x" * 100)
+    second = _result(rid="second", content="y" * 100)
+    third = _result(rid="third", content="z" * 100)
+
+    out = _apply_char_budget([first, second, third], max_chars=150)
+
+    assert [r.id for r in out] == ["first"]
+
+
+def test_apply_char_budget_keeps_the_top_result_even_over_budget() -> None:
+    """An empty list is indistinguishable from 'no relevant memories' — a
+    single result longer than max_chars is still returned rather than
+    dropped, unlike _budget_memories/_fill_budget which can legitimately
+    return nothing (they render one flat string; this returns a list)."""
+    only = _result(rid="only", content="x" * 500)
+
+    out = _apply_char_budget([only], max_chars=10)
+
+    assert [r.id for r in out] == ["only"]
+
+
+def test_apply_char_budget_stops_at_first_non_fit_not_a_smaller_later_one() -> None:
+    """Matches _budget_memories' `used > 0` guard exactly: once a result
+    doesn't fit, budgeting stops there — it does not skip ahead looking for
+    a smaller later result that would fit, since results arrive ranked and
+    skipping ahead would return a less relevant result in place of a more
+    relevant one just because it happens to be shorter."""
+    big = _result(rid="big", content="x" * 100)
+    small = _result(rid="small", content="y" * 10)
+
+    out = _apply_char_budget([big, small], max_chars=50)
+
+    assert [r.id for r in out] == ["big"]
+
+
+def test_apply_char_budget_empty_input_returns_empty() -> None:
+    assert _apply_char_budget([], max_chars=100) == []
+
+
+def test_resolve_max_chars_none_falls_back_to_configured_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """None is the common case — no caller passes max_chars — and must
+    resolve to the server default, not 'no cap': recall() having no size cap
+    by default at all is the gap this whole change closes."""
+    monkeypatch.setattr(config.settings, "recall_default_max_chars", 8000)
+
+    assert _resolve_max_chars(None) == 8000
+
+
+def test_resolve_max_chars_explicit_value_overrides_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config.settings, "recall_default_max_chars", 8000)
+
+    assert _resolve_max_chars(500) == 500
+
+
+def test_resolve_max_chars_explicit_non_positive_is_returned_as_is() -> None:
+    """A caller passing 0 (or negative) is opting out of any cap — the same
+    'non-positive means unbounded' convention _apply_char_budget's own
+    caller in recall.py checks for; _resolve_max_chars doesn't coerce this to
+    the default, it's a distinct, deliberate caller choice from omitting the
+    field entirely."""
+    assert _resolve_max_chars(0) == 0
+    assert _resolve_max_chars(-1) == -1
+
+
+def test_rrf_fuse_uses_configured_k(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RRF's k constant moved from a hardcoded module constant to
+    config.settings.recall_rrf_k — confirm _rrf_fuse actually reads it live
+    (not a stale value captured at import time) by checking it changes the
+    ranking, not just that it runs.
+
+    _rrf_fuse scores each id by 1/(k+pos) summed over how many times *that
+    id* repeats in the input (not classic positional RRF across separate
+    ranked lists — pos here is a per-id repeat counter). final_score then
+    multiplies that raw score by importance, so a frequent-but-lower-
+    importance id and a single-appearance-but-higher-importance id trade off
+    against each other as k changes: small k makes raw RRF magnitude (and so
+    frequency) dominate; as k grows, every raw score shrinks toward zero at
+    a rate set by count (~count/k), so the importance multiplier decides
+    instead. frequent (5 appearances, importance 0.3) vs single (1
+    appearance, importance 0.95) — worked by hand: k=1 gives raw·imp of
+    0.435 vs 0.475 (single wins); k=1000 gives 0.00150 vs 0.00095 (frequent
+    wins, since 5×0.3 > 1×0.95 dominates once position differences vanish).
+    """
+    frequent = _result(rid="frequent", importance=0.3)
+    single = _result(rid="single", importance=0.95)
+    fused = [frequent, frequent, frequent, frequent, frequent, single]
+
+    monkeypatch.setattr(config.settings, "recall_rrf_k", 1)
+    assert _rrf_fuse(fused)[0].id == "single"
+
+    monkeypatch.setattr(config.settings, "recall_rrf_k", 1000)
+    assert _rrf_fuse(fused)[0].id == "frequent"
 
 
 @pytest.mark.parametrize(

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from uuid import UUID
 
 from qortia import config
-from qortia.auth import AgentIdentity, get_litellm_key, litellm_auth_headers
-from qortia.common import get_litellm_client
+from qortia.auth import AgentIdentity, get_litellm_key
+from qortia.chat import chat_completion
 from qortia.db import get_main_pool, tenant_transaction
 from qortia.models import RecallResult
 
@@ -23,8 +22,16 @@ async def _llm_rerank(
 ) -> list[RecallResult]:
     if not results:
         return results
+    model = config.settings.rerank_model
+    if not model:
+        # Not a failure — empty is the deliberate "no rerank model
+        # configured" state (config.Settings.rerank_model's default),
+        # distinct from a real call that fails. Returning here skips the
+        # network round-trip that would otherwise always fail and, before
+        # this guard, land in the broad except below as a misleading
+        # rerank_failed warning for a state that isn't a failure at all.
+        return results
     try:
-        model = config.settings.rerank_model
         litellm_key = await get_litellm_key(str(agent.tenant_id))
 
         numbered = "\n".join(
@@ -36,30 +43,16 @@ async def _llm_rerank(
             f"Example: [3, 1, 2]. Include all {len(results)} numbers."
         )
 
-        async with asyncio.timeout(35.0):
-            resp = await get_litellm_client().post(
-                "/chat/completions",
-                headers=litellm_auth_headers(litellm_key),
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "response_format": {"type": "json_object"},
-                },
-                timeout=30.0,
-            )
-        raw_resp = resp.json()
-        order = json.loads(raw_resp["choices"][0]["message"]["content"])
-        usage = raw_resp.get("usage", {})
-        logger.info(
-            {
-                "event": "qortia_llm_rerank",
-                "qortia.tenant_id": str(agent.tenant_id),
-                "model": model,
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0),
-                "result_count": len(results),
-            }
+        content = await chat_completion(
+            model=model,
+            prompt=prompt,
+            litellm_key=litellm_key,
+            timeout=30.0,
+            json_mode=True,
+            log_event="qortia_llm_rerank",
+            tenant_id=str(agent.tenant_id),
         )
+        order = json.loads(content)
         reranked = [results[i - 1] for i in order if 1 <= i <= len(results)]
         seen = {r.id for r in reranked}
         reranked += [r for r in results if r.id not in seen]

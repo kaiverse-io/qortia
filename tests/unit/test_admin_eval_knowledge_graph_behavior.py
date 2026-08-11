@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import HTTPException
 
+from qortia import config
 from qortia.auth import AgentIdentity
 from qortia.models import KnowledgeIngestRequest
 
@@ -483,11 +484,15 @@ async def test_entity_summary_dedup_and_update_branches(
         == "new memory content"
     )
 
+    # rerank_model defaults to "" (not configured, skip) — must configure one
+    # explicitly here or the empty-model guard returns "old" unchanged
+    # without ever reaching the mocked LLM call this line asserts against.
+    monkeypatch.setattr(config.settings, "rerank_model", "test-model")
     response = MagicMock()
+    response.status_code = 200
     response.json.return_value = {"choices": [{"message": {"content": "updated summary"}}]}
-    response.raise_for_status = MagicMock()
     client = MagicMock(post=AsyncMock(return_value=response))
-    monkeypatch.setattr(graph, "get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
     assert await graph._update_entity_summary("old", "new", "key") == "updated summary"
     client.post = AsyncMock(side_effect=RuntimeError("down"))
     assert await graph._update_entity_summary("old", "new", "key") == "old"

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Any
 
 from qortia import config
-from qortia.auth import get_litellm_key, litellm_auth_headers
-from qortia.common import get_litellm_client
+from qortia.auth import get_litellm_key
+from qortia.chat import chat_completion
 from qortia.db import get_main_pool
 
 logger = logging.getLogger(__name__)
@@ -28,6 +27,16 @@ async def _update_entity_summary(
     """
     if not existing_summary:
         return new_memory_content[:500]
+    model = config.settings.rerank_model
+    if not model:
+        # Not a failure — same "no model configured" state
+        # recall_rerank._llm_rerank now guards against explicitly. This
+        # function's own except-block below already falls back to
+        # existing_summary unchanged on any failure, which happens to be
+        # the right behaviour here too, but skipping the call entirely
+        # avoids a network round-trip guaranteed to fail and an
+        # entity_summary_update_failed warning for a state that isn't one.
+        return existing_summary
     try:
         prompt = (
             f"Existing summary: {existing_summary}\n\n"
@@ -35,19 +44,13 @@ async def _update_entity_summary(
             "Update the summary to incorporate the new information. "
             "Be concise (2-3 sentences). Preserve named entities and temporal qualifiers."
         )
-        async with asyncio.timeout(20.0):
-            resp = await get_litellm_client().post(
-                "/chat/completions",
-                headers=litellm_auth_headers(litellm_key),
-                json={
-                    "model": "anthropic/claude-3-haiku-20240307",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 200,
-                },
-                timeout=15.0,
-            )
-        resp.raise_for_status()
-        content: str = resp.json()["choices"][0]["message"]["content"]
+        content = await chat_completion(
+            model=model,
+            prompt=prompt,
+            litellm_key=litellm_key,
+            timeout=15.0,
+            max_tokens=200,
+        )
         return content.strip()
     except Exception as exc:
         logger.warning({"event": "entity_summary_update_failed", "error": str(exc)})
