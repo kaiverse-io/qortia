@@ -126,7 +126,30 @@ async def seed_eval_memory(req: SeedMemoryRequest) -> dict[str, Any]:
             *params,
         )
 
-    return {"status": "seeded", "memory_id": str(row_id)}
+    return {"status": "seeded", "memory_id": str(row_id), "entities": entities}
+
+
+@router.get("/pending-embeddings")
+async def eval_pending_embeddings(agent_id: UUID) -> dict[str, Any]:
+    """How many of this agent's memories are still waiting for
+    run_embedding_worker (reflect.py) to pick them up — the same query a
+    harness would otherwise have to reach into the database directly for
+    (e.g. via `docker exec <db> psql`) since recall() only searches embedded
+    rows and gives no signal about what's still pending. Only meaningful for
+    eval harnesses that seed a known corpus and need to know when it's safe
+    to start querying, not a general-purpose progress API."""
+    if not config.settings.eval_mode:
+        raise HTTPException(404, "Not found")
+
+    async with get_main_pool().acquire() as conn:
+        pending = await conn.fetchval(
+            """
+            SELECT count(*) FROM hindsight_memories
+            WHERE agent_id = $1 AND embedding IS NULL AND embedding_attempts < 3
+            """,
+            agent_id,
+        )
+    return {"pending": pending}
 
 
 @router.post("/recall")

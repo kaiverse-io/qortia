@@ -390,6 +390,8 @@ async def test_eval_router_guards_and_temporal_seed_paths(
         await eval_router.eval_recall("Qortia", TENANT_ID, AGENT_ID)
     with pytest.raises(HTTPException):
         await eval_router.eval_reflect(TENANT_ID, AGENT_ID)
+    with pytest.raises(HTTPException):
+        await eval_router.eval_pending_embeddings(AGENT_ID)
 
     conn = MagicMock()
     conn.execute = AsyncMock()
@@ -412,6 +414,11 @@ async def test_eval_router_guards_and_temporal_seed_paths(
             )
         )
         assert memory["status"] == "seeded"
+        assert memory["entities"] == []
+
+        conn.fetchval = AsyncMock(return_value=3)
+        pending = await eval_router.eval_pending_embeddings(AGENT_ID)
+        assert pending == {"pending": 3}
     finally:
         config.settings.eval_mode = old_eval_mode
 
