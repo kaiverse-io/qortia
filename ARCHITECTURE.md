@@ -338,7 +338,10 @@ knowledge pipelines directly. Every handler 404s unless `config.settings.eval_mo
 `qortia.app` only mounts this router at all under that same flag, so it's inert in production.
 
 Public interface: `POST /seed-agent`, `/seed-memory`, `/recall`, `/recall-full`, `/reflect`,
-`/remember-org`, `/knowledge`.
+`/remember-org`, `/knowledge`, `GET /pending-embeddings`. `/seed-memory` returns the entities
+it extracted and `/pending-embeddings` reports how many of an agent's memories are still
+waiting on the embedding worker — both added so `evals/run_ner_eval.py` and
+`evals/run_scale_eval.py` need neither a database connection nor `docker exec` into one.
 
 Depends on: `qortia.config`, `qortia.auth` (AgentIdentity, provision_eval_litellm_key),
 `qortia.db`, `qortia.knowledge`, and (via lazy imports to avoid import-time cycles)

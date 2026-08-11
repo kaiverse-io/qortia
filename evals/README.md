@@ -15,9 +15,18 @@ Real memory-quality harnesses for standalone Qortia (not a chassis placeholder).
 | `run_temporal_eval.py` | Temporal | `valid_from` / `valid_until` recall behavior |
 | `run_longmemeval.py` | Long-context | LongMemEval-style cases |
 | `run_longitudinal_eval.py` | Longitudinal | Multi-turn memory stability |
-| `run_extraction_eval.py` | NER / extract | Entity extraction quality |
+| `run_extraction_eval.py` | LLM extract | Fact/type extraction quality (remember()'s LLM step) |
+| `run_scale_eval.py` | Retrieval (scale) | Precision-at-budget / context cost on a real ~10k-doc corpus |
+| `run_ner_eval.py` | NER | spaCy entity-extraction quality against WikiANN gold spans |
 
-Supporting: `dataset_loader.py`, `mlflow_logger.py`, `datasets/`.
+Supporting: `dataset_loader.py`, `mlflow_logger.py`, `datasets/`, `fetch_wikiann.py`.
+
+`run_scale_eval.py` and `run_ner_eval.py` are standalone (no agnova import, no
+docker exec — see their own docstrings) and vendor their own real public-data
+corpora (`datasets/fiqa/`, `datasets/wikiann/`; see `datasets/README.md`). They
+exist independently of the equivalent comparison harnesses in agnova's own
+`evals/` (which additionally score agnova's git-backed `MemoryBackend` on the
+same corpus — a cross-repo comparison that belongs there, not here).
 
 ## Auth against standalone Qortia
 
@@ -27,7 +36,11 @@ Call the HTTP API with:
 - `X-Agent-Id: <uuid belonging to that tenant>`
 
 Some internal `/v1/internal/eval/*` routes exist only when `QORTIA_EVAL_MODE=true`
-(`qortia.eval_router`). They are not a substitute for production auth.
+(`qortia.eval_router`) — including `pending-embeddings`, used by `run_scale_eval.py`
+so it never needs a database connection. They are not a substitute for production
+auth. `run_scale_eval.py` additionally needs `/v1/admin/*` (ADR-004,
+`QORTIA_ADMIN_TOKEN`) to provision a real API key — eval-mode's own agent
+bypass issues no key, and `/v1/remember`'s real batched write path needs one.
 
 ## Live REH (dogfood)
 
