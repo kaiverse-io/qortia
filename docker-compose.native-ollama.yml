@@ -1,0 +1,32 @@
+# Repoint app/worker at an Ollama running natively on the host instead of
+# the containerized `ollama` service — Docker Desktop on Apple Silicon has
+# no GPU passthrough (Hypervisor.framework doesn't expose it to the Linux
+# VM), so containerized Ollama is CPU-only and can pin every core doing
+# embedding inference. Native Ollama on macOS uses Metal automatically.
+#
+# On the Mac host (outside Docker):
+#   brew install ollama && ollama serve
+#   ollama pull bge-m3
+#
+# Then:
+#   docker compose -f docker-compose.yml -f docker-compose.native-ollama.yml up -d
+#
+# app/worker still list `ollama` under depends_on (inherited from the base
+# file — Compose's `!reset` doesn't reliably clear depends_on entries via
+# an override, see docker/compose#11980) so the containerized `ollama`
+# service still starts and still gets health-checked. That's harmless: an
+# idle Ollama container costs ~0% CPU, and QORTIA_LITELLM_URL below means
+# it never actually receives inference traffic.
+
+services:
+  app:
+    environment:
+      QORTIA_LITELLM_URL: http://host.docker.internal:11434/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker:
+    environment:
+      QORTIA_LITELLM_URL: http://host.docker.internal:11434/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
