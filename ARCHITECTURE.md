@@ -308,7 +308,11 @@ Depends on: `qortia.config` (max size / TTL / model). Used by `qortia.embeddings
 
 CLI entrypoint (`qortia-worker` / `just worker`) that runs background loops outside the API
 process: embedding fill, archival, idle-reflection trigger, weekly summary. Same env as the API.
-`--only embed|archive|idle-reflect|weekly-summary` selects a subset.
+`--only embed|archive|idle-reflect|weekly-summary` selects a subset. Best-effort loads the spaCy
+NER model at startup, same as `app`'s lifespan (found live: without this, `_write_reflections`'
+entity extraction for consolidated memories the background idle-reflection trigger writes ran in
+this process with no model loaded at all — silently empty entities, `ner_model_not_loaded` logged,
+for the container's entire lifetime, since only `app.py` used to call this).
 
 Depends on: `qortia.common`, `qortia.db`, `qortia.embeddings`, `qortia.reflect`, `qortia.knowledge`.
 

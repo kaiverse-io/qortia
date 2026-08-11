@@ -21,6 +21,8 @@ import asyncio
 import logging
 from typing import Any
 
+import httpx
+
 from qortia.auth import litellm_auth_headers
 from qortia.common import get_litellm_client
 
@@ -62,15 +64,26 @@ async def chat_completion(
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
 
-    # +5s outer bound beyond httpx's own timeout — matches the buffer each
-    # call site used before consolidation (35/30, 20/15, 125/120).
-    async with asyncio.timeout(timeout + 5.0):
-        resp = await get_litellm_client().post(
-            "/chat/completions",
-            headers=litellm_auth_headers(litellm_key),
-            json=body,
-            timeout=timeout,
-        )
+    try:
+        # +5s outer bound beyond httpx's own timeout — matches the buffer each
+        # call site used before consolidation (35/30, 20/15, 125/120). httpx's
+        # own `timeout=timeout` below fires first in the normal case; this is
+        # a backstop for anything that doesn't respect it.
+        async with asyncio.timeout(timeout + 5.0):
+            resp = await get_litellm_client().post(
+                "/chat/completions",
+                headers=litellm_auth_headers(litellm_key),
+                json=body,
+                timeout=timeout,
+            )
+    except (TimeoutError, httpx.TimeoutException) as exc:
+        # Both raise with no message of their own (found live: every call
+        # site's broad `except Exception as exc: ... str(exc)` was logging
+        # entity_summary_update_failed/rerank_failed with error: '' under
+        # load, impossible to distinguish from any other silent failure) —
+        # ChatCompletionError is the one error type this module promises
+        # callers, and it should say what actually happened.
+        raise ChatCompletionError(f"timed out after {timeout}s") from exc
 
     if resp.status_code != 200:
         raise ChatCompletionError(f"LiteLLM error: {resp.status_code}")

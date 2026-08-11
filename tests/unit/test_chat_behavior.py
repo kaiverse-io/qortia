@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from qortia.chat import ChatCompletionError, chat_completion
@@ -59,6 +60,36 @@ async def test_chat_completion_raises_on_non_200(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
 
     with pytest.raises(ChatCompletionError, match="LiteLLM error: 503"):
+        await chat_completion(model="m", prompt="p", litellm_key="key", timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_wraps_bare_timeout_error_with_a_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """asyncio.timeout() raises a bare TimeoutError() with no args — found
+    live under load (entity_summary_update_failed/rerank_failed logging
+    error: '' for every timeout, indistinguishable from any other silent
+    failure). ChatCompletionError is the one error type this module
+    promises callers; it should say what happened, not repeat the same
+    emptiness."""
+    client = MagicMock()
+    client.post = AsyncMock(side_effect=TimeoutError())
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
+
+    with pytest.raises(ChatCompletionError, match="timed out after 5.0s"):
+        await chat_completion(model="m", prompt="p", litellm_key="key", timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_wraps_httpx_timeout_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = MagicMock()
+    client.post = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
+
+    with pytest.raises(ChatCompletionError, match="timed out after 5.0s"):
         await chat_completion(model="m", prompt="p", litellm_key="key", timeout=5.0)
 
 
