@@ -7,6 +7,8 @@ from uuid import uuid4
 
 import pytest
 
+from qortia import config
+
 TENANT_ID = uuid4()
 AGENT_ID = uuid4()
 
@@ -36,12 +38,16 @@ async def test_update_entity_summary_bootstraps_without_llm() -> None:
 async def test_update_entity_summary_merges_with_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     from qortia.entity_graph import _update_entity_summary
 
+    # rerank_model defaults to "" (not configured, skip) — this test is
+    # specifically about the LLM-merge path, so it must configure one
+    # explicitly rather than rely on a default that used to be non-empty.
+    monkeypatch.setattr(config.settings, "rerank_model", "test-model")
     response = MagicMock()
+    response.status_code = 200
     response.json.return_value = {"choices": [{"message": {"content": "Updated Qortia summary"}}]}
-    response.raise_for_status = MagicMock()
     client = MagicMock()
     client.post = AsyncMock(return_value=response)
-    monkeypatch.setattr("qortia.entity_graph.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
 
     summary = await _update_entity_summary(
         "Old summary about Qortia",
@@ -53,14 +59,41 @@ async def test_update_entity_summary_merges_with_llm(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
+async def test_update_entity_summary_skips_the_network_call_when_no_model_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """rerank_model="" (the default) means 'not configured' — this function
+    had its own separate hardcoded "anthropic/claude-3-haiku-20240307"
+    string before, disconnected from config.settings.rerank_model entirely,
+    so fixing rerank_model's default never actually reached this call site
+    until it was routed through the same setting."""
+    from qortia.entity_graph import _update_entity_summary
+
+    monkeypatch.setattr(config.settings, "rerank_model", "")
+    client = MagicMock()
+    client.post = AsyncMock()
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
+
+    existing = "Stable Qortia summary"
+    summary = await _update_entity_summary(existing, "New info", "key")
+
+    assert summary == existing
+    client.post.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_update_entity_summary_returns_existing_on_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from qortia.entity_graph import _update_entity_summary
 
+    # Must configure a model, or the empty-model guard returns early and this
+    # test would pass vacuously without ever reaching the RuntimeError path
+    # it's meant to exercise.
+    monkeypatch.setattr(config.settings, "rerank_model", "test-model")
     client = MagicMock()
     client.post = AsyncMock(side_effect=RuntimeError("down"))
-    monkeypatch.setattr("qortia.entity_graph.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
 
     existing = "Stable Qortia summary"
     summary = await _update_entity_summary(existing, "New info", "key")

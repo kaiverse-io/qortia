@@ -17,6 +17,16 @@ dependencies = [
     "spacy>=3.8",
     # Exact model wheel — required for English NER / entity-filter recall.
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+    # Exact model wheel — required for the Indic NER routing table
+    # (qortia.knowledge._INDIC_MODEL: hi/bn/ta/te/mr -> this model). Previously
+    # unpinned: knowledge.py has always referenced "xx_ent_wiki_sm" by name but
+    # nothing in this dependency list ever installed it, so spacy.load() 404'd
+    # in every environment built from this file — remember() swallowed the
+    # OSError (ner_extraction_failed, logged at WARNING) and silently stored
+    # entities=[] for every memory in all five supported Indic languages.
+    # evals/run_ner_eval_qortia.py caught this empirically: 0/16 gold entities
+    # recovered on a 15-sentence Hindi WikiANN sample before this pin existed.
+    "xx-ent-wiki-sm @ https://github.com/explosion/spacy-models/releases/download/xx_ent_wiki_sm-3.8.0/xx_ent_wiki_sm-3.8.0-py3-none-any.whl",
 ]
 
 [project.scripts]

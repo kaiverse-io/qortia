@@ -200,6 +200,15 @@ class RecallRequest(BaseModel):
     entities: list[str] | None = None
     as_of: datetime | None = None  # point-in-time recall (16j)
     lang: str | None = None  # BCP-47 filter; None = search all languages
+    # Caps combined RecallResult.content length by dropping whole results,
+    # never truncating one (see recall_helpers._apply_char_budget). None (the
+    # common case — no caller passes this) falls back to the server-configured
+    # default (config.settings.recall_default_max_chars, 8000 chars); pass a
+    # non-positive value explicitly to opt out and get everything. The
+    # per-request result-count limits (config.settings.recall_*_result_limit)
+    # bound result *count* only, not response size — recall() had no size cap
+    # of any kind before this field existed.
+    max_chars: int | None = None
 
     @field_validator("lang", mode="before")
     @classmethod

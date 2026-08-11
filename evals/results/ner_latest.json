@@ -1,0 +1,83 @@
+{
+  "dataset": "wikiann",
+  "n_per_lang": 100,
+  "runs": [
+    {
+      "lang": "hi",
+      "n_examples": 100,
+      "n_gold_entities": 130,
+      "n_predicted_entities": 17,
+      "text_precision": 0.5882352941176471,
+      "text_recall": 0.07692307692307693,
+      "text_f1": 0.1360544217687075,
+      "type_precision": 0.17647058823529413,
+      "zero_extraction_rate": 0.84
+    },
+    {
+      "lang": "bn",
+      "n_examples": 100,
+      "n_gold_entities": 136,
+      "n_predicted_entities": 17,
+      "text_precision": 0.7058823529411765,
+      "text_recall": 0.08823529411764706,
+      "text_f1": 0.15686274509803924,
+      "type_precision": 0.35294117647058826,
+      "zero_extraction_rate": 0.84
+    },
+    {
+      "lang": "ta",
+      "n_examples": 100,
+      "n_gold_entities": 127,
+      "n_predicted_entities": 21,
+      "text_precision": 0.47619047619047616,
+      "text_recall": 0.07874015748031496,
+      "text_f1": 0.13513513513513514,
+      "type_precision": 0.19047619047619047,
+      "zero_extraction_rate": 0.82
+    },
+    {
+      "lang": "te",
+      "n_examples": 100,
+      "n_gold_entities": 118,
+      "n_predicted_entities": 24,
+      "text_precision": 0.3333333333333333,
+      "text_recall": 0.06779661016949153,
+      "text_f1": 0.11267605633802817,
+      "type_precision": 0.08333333333333333,
+      "zero_extraction_rate": 0.78
+    },
+    {
+      "lang": "mr",
+      "n_examples": 100,
+      "n_gold_entities": 126,
+      "n_predicted_entities": 30,
+      "text_precision": 0.5,
+      "text_recall": 0.11904761904761904,
+      "text_f1": 0.1923076923076923,
+      "type_precision": 0.1,
+      "zero_extraction_rate": 0.74
+    },
+    {
+      "lang": "en",
+      "n_examples": 100,
+      "n_gold_entities": 223,
+      "n_predicted_entities": 147,
+      "text_precision": 0.8571428571428571,
+      "text_recall": 0.5650224215246636,
+      "text_f1": 0.681081081081081,
+      "type_precision": 0.5714285714285714,
+      "zero_extraction_rate": 0.2
+    },
+    {
+      "lang": "de",
+      "n_examples": 100,
+      "n_gold_entities": 138,
+      "n_predicted_entities": 168,
+      "text_precision": 0.5654761904761905,
+      "text_recall": 0.6884057971014492,
+      "text_f1": 0.6209150326797385,
+      "type_precision": 0.35119047619047616,
+      "zero_extraction_rate": 0.26
+    }
+  ]
+}

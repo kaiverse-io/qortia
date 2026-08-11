@@ -115,10 +115,17 @@ def test_sort_by_importance_missing_attrs_handled() -> None:
 
 
 def test_rerank_model_default_in_settings() -> None:
+    """Empty, not a hardcoded vendor model — nothing about rerank_model is
+    load-bearing the way embedding_model is (pinned to migrations/V1's
+    vector(1024), ADR-002), so there's no reason a "drop into any
+    Postgres+pgvector instance" project should ship a specific commercial
+    model as its unconfigured default. recall_rerank._llm_rerank treats
+    empty as 'not configured, skip' rather than a real call guaranteed to
+    fail."""
     from qortia.config import Settings
 
     s = Settings()
-    assert s.rerank_model == "anthropic/claude-3-haiku-20240307"
+    assert s.rerank_model == ""
 
 
 def test_rerank_model_env_override() -> None:
@@ -142,6 +149,7 @@ async def test_llm_rerank_uses_settings_rerank_model() -> None:
     async def fake_post(path, headers, json, timeout):
         captured_model["model"] = json["model"]
         resp = MagicMock()
+        resp.status_code = 200
         resp.json.return_value = {
             "choices": [{"message": {"content": "[1,2,3]"}}],
             "usage": {},
@@ -149,7 +157,7 @@ async def test_llm_rerank_uses_settings_rerank_model() -> None:
         return resp
 
     with (
-        patch("qortia.recall_rerank.get_litellm_client") as mock_client,
+        patch("qortia.chat.get_litellm_client") as mock_client,
         patch("qortia.recall_rerank.get_litellm_key", return_value="test-key"),
         patch("qortia.config.settings") as mock_settings,
     ):

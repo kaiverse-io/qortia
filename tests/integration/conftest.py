@@ -148,6 +148,12 @@ def _app_and_loop(setup_infrastructure: None, _pg_urls: tuple[str, str]):  # typ
     os.environ["QORTIA_LITELLM_URL"] = "http://mock-litellm:4000"
     os.environ["QORTIA_EVAL_MODE"] = "false"
     os.environ["QORTIA_ADMIN_TOKEN"] = ADMIN_TOKEN
+    # rerank_model has no hardcoded default (a315551) — /v1/reflect and the
+    # idle-reflection trigger both 503/no-op without one. The mock LiteLLM
+    # client below answers any /chat/completions call regardless of model
+    # name, so any non-empty value exercises the real reflect path these
+    # tests are actually verifying.
+    os.environ["QORTIA_RERANK_MODEL"] = "mock-rerank-model"
 
     # qortia.* modules read settings via `config.settings.<field>` (a live
     # attribute lookup on the qortia.config module), not a frozen

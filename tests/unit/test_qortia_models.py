@@ -355,7 +355,9 @@ def test_extract_entities_hindi_uses_indic_spacy_path(
     mock_doc = MagicMock()
     mock_doc.ents = [mock_ent]
     mock_pipeline = MagicMock(return_value=mock_doc)
-    monkeypatch.setitem(kmod._indic_pipelines, "hi", mock_pipeline)
+    # Cache is keyed by model name, not lang (every Indic lang shares one loaded
+    # pipeline — see _get_indic_pipeline's docstring for why keying by lang was a bug).
+    monkeypatch.setitem(kmod._indic_pipelines, kmod._INDIC_MODEL["hi"], mock_pipeline)
 
     result = kmod.extract_entities(
         "\u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940 "

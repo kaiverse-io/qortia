@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header
 
+from qortia import config
 from qortia.auth import AgentIdentity, require_agent
 from qortia.db import get_main_pool, tenant_transaction
 from qortia.embeddings import embed_query as _embed_query
@@ -18,15 +19,13 @@ from qortia.models import (
     RecallResult,
 )
 from qortia.recall_helpers import (
-    KNOWLEDGE_RESULT_LIMIT,
-    ORG_RESULT_LIMIT,
-    PRIVATE_RESULT_LIMIT,
-    SEARCH_FETCH_MULTIPLIER,
+    _apply_char_budget,
     _bm25_normalization,
     _entity_filter_clause,
     _keyword_boost,
     _lang_filter_clause,
     _mmr,
+    _resolve_max_chars,
     _rrf_fuse,
     _sort_by_importance,
     _temporal_filter_clause,
@@ -191,6 +190,9 @@ async def _bm25_private(body: RecallRequest, agent: AgentIdentity) -> list[Recal
         body.lang,
         param=3 + len(type_params) + len(entity_params) + len(temporal_params),
     )
+    limit = (
+        config.settings.recall_private_result_limit * config.settings.recall_search_fetch_multiplier
+    )
     async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         norm = _bm25_normalization(body.query)
         rows = await conn.fetch(
@@ -208,7 +210,7 @@ async def _bm25_private(body: RecallRequest, agent: AgentIdentity) -> list[Recal
               {entity_clause}
               {temporal_clause}
               {lang_clause}
-            ORDER BY rank DESC LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
+            ORDER BY rank DESC LIMIT {limit}
         """,  # noqa: S608
             body.query,
             agent.agent_id,
@@ -236,6 +238,9 @@ async def _vector_private(
         body.lang,
         param=3 + len(type_params) + len(entity_params) + len(temporal_params),
     )
+    limit = (
+        config.settings.recall_private_result_limit * config.settings.recall_search_fetch_multiplier
+    )
     async with tenant_transaction(get_main_pool(), agent.tenant_id, agent.agent_id) as conn:
         rows = await conn.fetch(
             f"""
@@ -253,7 +258,7 @@ async def _vector_private(
               {entity_clause}
               {temporal_clause}
               {lang_clause}
-            ORDER BY embedding <=> $1::vector LIMIT {PRIVATE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
+            ORDER BY embedding <=> $1::vector LIMIT {limit}
         """,  # noqa: S608
             str(qe),
             agent.agent_id,
@@ -283,6 +288,9 @@ async def _bm25_org(
         agent_division=agent_division,
     ) as conn:
         norm = _bm25_normalization(body.query)
+        limit = (
+            config.settings.recall_org_result_limit * config.settings.recall_search_fetch_multiplier
+        )
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, NULL::float AS importance,
@@ -298,7 +306,7 @@ async def _bm25_org(
               AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
               {lang_clause}
-            ORDER BY rank DESC LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
+            ORDER BY rank DESC LIMIT {limit}
         """,  # noqa: S608
             body.query,
             agent.tenant_id,
@@ -326,6 +334,9 @@ async def _vector_org(
         memory_clearance_order=clearance_order,
         agent_division=agent_division,
     ) as conn:
+        limit = (
+            config.settings.recall_org_result_limit * config.settings.recall_search_fetch_multiplier
+        )
         rows = await conn.fetch(
             f"""
             SELECT id, type, content, NULL::float AS importance,
@@ -341,7 +352,7 @@ async def _vector_org(
               AND (valid_until IS NULL OR valid_until > now())
               {entity_clause}
               {lang_clause}
-            ORDER BY embedding <=> $1::vector LIMIT {ORG_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
+            ORDER BY embedding <=> $1::vector LIMIT {limit}
         """,  # noqa: S608
             str(qe),
             agent.tenant_id,
@@ -367,6 +378,10 @@ async def _bm25_knowledge(
         agent_division=agent_division,
     ) as conn:
         norm = _bm25_normalization(body.query)
+        limit = (
+            config.settings.recall_knowledge_result_limit
+            * config.settings.recall_search_fetch_multiplier
+        )
         rows = await conn.fetch(
             f"""
             SELECT id, 'knowledge' AS type, content, NULL::float AS importance,
@@ -378,7 +393,7 @@ async def _bm25_knowledge(
               AND ($3 >= (SELECT level_order FROM qortia_clearance_levels
                            WHERE level_name = org_knowledge.min_clearance))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
-            ORDER BY rank DESC LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
+            ORDER BY rank DESC LIMIT {limit}
         """,  # noqa: S608
             body.query,
             agent.tenant_id,
@@ -402,6 +417,10 @@ async def _vector_knowledge(
         memory_clearance_order=clearance_order,
         agent_division=agent_division,
     ) as conn:
+        limit = (
+            config.settings.recall_knowledge_result_limit
+            * config.settings.recall_search_fetch_multiplier
+        )
         rows = await conn.fetch(
             f"""
             SELECT id, 'knowledge' AS type, content, NULL::float AS importance,
@@ -414,7 +433,7 @@ async def _vector_knowledge(
                            WHERE level_name = org_knowledge.min_clearance))
               AND ($4 = ANY(audience) OR 'all' = ANY(audience))
             ORDER BY embedding <=> $1::vector
-            LIMIT {KNOWLEDGE_RESULT_LIMIT * SEARCH_FETCH_MULTIPLIER}
+            LIMIT {limit}
         """,  # noqa: S608
             str(qe),
             agent.tenant_id,
@@ -800,6 +819,16 @@ async def recall(  # noqa: C901
 
     if body.rerank and len(results) >= 2:
         results = await _llm_rerank(body.query, results, agent)
+
+    effective_max_chars = _resolve_max_chars(body.max_chars)
+    if effective_max_chars > 0:
+        # After rerank, so the budget is applied to final order, not pre-rerank
+        # order — and before the access-recording/session-log side effects
+        # below, so they only touch what's actually returned. A result dropped
+        # here was never shown to the caller; recording recall_count/
+        # last_recalled_at on it anyway would inflate its future ranking for
+        # an access that didn't happen.
+        results = _apply_char_budget(results, effective_max_chars)
 
     async def _safe_record_recall_access() -> None:
         try:

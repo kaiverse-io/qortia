@@ -90,7 +90,7 @@ async def test_call_litellm_reflect_rejects_malformed_reflection_contract(
 
     client = MagicMock()
     client.post = AsyncMock(return_value=_litellm_response(json.dumps(payload)))
-    monkeypatch.setattr("qortia.reflect.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
 
     with caplog.at_level("ERROR"), pytest.raises(HTTPException) as exc:
         await _call_litellm_reflect(
@@ -133,7 +133,7 @@ async def test_call_litellm_reflect_returns_valid_create_update_retain_actions(
     }
     client = MagicMock()
     client.post = AsyncMock(return_value=_litellm_response(json.dumps(payload)))
-    monkeypatch.setattr("qortia.reflect.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
 
     reflections = await _call_litellm_reflect("model", ["recent"], [], "key", AGENT_ID, TENANT_ID)
 
@@ -149,12 +149,67 @@ async def test_call_litellm_reflect_raises_on_non_200_response(
 
     client = MagicMock()
     client.post = AsyncMock(return_value=_litellm_response("{}", status_code=503))
-    monkeypatch.setattr("qortia.reflect.get_litellm_client", lambda: client)
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
 
     with pytest.raises(HTTPException) as exc:
         await _call_litellm_reflect("model", ["recent"], [], "key", AGENT_ID, TENANT_ID)
 
     assert exc.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_reflect_endpoint_503s_when_no_model_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The explicit, agent-authed /v1/reflect endpoint must tell the caller
+    reflection isn't available, not silently return memories_written=0 as
+    if nothing were wrong — unlike _reflect_agent's background trigger,
+    there's a real caller here to report the error to."""
+    from qortia import config
+    from qortia.auth import AgentIdentity
+    from qortia.reflect import reflect
+
+    monkeypatch.setattr(config.settings, "rerank_model", "")
+    conn = MagicMock()
+    conn.fetch = AsyncMock(return_value=[])
+    monkeypatch.setattr("qortia.reflect.get_main_pool", lambda: _pool(conn))
+    monkeypatch.setattr("qortia.reflect.tenant_transaction", lambda *_a, **_k: _tenant_tx(conn))
+    monkeypatch.setattr("qortia.common.assert_agent_active", AsyncMock())
+
+    agent = AgentIdentity(agent_id=AGENT_ID, tenant_id=TENANT_ID)
+    with pytest.raises(HTTPException) as exc:
+        await reflect(agent)
+
+    assert exc.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_reflect_agent_skips_silently_when_no_model_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The automatic background trigger (_trigger_idle_reflections runs this
+    per-eligible-agent, up to 50 per cycle) has no caller to report an error
+    to and this is a static global setting — must return quietly rather
+    than raise or log a warning per agent per cycle for one unchanging
+    fact, and critically must never reach the LiteLLM call at all."""
+    from qortia import config
+    from qortia.reflect import _reflect_agent
+
+    monkeypatch.setattr(config.settings, "rerank_model", "")
+    monkeypatch.setattr(
+        "qortia.remember._fetch_agent_clearance", AsyncMock(return_value=(2, "all"))
+    )
+    conn = MagicMock()
+    conn.fetch = AsyncMock(return_value=[{"content": "some recent memory"}])
+    monkeypatch.setattr("qortia.reflect.get_main_pool", lambda: _pool(conn))
+    monkeypatch.setattr("qortia.reflect.tenant_transaction", lambda *_a, **_k: _tenant_tx(conn))
+    client = MagicMock()
+    client.post = AsyncMock()
+    monkeypatch.setattr("qortia.chat.get_litellm_client", lambda: client)
+
+    await _reflect_agent(AGENT_ID, TENANT_ID)
+
+    client.post.assert_not_called()
 
 
 def test_compute_stability_scores_only_scores_updates_with_both_embeddings() -> None:

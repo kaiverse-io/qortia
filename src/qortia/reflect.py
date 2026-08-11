@@ -10,8 +10,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from qortia import config
-from qortia.auth import AgentIdentity, get_litellm_key, litellm_auth_headers, require_agent
-from qortia.common import get_litellm_client
+from qortia.auth import AgentIdentity, get_litellm_key, require_agent
+from qortia.chat import ChatCompletionError, chat_completion
 from qortia.db import get_main_pool, tenant_transaction
 from qortia.embeddings import embed_text as _get_embedding
 from qortia.embeddings import validate_embedding_config as validate_embedding_dimensions
@@ -120,6 +120,14 @@ async def reflect(agent: AgentIdentity = Depends(require_agent)) -> ReflectRespo
         )
 
     model = config.settings.rerank_model
+    if not model:
+        # Unlike _reflect_agent's background trigger (skips silently — an
+        # automatic loop has no caller to report an error to), this is an
+        # explicit agent-authed request: the caller asked for reflection and
+        # deserves to know it can't happen, not a misleadingly-successful
+        # "0 memories written" response. 503 = the feature exists but isn't
+        # available given current server configuration.
+        raise HTTPException(503, "reflection is unavailable — no rerank_model configured")
     litellm_key = await get_litellm_key(str(agent.tenant_id))
     reflections = await _call_litellm_reflect(
         model=model,
@@ -358,34 +366,20 @@ async def _call_litellm_reflect(  # noqa: C901
 ) -> list[dict]:  # type: ignore[type-arg]
     prompt = _build_reflect_prompt(recent, existing)
 
-    async with asyncio.timeout(125.0):
-        resp = await get_litellm_client().post(
-            "/chat/completions",
-            headers=litellm_auth_headers(litellm_key),
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_object"},
-            },
+    try:
+        raw = await chat_completion(
+            model=model,
+            prompt=prompt,
+            litellm_key=litellm_key,
             timeout=120.0,
+            json_mode=True,
+            log_event="qortia_llm_reflect",
+            tenant_id=str(tenant_id),
         )
-
-    if resp.status_code != 200:
-        raise HTTPException(500, f"LiteLLM error: {resp.status_code}")
+    except ChatCompletionError as exc:
+        raise HTTPException(500, str(exc)) from exc
 
     try:
-        raw_resp = resp.json()
-        usage = raw_resp.get("usage", {})
-        logger.info(
-            {
-                "event": "qortia_llm_reflect",
-                "qortia.tenant_id": str(tenant_id),
-                "model": model,
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0),
-            }
-        )
-        raw = raw_resp["choices"][0]["message"]["content"]
         parsed = json.loads(raw)
         reflections = parsed.get("reflections", [])
         if not reflections:
@@ -403,7 +397,7 @@ async def _call_litellm_reflect(  # noqa: C901
                     raise ValueError("importance must be numeric")
                 if not r.get("content"):
                     raise ValueError("content must not be empty")
-    except (KeyError, ValueError, json.JSONDecodeError) as exc:
+    except (ValueError, json.JSONDecodeError) as exc:
         logger.error({"event": "reflection_llm_malformed", "error": str(exc)})
         raise HTTPException(500, "Reflection failed: malformed LLM response")  # noqa: B904
 
@@ -761,6 +755,15 @@ async def _reflect_agent(agent_id: UUID, tenant_id: UUID) -> None:
             return  # nothing to reflect on
 
         model = config.settings.rerank_model
+        if not model:
+            # Silent, matching the line above — an automatic loop over up to
+            # 50 agents per trigger cycle has no caller to report an error
+            # to, and this is a static, global setting: logging it once per
+            # eligible agent per cycle would just be repeated noise for one
+            # unchanging fact. /v1/reflect (the explicit, caller-facing
+            # path) raises instead — see its own guard for why the two
+            # differ.
+            return
         litellm_key = await get_litellm_key(str(tenant_id))
 
         reflections = await _call_litellm_reflect(

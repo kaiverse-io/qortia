@@ -25,6 +25,7 @@ from qortia.db import close_main_pool, init_main_pool
 from qortia.embeddings import validate_embedding_config
 from qortia.eval_router import router as eval_router
 from qortia.knowledge import load_spacy_model
+from qortia.logging_config import configure as configure_logging
 from qortia.router import router as qortia_router
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    # First thing in the request-serving process's lifetime, ahead of any log
+    # call this lifespan or a request handler might make: without this,
+    # qortia's own loggers have no handler anywhere in their hierarchy in this
+    # process (only workers.py called logging.basicConfig, and only for
+    # itself) and fall through to logging.lastResort — a bare stderr handler,
+    # no formatter, hardcoded WARNING floor. Two visible symptoms that was
+    # causing: INFO-level calls going nowhere at all (not quieter — gone),
+    # and WARNING+ calls printing as an unformatted str(dict) with no
+    # timestamp/level/logger-name, interleaved with uvicorn's own
+    # differently-formatted access-log lines in the same stream.
+    configure_logging()
     init_litellm_client()
     await init_main_pool()
     await validate_embedding_config()

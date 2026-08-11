@@ -80,6 +80,13 @@ services:
       # tenant/agent/key provisioning for callers with no shell into this box.
       QORTIA_ADMIN_TOKEN: ${QORTIA_ADMIN_TOKEN:-}
       QORTIA_EVAL_MODE: ${QORTIA_EVAL_MODE:-false}
+      # Unset (default) = reranking skipped, not attempted against nothing —
+      # see config.Settings.rerank_model. .env alone does NOT reach this
+      # container; compose only passes vars explicitly listed here, so this
+      # line existing is what makes QORTIA_RERANK_MODEL=... in .env actually
+      # take effect (found live: .env had a value set that silently never
+      # reached app/worker until this line was added).
+      QORTIA_RERANK_MODEL: ${QORTIA_RERANK_MODEL:-}
     ports:
       - "${QORTIA_APP_PORT:-8081}:8080"
     depends_on:
@@ -96,6 +103,13 @@ services:
       QORTIA_LITELLM_URL: http://ollama:11434/v1
       QORTIA_EMBEDDING_MODEL: ${QORTIA_EMBEDDING_MODEL:-bge-m3}
       QORTIA_EMBEDDING_DIMENSION: ${QORTIA_EMBEDDING_DIMENSION:-1024}
+      # The background reflection trigger (run_background_reflection_trigger,
+      # workers.py) runs in *this* container, not app — missing here means
+      # reflection silently never had a model regardless of what app or
+      # .env had set, which is exactly how this went unnoticed: only found
+      # by directly checking `docker exec qortia-worker-1 env`, not by
+      # reasoning about the compose file.
+      QORTIA_RERANK_MODEL: ${QORTIA_RERANK_MODEL:-}
     depends_on:
       db:
         condition: service_healthy
