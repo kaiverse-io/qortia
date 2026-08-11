@@ -24,6 +24,7 @@ from qortia.common import close_litellm_client, init_litellm_client
 from qortia.db import close_main_pool, init_main_pool
 from qortia.embeddings import validate_embedding_config
 from qortia.knowledge import run_weekly_summary_task
+from qortia.logging_config import configure as configure_logging
 from qortia.reflect import (
     run_archival_task,
     run_background_reflection_trigger,
@@ -59,7 +60,10 @@ async def _run(only: list[str] | None) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # Shared with app.py's lifespan — was this module's own inline
+    # basicConfig() before qortia.logging_config existed, which is exactly
+    # why app.py's process had no equivalent and used unformatted defaults.
+    configure_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--only",
