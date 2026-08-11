@@ -44,17 +44,25 @@ _INDIC_LABEL_MAP: dict[str, str] = {"PER": "PERSON", "ORG": "ORG", "LOC": "GPE"}
 
 _SUPPORTED_LANGS = INDIC_NER_LANGS | {"en"}
 
-_indic_pipelines: dict[str, Any] = {}  # lang -> spaCy Language
+_indic_pipelines: dict[str, Any] = {}  # spaCy model name -> loaded Language
 
 
 def _get_indic_pipeline(lang: str) -> Any:
-    """Load and cache the spaCy pipeline for an Indic language. Fails fast on missing model."""
-    if lang not in _indic_pipelines:
-        model = _INDIC_MODEL[lang]
+    """Load and cache the spaCy pipeline for an Indic language. Fails fast on missing model.
+
+    Cached by model name, not by `lang`: every entry in `_INDIC_MODEL` currently maps to the
+    same "xx_ent_wiki_sm" string, so keying by `lang` loaded and held five independent copies
+    of one multilingual model in memory — real weight for zero behavioural difference, since a
+    loaded spaCy pipeline has no per-`lang` state and is safe to share across the languages
+    routed to it. Found by reproducing an OOM kill under real traffic that exercises all five
+    Indic languages against one process in sequence — the crash landed loading the fifth.
+    """
+    model = _INDIC_MODEL[lang]
+    if model not in _indic_pipelines:
         import spacy
 
         try:
-            _indic_pipelines[lang] = spacy.load(model)
+            _indic_pipelines[model] = spacy.load(model)
             logger.info({"event": "spacy_model_loaded", "model": model, "lang": lang})
         except OSError as exc:
             logger.error(
@@ -66,7 +74,7 @@ def _get_indic_pipeline(lang: str) -> Any:
                 }
             )
             raise
-    return _indic_pipelines[lang]
+    return _indic_pipelines[model]
 
 
 def load_spacy_model() -> None:
@@ -94,7 +102,15 @@ def extract_entities(text: str, lang: str = "en") -> list[str]:
     Returns text only (label stripped) for backward-compatible callers.
     """
     if lang not in _SUPPORTED_LANGS:
-        logger.warning({"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"})
+        # Not a failure: any lang outside _SUPPORTED_LANGS falls back to en_core_web_sm by
+        # design (the whole point of _SUPPORTED_LANGS/_INDIC_MODEL is "these five route to
+        # the multilingual model, everything else routes here"). Previously WARNING, which
+        # put this on the same level as ner_model_not_loaded/ner_extraction_failed below —
+        # genuine failures — so a real failure had no way to stand out from routine fallback
+        # traffic in the logs (ARCHITECTURE.md Known Limitations has the concrete case this
+        # caused: the xx_ent_wiki_sm dependency was never installed and the failure it
+        # produced was indistinguishable, at a glance, from this line).
+        logger.info({"event": "ner_lang_fallback_to_en", "lang": lang})
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
         return list(dict.fromkeys(ent.text for ent in doc.ents if ent.label_ in _INDIC_LABEL_MAP))[
@@ -114,7 +130,15 @@ def extract_entities_with_types(text: str, lang: str = "en") -> list[tuple[str, 
     Returns list of (entity_text, label). Best-effort — caller wraps in try/except.
     """
     if lang not in _SUPPORTED_LANGS:
-        logger.warning({"event": "ner_lang_unsupported", "lang": lang, "fallback": "en"})
+        # Not a failure: any lang outside _SUPPORTED_LANGS falls back to en_core_web_sm by
+        # design (the whole point of _SUPPORTED_LANGS/_INDIC_MODEL is "these five route to
+        # the multilingual model, everything else routes here"). Previously WARNING, which
+        # put this on the same level as ner_model_not_loaded/ner_extraction_failed below —
+        # genuine failures — so a real failure had no way to stand out from routine fallback
+        # traffic in the logs (ARCHITECTURE.md Known Limitations has the concrete case this
+        # caused: the xx_ent_wiki_sm dependency was never installed and the failure it
+        # produced was indistinguishable, at a glance, from this line).
+        logger.info({"event": "ner_lang_fallback_to_en", "lang": lang})
     if lang in INDIC_NER_LANGS:
         doc = _get_indic_pipeline(lang)(text)
         seen: dict[str, str] = {}
