@@ -181,15 +181,86 @@ to LiteLLM (`init_litellm_client`/`close_litellm_client`/`get_litellm_client`), 
 
 Depends on: `qortia.config` (litellm_url / embedding_model), `httpx`, `asyncpg`, `fastapi`.
 
+### chat
+
+Single owner of LiteLLM `/chat/completions` calls, the same "one module owns this endpoint shape"
+discipline `embeddings.py` already applies to `/embeddings` (ADR-002) — extracted after three call
+sites (`recall_rerank._llm_rerank`, `entity_graph._update_entity_summary`,
+`reflect._call_litellm_reflect`) turned out to each hand-roll the same request body, response
+parsing (`choices[0].message.content`), and usage-token logging slightly differently, which is
+exactly how `entity_graph.py`'s separate hardcoded model string went unnoticed (see `config`
+below).
+
+```
+chat_completion(model, prompt, litellm_key, timeout, json_mode?, max_tokens?, log_event?)
+        │
+        ▼
+ POST /chat/completions ──► 200? ──no──► raise ChatCompletionError("LiteLLM error: {status}")
+        │ yes
+        ▼
+ choices[0].message.content present? ──no──► raise ChatCompletionError("malformed …")
+        │ yes
+        ▼
+ log_event set? → log usage (prompt/completion tokens) ──► return content: str
+```
+
+What's *not* shared: failure policy. `chat_completion` only distinguishes "got content" from
+"didn't" (`ChatCompletionError`) — each caller still decides whether that's swallow-and-fall-back
+(`_llm_rerank`, `_update_entity_summary`: broad `except Exception`, return the pre-LLM value) or
+propagate-as-HTTP-error (`reflect.reflect`'s explicit endpoint: catches `ChatCompletionError`,
+re-raises `HTTPException(500, …)`). Consolidating that too would have meant picking one failure
+policy for three call sites that genuinely need different ones — see the `config` section's note
+on `rerank_model`'s per-consumer guards for why that split is deliberate, not an oversight.
+
+Depends on: `qortia.auth` (`litellm_auth_headers`), `qortia.common` (LiteLLM client). Used by
+`recall_rerank`, `entity_graph`, `reflect`. Do not POST `/chat/completions` from any other module —
+call `chat_completion`.
+
 ### config
 
-Env-driven runtime settings: the `Settings` dataclass, `load_settings()`, and the module-level
-`settings` singleton. Includes database URL, LiteLLM URL/API key, **`embedding_model` /
-`embedding_dimension`** (defaults `bge-m3` / `1024`), dedup similarity threshold, embedding
-cache size/TTL, eval_mode, rerank model, reflection threshold, idle-reflection interval/window —
-plain environment variables with sane local defaults (see `.env.example`).
+Env- and (now) file-driven runtime settings: the `Settings` dataclass, `load_settings()`, and the
+module-level `settings` singleton. Includes database URL, LiteLLM URL/API key,
+**`embedding_model` / `embedding_dimension`** (defaults `bge-m3` / `1024`, structurally pinned to
+migrations/V1's `vector(1024)` — ADR-002), dedup similarity threshold, embedding cache size/TTL,
+eval_mode, rerank model, reflection threshold, idle-reflection interval/window, and the
+recall-tuning group below.
 
-Depends on: nothing internal — stdlib `os`/`dataclasses` only.
+`rerank_model` is shared, unconfigured-by-default state read by three independent consumers —
+`recall_rerank._llm_rerank`, `reflect.py`'s two `_call_litellm_reflect` callers, and
+`entity_graph._update_entity_summary` (which had its own separately hardcoded
+`"anthropic/claude-3-haiku-20240307"` string, disconnected from this setting entirely, until it
+was found and routed through here) — each with its own empty-model guard skipping the call
+instead of hitting a network round-trip guaranteed to fail. All three now go through
+`qortia.chat.chat_completion` for the actual request/response mechanics (see `chat` above), but
+each still owns its own guard and failure policy: `/v1/reflect` (an explicit, agent-authed
+request) 503s rather than skipping silently, since there's a real caller here to tell, unlike the
+automatic background trigger or best-effort entity-summary maintenance.
+No vendor default is shipped for this setting — unlike `embedding_model`, nothing about it is
+load-bearing. For a local Ollama-only stack (no LiteLLM gateway in front — see `QORTIA_LITELLM_URL`
+in `.env.example`), a real chat model has to be pulled directly into Ollama; verified live against
+real `/v1/reflect` data that `qwen2.5:0.5b`/`:1.5b` don't reliably follow the structured JSON
+contract reflection needs (hallucinated actions, non-numeric fields) but `qwen2.5:3b` does.
+
+Precedence: env var > optional TOML file (`QORTIA_CONFIG_FILE`, default `qortia.toml` in the
+working directory, gitignored — `qortia.example.toml` is the committed template) > code default.
+A missing file reproduces pure-env-var behaviour exactly; a malformed one logs a warning and is
+treated as absent rather than crashing startup. Secrets and per-deployment topology
+(`database_url`, `litellm_api_key`, `qortia_admin_token`, …) are deliberately not exposed to the
+file layer — only tuning knobs are, so a config file can never become a second place a credential
+leaks into git.
+
+Recall tuning (`recall_rrf_k`, `recall_search_fetch_multiplier`,
+`recall_{private,org,knowledge}_result_limit`, `recall_default_max_chars`, `[recall]` table in the
+TOML file) used to be hardcoded module constants in `recall_helpers.py`, read once at import time.
+Moved here — and read from `config.settings` at point of use in `recall_helpers`/`recall.py`, not
+cached — while adding the response char budget `/v1/recall` never had at all: measured unbounded
+at 38,961 chars/call average against a real 276-document corpus for 5.5% precision (agnova's
+`evals/run_scale_eval_qortia.py`). `recall_default_max_chars` (8000) is what a caller gets when it
+doesn't pass `max_chars` explicitly — the fix applies by default, not only to callers who know to
+opt in; pass a non-positive `max_chars` explicitly to opt out.
+
+Depends on: stdlib `os`/`dataclasses`/`tomllib` only — no internal imports, no new dependency
+(`tomllib` is stdlib as of Python 3.11; this project requires ≥3.12).
 
 ### db
 
@@ -250,7 +321,7 @@ memories via cosine similarity (`_maybe_dedup_memory`, ADR-105 threshold), and b
 not-yet-graphed memories into `qortia_entities` (`_populate_graph_batch`, claiming batches of 50
 rows with `FOR UPDATE SKIP LOCKED`).
 
-Depends on: `qortia.config`, `qortia.auth.get_litellm_key`, `qortia.common` (LiteLLM client),
+Depends on: `qortia.config`, `qortia.auth.get_litellm_key`, `qortia.chat` (LLM completions),
 `qortia.db`. `_populate_graph_batch` is called from `qortia.reflect.run_embedding_worker`;
 `_maybe_dedup_memory` and `_maybe_update_entity_summary` are called from
 `qortia.reflect._embed_single_row`, which also re-exports them.
@@ -306,6 +377,25 @@ Depends on: `qortia.db` (get_main_pool, tenant_transaction), `qortia.models` (Re
 Called from `qortia.reflect._embed_single_row` (find + upsert, right after a memory is embedded)
 and `qortia.recall._hybrid_recall_pipeline` (expand, via a lazy import).
 
+### logging_config
+
+One `configure()`, called by both entrypoints before any other qortia module's logger calls can
+fire, so `app` and `workers` produce the same `<timestamp> <LEVEL> <message>` shape instead of
+drifting independently — `workers.py` used to `logging.basicConfig(...)` on its own, `app.py`
+configured nothing at all, and every `qortia.*` logger in the `app` process fell through to
+Python's `logging.lastResort` (no formatter, hardcoded WARNING floor): INFO-level calls vanished
+entirely, WARNING+ printed as a bare `str(dict)` with no timestamp/level/name, and none of it
+matched `workers.py`'s own format. `configure()` also reformats uvicorn's own
+`uvicorn`/`uvicorn.error`/`uvicorn.access` loggers in place — those are a separate system
+(uvicorn's own `dictConfig`, `propagate=False`, already attached before the ASGI lifespan this
+module's caller runs inside ever fires) that `basicConfig()` alone cannot reach — so uvicorn's
+access-log lines carry the same shape as every other line in the stream rather than their own
+`INFO:     <message>` format. `QORTIA_LOG_LEVEL` (default `INFO`) sets the floor. Idempotent, so
+importing both entrypoints in one process (tests) doesn't double-attach handlers.
+
+Depends on: stdlib `logging`/`os` only. Called from `qortia.app`'s `lifespan` (first line) and
+`qortia.workers.main` (first line).
+
 ### models
 
 All Pydantic request/response schemas for the API: `MemoryItem`/`RememberRequest`/
@@ -346,9 +436,14 @@ knowledge) concurrently via `asyncio.gather`, an entity-graph adjacency boost pl
 traversal (`qortia.recall_rerank._bfs_entity_traversal`), reciprocal-rank fusion of
 private+org results and MMR diversification of knowledge candidates (`qortia.recall_helpers`),
 cross-memory link expansion of the top results (`qortia.links`), and an optional LLM rerank
-(`qortia.recall_rerank._llm_rerank`). After results are assembled the endpoint fires-and-forgets
-recall-count/access-time tracking and, if an `X-Work-Order-Id` header is present, session-read
-logging for later outcome-based confidence decay (`_record_work_order_outcome`).
+(`qortia.recall_rerank._llm_rerank`). After rerank, a char budget
+(`recall_helpers._apply_char_budget`, `config.settings.recall_default_max_chars` unless the
+caller passes `max_chars` explicitly) drops whole lowest-ranked results — never truncates one —
+until the combined response fits; `/v1/recall` had no response-size cap of any kind before this
+(see the `config` section above for the measurement that found it). Only *then* does the endpoint
+fire-and-forget recall-count/access-time tracking and, if an `X-Work-Order-Id` header is present,
+session-read logging for later outcome-based confidence decay (`_record_work_order_outcome`) — so
+those side effects only touch results actually returned to the caller, not ones the budget dropped.
 
 Depends on: `qortia.auth`, `qortia.common`, `qortia.db`, `qortia.embedding_cache`,
 `qortia.models`, `qortia.recall_helpers`, `qortia.recall_rerank`, `qortia.links` (lazy),
@@ -379,6 +474,9 @@ Depends on: `qortia.auth`, `qortia.common`, `qortia.db`, `qortia.embedding_cache
                                   ▼
                   optional LLM rerank (recall_rerank._llm_rerank)
                                   ▼
+                  char budget: drop whole lowest-ranked results
+                  (recall_helpers._apply_char_budget, default_max_chars)
+                                  ▼
                   fire-and-forget: recall_count/access tracking,
                   work-order session-read logging (X-Work-Order-Id)
                                   ▼
@@ -406,8 +504,8 @@ to the original order on any failure) and `_bfs_entity_traversal` (a multi-hop b
 across `qortia_entities` via co-occurring `linked_memory_ids`, decaying the boost score at each
 hop).
 
-Depends on: `qortia.config`, `qortia.auth` (get_litellm_key, AgentIdentity), `qortia.common`
-(LiteLLM client), `qortia.db`, `qortia.models`. Used by `qortia.recall`.
+Depends on: `qortia.config`, `qortia.auth` (get_litellm_key, AgentIdentity), `qortia.chat`
+(LLM completions), `qortia.db`, `qortia.models`. Used by `qortia.recall`.
 
 ### reflect
 
@@ -425,10 +523,10 @@ triggers `entity_graph._populate_graph_batch` and `links` cross-linking), and
 `run_background_reflection_trigger`/`_trigger_idle_reflections` (finds agents idle past a
 configured window and runs `_reflect_agent`, the non-HTTP twin of `/v1/reflect`).
 
-Depends on: `qortia.config`, `qortia.auth`, `qortia.common`, `qortia.db`, `qortia.entity_graph`,
-`qortia.models`, `qortia.recall_helpers` (_cosine), `qortia.knowledge.extract_entities_with_types`
-(lazy), `qortia.links` (lazy), `qortia.remember` (`build_temporal_grounding_instruction`,
-`_fetch_agent_clearance`).
+Depends on: `qortia.config`, `qortia.auth`, `qortia.chat` (LLM completions), `qortia.db`,
+`qortia.entity_graph`, `qortia.models`, `qortia.recall_helpers` (_cosine),
+`qortia.knowledge.extract_entities_with_types` (lazy), `qortia.links` (lazy), `qortia.remember`
+(`build_temporal_grounding_instruction`, `_fetch_agent_clearance`).
 
 ```
 POST /v1/reflect  (or the idle-trigger's _reflect_agent)
@@ -518,3 +616,38 @@ Depends on: `opentelemetry` (optional, imported lazily inside `_make_counter`).
   connectivity to exercise `qortia.eval_router`'s endpoints, and haven't been exercised end-to-end
   against the standalone extraction yet. Dogfood path after `just stack-up` + `stack-pull-model`
   is the prerequisite.
+- **`xx_ent_wiki_sm` (Indic NER) was an unpinned dependency until 2026-08-11 — every memory in
+  all five supported Indic languages silently got zero entities.** `knowledge._INDIC_MODEL`
+  routes `hi`/`bn`/`ta`/`te`/`mr` to `spacy.load("xx_ent_wiki_sm")`, but nothing in
+  `pyproject.toml` installed that model (only `en_core_web_sm` was pinned) — `spacy.load()` 404'd
+  in every environment built from this repo, `app`'s best-effort startup load swallowed it
+  (`spacy_model_load_failed`, logged at WARNING, not a boot failure — see the `app` section
+  above), and `remember()`'s per-item `try/except` around `extract_entities_with_types` swallowed
+  it again per request (`ner_extraction_failed`, also WARNING). No 5xx anywhere; `/v1/remember`
+  returned 200 with a valid id every time. Caught empirically by scoring `remember()`-stored
+  entities against WikiANN gold spans: 0/16 gold entities recovered on an initial Hindi sample.
+  This is what the swallow-everywhere design in the paragraph above costs when the failure isn't
+  transient: the architecture correctly treats NER as best-effort so a bad sentence or a slow
+  model never fails a `remember()` call, but the same property means a total, permanent,
+  environment-wide failure looks identical to an occasional one, both in the API response and in
+  a WARNING-level log line that also carries routine traffic (`ner_lang_unsupported`, the designed
+  fallback-to-English path for any language outside the five, was logged at the same WARNING level
+  as this — fixed to `logger.info` under the clearer name `ner_lang_fallback_to_en`, see
+  `knowledge.py`). Fixed by pinning `xx-ent-wiki-sm` in `pyproject.toml` alongside
+  `en-core-web-sm`.
+  **A second bug surfaced fixing the first:** `_get_indic_pipeline` cached the loaded spaCy
+  pipeline by `lang`, but every one of the five Indic languages maps to the same
+  `"xx_ent_wiki_sm"` model (`_INDIC_MODEL`) — so exercising all five in one process loaded and
+  held five independent copies of one model, reproducibly OOM-killing the process on the fifth.
+  Fixed by caching on model name instead; `qortia-app`'s RSS now stays flat (~410–440MiB
+  measured) across all five languages instead of growing with each one.
+  **Still open even with both fixed:** `xx_ent_wiki_sm` itself is a small, dated
+  (WikiNER-trained) multilingual model, and per-language quality against a 300-example-per-language
+  WikiANN sample is uneven and generally weak: recall 7–14% across all five Indic languages
+  (Telugu weakest at 7.0%, Marathi best at 12.8%), against 66.5% for English (`en_core_web_sm`, a
+  different model) and, unexpectedly, 71.8% for German routed through the same English fallback
+  path — precision is markedly lower there (0.566 vs English's 0.858), so the higher recall isn't
+  a signal the fallback path is *better*, more that it's more permissive. Whether the Indic
+  numbers are fixed by a better model (e.g. an Indic-specific NER model) and whether the model
+  should be operator-configurable (same pattern as `QORTIA_EMBEDDING_MODEL`) is open — the
+  WikiANN comparison above is reusable against any candidate before committing to one.
